@@ -1,10 +1,10 @@
+import { useEffect, useState } from "react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
-import { Separator } from "@/components/ui/separator"
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Bell, Search, PlusCircle, Moon, Sun, Droplet, UserPlus, Check } from "lucide-react"
+import { Bell, PlusCircle, Moon, Sun, UserPlus, Check, CalendarPlus, Stethoscope, Send, ShieldPlus } from "lucide-react"
 import {
   Popover,
   PopoverContent,
@@ -16,43 +16,86 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useTheme } from "@/components/theme-provider"
 import { useLocation } from "react-router-dom"
+import { OfflineSyncDrawer } from "./OfflineSyncDrawer"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { useAuthSession } from "@/features/auth/auth-session"
+import { getMaternalProfile } from "@/features/maternal-records/api"
 
 export function AppHeader() {
   const { theme, setTheme } = useTheme()
   const location = useLocation()
-  const isCampaignPage = location.pathname.startsWith('/dashboard/campaigns')
+  const { session } = useAuthSession()
+  const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false)
+  const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
+  const [profileBreadcrumbResult, setProfileBreadcrumbResult] = useState<{ motherId: string; name: string } | null>(null)
+  const isMaternalArea = location.pathname.startsWith('/dashboard/maternal-records')
+  const isMaternalProfile = location.pathname.startsWith('/dashboard/maternal-records/')
+  const profileMotherId = isMaternalProfile ? decodeURIComponent(location.pathname.split("/").filter(Boolean).at(-1) ?? "") : ""
+  const profileBreadcrumb = profileBreadcrumbResult?.motherId === profileMotherId ? profileBreadcrumbResult.name : "Maternal Profile"
+  const pageTitle = location.pathname.startsWith('/dashboard/calendar') ? 'Appointments'
+    : location.pathname.startsWith('/dashboard/referrals') ? 'Inter-Clinic Referrals'
+    : location.pathname.startsWith('/dashboard/team') ? 'Staff Management'
+    : location.pathname.startsWith('/dashboard/messages') ? 'Messages'
+    : location.pathname.startsWith('/dashboard/settings') ? 'Settings'
+    : location.pathname.startsWith('/dashboard/user-guide') ? 'User Guide'
+    : 'Dashboard'
+
+  useEffect(() => {
+    const updateConnection = () => setIsOnline(navigator.onLine)
+    window.addEventListener("online", updateConnection)
+    window.addEventListener("offline", updateConnection)
+    return () => {
+      window.removeEventListener("online", updateConnection)
+      window.removeEventListener("offline", updateConnection)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isMaternalProfile || !session?.token || !profileMotherId) return
+    let active = true
+    getMaternalProfile(session.token, profileMotherId)
+      .then(({ result }) => {
+        if (!active) return
+        const name = [result.user?.first_name, result.user?.middle_name, result.user?.last_name].filter(Boolean).join(" ")
+        if (name) setProfileBreadcrumbResult({ motherId: profileMotherId, name })
+      })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [isMaternalProfile, profileMotherId, session?.token])
 
   return (
+    <TooltipProvider delayDuration={500}>
     <header className="bg-white dark:bg-black flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
       {/* --- DESKTOP LAYOUT --- */}
       <div className="hidden md:flex flex-1 items-center gap-2">
-        <SidebarTrigger className="-ml-1" />
+        <Tooltip><TooltipTrigger asChild><SidebarTrigger aria-label="Toggle sidebar" className="-ml-1" /></TooltipTrigger><TooltipContent>Toggle sidebar</TooltipContent></Tooltip>
         <div className="h-4 w-px bg-border" />
         <Breadcrumb>
           <BreadcrumbList className="text-xs">
             <BreadcrumbItem>
-              <BreadcrumbLink href="/dashboard">Core Operations</BreadcrumbLink>
+              {isMaternalArea ? (
+                <span>Clinical Care</span>
+              ) : (
+                <BreadcrumbLink href="/dashboard">Core Operations</BreadcrumbLink>
+              )}
             </BreadcrumbItem>
             <BreadcrumbSeparator />
-            {isCampaignPage ? (
+            {isMaternalProfile ? (
               <>
                 <BreadcrumbItem>
-                  <BreadcrumbLink href="/dashboard/campaigns">Campaigns</BreadcrumbLink>
+                  <BreadcrumbLink href="/dashboard/maternal-records">Maternal Records</BreadcrumbLink>
                 </BreadcrumbItem>
                 <BreadcrumbSeparator />
-                <BreadcrumbItem>
-                  <BreadcrumbPage className="text-xs font-normal">
-                    {location.pathname.includes('review') ? 'Campaign Review' : 'Campaign List'}
-                  </BreadcrumbPage>
-                </BreadcrumbItem>
+                <BreadcrumbItem><BreadcrumbPage className="text-xs">{profileBreadcrumb}</BreadcrumbPage></BreadcrumbItem>
               </>
             ) : (
               <BreadcrumbItem>
-                <BreadcrumbPage className="text-xs">Dashboard</BreadcrumbPage>
+                <BreadcrumbPage className="text-xs">{isMaternalArea ? "Maternal Records" : pageTitle}</BreadcrumbPage>
               </BreadcrumbItem>
             )}
           </BreadcrumbList>
@@ -60,18 +103,21 @@ export function AppHeader() {
       </div>
 
       <div className="hidden md:flex items-center gap-2">
-        <div className="flex items-center cursor-pointer hover:text-foreground transition-colors text-xs font-medium text-muted-foreground">
-          Search for campaigns, teams...
-        </div>
-        
-        <div className="h-4 w-px bg-border" />
-
+        <Button type="button" variant="outline" onClick={() => setIsSyncDrawerOpen(true)} className="h-8 px-2.5 text-xs font-medium gap-2 border-sidebar-border bg-background dark:bg-black">
+          <span className="relative flex size-2" aria-hidden="true">
+            {isOnline && <span className={`absolute inline-flex size-full motion-safe:animate-ping rounded-full ${isOnline ? "bg-green-600 opacity-90" : ""}`} />}
+            <span className={`relative inline-flex size-2 rounded-full ${isOnline ? "bg-green-400" : "bg-amber-500"}`} />
+          </span>
+          {isOnline ? "You're Online" : "You're Offline"}
+        </Button>
         <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-8 w-8 relative">
-              <Bell className="size-4" />
-            </Button>
-          </PopoverTrigger>
+          <Tooltip><TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="icon" aria-label="Notifications" className="text-muted-foreground hover:text-foreground h-8 w-8 relative">
+                <Bell className="size-4" />
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
           <PopoverContent align="end" className="w-[calc(100vw-2rem)] sm:w-[380px] pt-4 px-4 pb-0 flex flex-col gap-4 rounded-xl border-border shadow-lg">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-foreground">Notifications (3)</span>
@@ -81,7 +127,7 @@ export function AppHeader() {
               </div>
             </div>
             <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2">
-              <Input placeholder="Filter Notifications" className="h-8 text-xs bg-background dark:bg-[#111]" />
+              <Input placeholder="Filter Notifications" className="h-8 text-xs bg-muted/70 dark:bg-muted/60" />
               <Button className="h-8 px-3 text-xs shrink-0 gap-1.5 bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:text-black">
                 <Check className="h-3.5 w-3.5" />
                 Mark all as read
@@ -96,15 +142,17 @@ export function AppHeader() {
                   </Avatar>
                   <span className="text-xs font-medium text-foreground">Joseph Angelo Petalio</span>
                 </div>
-                <span className="text-[10px] text-muted-foreground">09:34 AM</span>
+                <span className="text-xs text-muted-foreground">09:34 AM</span>
               </div>
-              <p className="text-xs text-foreground">Requested your approval for the campaign Community Advocacy.</p>
+              <p className="text-xs text-foreground">A referral transfer is waiting for your review.</p>
             </div>
           </PopoverContent>
         </Popover>
+        <Tooltip><TooltipTrigger asChild>
         <Button 
           variant="ghost" 
           size="icon" 
+          aria-label="Toggle theme"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           className="text-muted-foreground hover:text-foreground h-8 w-8 relative"
         >
@@ -112,6 +160,7 @@ export function AppHeader() {
           <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
           <span className="sr-only">Toggle theme</span>
         </Button>
+        </TooltipTrigger><TooltipContent>{theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}</TooltipContent></Tooltip>
 
         <div className="h-4 w-px bg-border" />
 
@@ -125,15 +174,24 @@ export function AppHeader() {
           <DropdownMenuContent align="end" className="w-56 rounded-xl border-border shadow-md">
             <DropdownMenuLabel className="text-xs font-medium text-muted-foreground">Quick Create</DropdownMenuLabel>
             <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
-              <PlusCircle className="h-4 w-4" />
-              <span>Create Campaign</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
-              <Droplet className="h-4 w-4" />
-              <span>Log Donations</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
               <UserPlus className="h-4 w-4" />
+              <span>Create Maternal Record</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
+              <CalendarPlus className="h-4 w-4" />
+              <span>Create Appointment</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
+              <Stethoscope className="h-4 w-4" />
+              <span>Log Consultation</span>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
+              <Send className="h-4 w-4" />
+              <span>Create Referral</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem className="gap-2 cursor-pointer rounded-md">
+              <ShieldPlus className="h-4 w-4" />
               <span>Invite Team Member</span>
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -144,26 +202,29 @@ export function AppHeader() {
       <div className="flex md:hidden w-full items-center justify-between">
         <Breadcrumb>
           <BreadcrumbList className="text-xs">
-            {isCampaignPage ? (
-              <BreadcrumbItem>
-                <BreadcrumbPage className="text-xs font-normal">
-                  {location.pathname.includes('review') ? 'Campaign Review' : 'Campaign List'}
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            ) : (
-              <BreadcrumbItem>
-                <BreadcrumbPage className="text-xs font-normal">Dashboard</BreadcrumbPage>
-              </BreadcrumbItem>
-            )}
+            <BreadcrumbItem>
+              <BreadcrumbPage className="text-xs font-normal">
+                {isMaternalProfile ? profileBreadcrumb : isMaternalArea ? "Maternal Records" : pageTitle}
+              </BreadcrumbPage>
+            </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
         <div className="flex items-center gap-1">
+          <Button type="button" variant="outline" onClick={() => setIsSyncDrawerOpen(true)} className="h-8 px-2 text-xs font-medium gap-1.5 border-sidebar-border bg-background dark:bg-black">
+            <span className="relative flex size-2" aria-hidden="true">
+              {isOnline && <span className="absolute inline-flex size-full motion-safe:animate-ping rounded-full bg-green-600 opacity-90" />}
+              <span className={`relative inline-flex size-2 rounded-full ${isOnline ? "bg-green-400" : "bg-amber-500"}`} />
+            </span>
+            {isOnline ? "You're Online" : "You're Offline"}
+          </Button>
           <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground h-8 w-8 relative">
-                <Bell className="size-4" />
-              </Button>
-            </PopoverTrigger>
+            <Tooltip><TooltipTrigger asChild>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" aria-label="Notifications" className="text-muted-foreground hover:text-foreground h-8 w-8 relative">
+                  <Bell className="size-4" />
+                </Button>
+              </PopoverTrigger>
+            </TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
             <PopoverContent align="center" collisionPadding={0} className="w-screen sm:w-[380px] pt-4 px-4 pb-0 flex flex-col gap-4 rounded-xl border-border shadow-lg">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-semibold text-foreground">Notifications (3)</span>
@@ -173,7 +234,7 @@ export function AppHeader() {
                 </div>
               </div>
               <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2">
-                <Input placeholder="Filter Notifications" className="h-8 text-xs bg-background dark:bg-[#111]" />
+                <Input placeholder="Filter Notifications" className="h-8 text-xs bg-muted/70 dark:bg-muted/60" />
                 <Button className="h-8 px-3 text-xs shrink-0 gap-1.5 bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:text-black">
                   <Check className="h-3.5 w-3.5" />
                   Mark all as read
@@ -188,15 +249,17 @@ export function AppHeader() {
                     </Avatar>
                     <span className="text-xs font-medium text-foreground">Joseph Angelo Petalio</span>
                   </div>
-                  <span className="text-[10px] text-muted-foreground">09:34 AM</span>
+                  <span className="text-xs text-muted-foreground">09:34 AM</span>
                 </div>
-                <p className="text-xs text-foreground">Requested your approval for the campaign Community Advocacy.</p>
+                <p className="text-xs text-foreground">A referral transfer is waiting for your review.</p>
               </div>
             </PopoverContent>
           </Popover>
+          <Tooltip><TooltipTrigger asChild>
           <Button 
             variant="ghost" 
             size="icon" 
+            aria-label="Toggle theme"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             className="text-muted-foreground hover:text-foreground h-8 w-8 relative"
           >
@@ -204,9 +267,12 @@ export function AppHeader() {
             <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
             <span className="sr-only">Toggle theme</span>
           </Button>
-          <SidebarTrigger className="-mr-1" />
+          </TooltipTrigger><TooltipContent>{theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}</TooltipContent></Tooltip>
+          <Tooltip><TooltipTrigger asChild><SidebarTrigger aria-label="Toggle sidebar" className="-mr-1" /></TooltipTrigger><TooltipContent>Toggle sidebar</TooltipContent></Tooltip>
         </div>
       </div>
     </header>
+    <OfflineSyncDrawer open={isSyncDrawerOpen} onOpenChange={setIsSyncDrawerOpen} />
+    </TooltipProvider>
   )
 }

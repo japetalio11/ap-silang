@@ -1,16 +1,14 @@
 import * as React from "react"
-import { useState } from "react"
+import { useCallback, useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
+  Download,
   RefreshCw,
-  MoreVertical,
-  ChevronDown,
-  ChevronsLeft,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsRight,
   PlusCircle,
-  UserPlus
+  UserPlus,
+  RotateCcw,
+  UsersRound,
 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
@@ -25,51 +23,79 @@ import {
 } from "@/components/ui/table"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
-  DropdownMenu,
-  DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu"
+import { TableRowActions } from "@/components/ui/table-row-actions"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
-import { useIsMobile } from "@/hooks/use-mobile"
-import { TeamManagementSidepeek } from "./TeamManagementSidepeek"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ConfirmSensitiveActionDialog } from "@/components/ui/confirm-sensitive-action-dialog"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { EmptyStateContent, TableEmptyState } from "@/components/ui/table-empty-state"
+import { toast } from "sonner"
 import { InviteTeamMemberModal } from "./InviteTeamMemberModal"
-
-const MOCK_STAFF = [
-  {
-    id: "1",
-    name: "Joseph Angelo Petallo",
-    avatar: "https://i.pravatar.cc/150?u=1",
-    status: "Active",
-    position: "Administrator",
-    sector: "Local Government Unit",
-    email: "japetallo@gmail.com"
-  },
-  {
-    id: "2",
-    name: "Maria Santos",
-    avatar: "https://i.pravatar.cc/150?u=2",
-    status: "Active",
-    position: "Manager",
-    sector: "NGO",
-    email: "msantos@example.com"
-  },
-  {
-    id: "3",
-    name: "Juan Dela Cruz",
-    avatar: "https://i.pravatar.cc/150?u=3",
-    status: "Pending",
-    position: "Staff",
-    sector: "Private Sector",
-    email: "juan@example.com"
-  }
-]
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useAuthSession } from "@/features/auth/auth-session"
+import { getFacilityStaff, resetStaffPassword, setStaffActive, updateStaffRole, type StaffRecord } from "../api"
+import { STAFF_FILTERS } from "../data"
 
 export function TeamManagementPage() {
+  const navigate = useNavigate()
+  const { session } = useAuthSession()
+  const token = session?.token
   const [activeTab, setActiveTab] = useState("all")
-  const [selectedStaff, setSelectedStaff] = useState<any>(null)
-  const isMobile = useIsMobile()
+  const [search, setSearch] = useState("")
+  const [filters, setFilters] = useState<Record<string, string[]>>({ Role: [], Facility: [], Status: [] })
+  const [staff, setStaff] = useState<StaffRecord[]>([])
+  const [loading, setLoading] = useState(true)
+  const [staffToDeactivate, setStaffToDeactivate] = useState<StaffRecord | null>(null)
+  const [staffAction, setStaffAction] = useState<{ staff: StaffRecord; kind: "role" | "password" } | null>(null)
+  const [actionRole, setActionRole] = useState("Nurse")
+  const [newPassword, setNewPassword] = useState("")
+  const [savingAction, setSavingAction] = useState(false)
+
+  const exportStaff = () => {
+    const escapeCsv = (value: string) => `"${value.replaceAll('"', '""')}"`
+    const rows = [
+      ["Staff Member", "Status", "Role", "Assigned Facility", "Contact Number", "Email Address"],
+      ...filteredStaff.map((member) => [member.name, member.status, member.role, member.facility, member.phone, member.email]),
+    ]
+    const csv = `\ufeff${rows.map((row) => row.map(escapeCsv).join(",")).join("\r\n")}`
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = "staff-registry.csv"
+    anchor.click()
+    URL.revokeObjectURL(url)
+    toast.success(`Exported ${filteredStaff.length} staff member${filteredStaff.length === 1 ? "" : "s"}`)
+  }
+
+  const loadStaff = useCallback(async (quiet = false) => {
+    if (!token) return
+    if (!quiet) setLoading(true)
+    try {
+      setStaff(await getFacilityStaff(token))
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to load staff")
+    } finally {
+      setLoading(false)
+    }
+  }, [token])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadStaff() }, 0)
+    return () => window.clearTimeout(timer)
+  }, [loadStaff])
+  useEffect(() => {
+    const refresh = () => { void loadStaff(true) }
+    window.addEventListener("silang:staff-updated", refresh)
+    return () => window.removeEventListener("silang:staff-updated", refresh)
+  }, [loadStaff])
 
   // Swipe gesture handling
   const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number} | null>(null)
@@ -87,10 +113,10 @@ export function TeamManagementPage() {
 
   const onTouchEndHandler = () => {
     if (!touchStartPos || !touchEndPos) return
-    
+
     const distanceX = touchStartPos.x - touchEndPos.x
     const distanceY = Math.abs(touchStartPos.y - touchEndPos.y)
-    
+
     if (Math.abs(distanceX) > distanceY && Math.abs(distanceX) > minSwipeDistance) {
       const isLeftSwipe = distanceX > minSwipeDistance
       const isRightSwipe = distanceX < -minSwipeDistance
@@ -107,6 +133,71 @@ export function TeamManagementPage() {
     }
   }
 
+  const activeFilterCount = Object.values(filters).flat().length
+  const hasStaffQuery = search.trim().length > 0 || activeFilterCount > 0 || activeTab !== "all"
+  const filteredStaff = staff.filter((staff) => {
+    const matchesTab = activeTab === "all"
+      || (activeTab === "active" && staff.status === "Active")
+      || (activeTab === "pending" && staff.status === "Pending Activation")
+      || (activeTab === "deactivated" && staff.status === "Deactivated")
+    const query = search.trim().toLowerCase()
+    const matchesSearch = !query || [staff.name, staff.email, staff.phone, staff.role, staff.facility, staff.license ?? ""].some((value) => value.toLowerCase().includes(query))
+    const matchesRole = filters.Role.length === 0 || filters.Role.some((role) => staff.role.toLowerCase().includes(role.toLowerCase()))
+    const matchesFacility = filters.Facility.length === 0 || filters.Facility.some((facility) => staff.facility.toLowerCase().includes(facility.toLowerCase().replace(" (main birthing unit)", "").replace(" (main birthing clinic)", "")))
+    const matchesStatus = filters.Status.length === 0 || filters.Status.includes(staff.status)
+    return matchesTab && matchesSearch && matchesRole && matchesFacility && matchesStatus
+  })
+
+  const toggleFilter = (filterName: string, option: string) => {
+    setFilters((current) => ({
+      ...current,
+      [filterName]: current[filterName].includes(option)
+        ? current[filterName].filter((value) => value !== option)
+        : [...current[filterName], option],
+    }))
+  }
+
+  const openStaffAction = (member: StaffRecord, kind: "role" | "password") => {
+    setStaffAction({ staff: member, kind })
+    setActionRole(member.role === "Doctor" || member.role === "HealthWorker" || member.role === "Staff" ? "Nurse" : member.role)
+    setNewPassword("")
+  }
+
+  const submitStaffAction = async () => {
+    if (!staffAction || !token) return
+    if (staffAction.kind === "password" && newPassword.trim().length < 6) {
+      toast.error("Password must be at least 6 characters")
+      return
+    }
+    setSavingAction(true)
+    try {
+      if (staffAction.kind === "role") {
+        await updateStaffRole(token, staffAction.staff.id, actionRole)
+        toast.success("Staff role updated")
+      } else {
+        await resetStaffPassword(token, staffAction.staff.id, newPassword)
+        toast.success("Staff password reset")
+      }
+      setStaffAction(null)
+      await loadStaff(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update staff account")
+    } finally {
+      setSavingAction(false)
+    }
+  }
+
+  const toggleStaffActive = async (member: StaffRecord, isActive: boolean) => {
+    if (!token) return
+    try {
+      await setStaffActive(token, member.id, isActive)
+      toast.success(isActive ? "Staff account activated" : "Staff account deactivated")
+      await loadStaff(true)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update staff status")
+    }
+  }
+
   return (
     <div className="relative flex items-start w-full h-full overflow-hidden">
       <div 
@@ -117,76 +208,60 @@ export function TeamManagementPage() {
       >
         <div className="sticky top-0 z-10 flex flex-col gap-4 bg-background dark:bg-black p-4 pl-3 pr-4 pb-4">
           {/* Tabs */}
-          <div className="w-full overflow-x-auto shrink-0 pb-2 -mb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+          <div className="min-w-0 flex-1 overflow-x-auto shrink-0 pb-2 -mb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-max">
-              <TabsList className="bg-muted dark:bg-[#1e1e1e] border-none h-9 w-full md:w-max justify-start rounded-md p-1 gap-1 *:flex-1 md:*:flex-initial">
-                <TabsTrigger value="all" className="text-xs font-medium data-[state=active]:!bg-background data-[state=active]:border-border data-[state=active]:text-foreground dark:data-[state=active]:!bg-black dark:data-[state=active]:border-[#333] dark:data-[state=active]:text-foreground dark:text-white border border-transparent text-muted-foreground hover:text-muted-foreground dark:text-white/70 dark:hover:text-foreground dark:text-white rounded-sm px-2 py-1 h-full transition-all">All Team Members</TabsTrigger>
-                <TabsTrigger value="active" className="text-xs font-medium data-[state=active]:!bg-background data-[state=active]:border-border data-[state=active]:text-foreground dark:data-[state=active]:!bg-black dark:data-[state=active]:border-[#333] dark:data-[state=active]:text-foreground dark:text-white border border-transparent text-muted-foreground hover:text-muted-foreground dark:text-white/70 dark:hover:text-foreground dark:text-white rounded-sm px-2 py-1 h-full transition-all">Active</TabsTrigger>
-                <TabsTrigger value="pending" className="text-xs font-medium data-[state=active]:!bg-background data-[state=active]:border-border data-[state=active]:text-foreground dark:data-[state=active]:!bg-black dark:data-[state=active]:border-[#333] dark:data-[state=active]:text-foreground dark:text-white border border-transparent text-muted-foreground hover:text-muted-foreground dark:text-white/70 dark:hover:text-foreground dark:text-white rounded-sm px-2 py-1 h-full transition-all">Pending Invites</TabsTrigger>
-                <TabsTrigger value="deactivated" className="text-xs font-medium data-[state=active]:!bg-background data-[state=active]:border-border data-[state=active]:text-foreground dark:data-[state=active]:!bg-black dark:data-[state=active]:border-[#333] dark:data-[state=active]:text-foreground dark:text-white border border-transparent text-muted-foreground hover:text-muted-foreground dark:text-white/70 dark:hover:text-foreground dark:text-white rounded-sm px-2 py-1 h-full transition-all">Deactivated</TabsTrigger>
+              <TabsList className="h-9 w-full md:w-max justify-start gap-1 *:flex-1 md:*:flex-initial">
+                <TabsTrigger value="all" className="text-xs font-medium px-2 py-1 h-full">All Staff</TabsTrigger>
+                <TabsTrigger value="active" className="text-xs font-medium px-2 py-1 h-full">Active</TabsTrigger>
+                <TabsTrigger value="pending" className="text-xs font-medium px-2 py-1 h-full">Pending Invites</TabsTrigger>
+                <TabsTrigger value="deactivated" className="text-xs font-medium px-2 py-1 h-full">Deactivated</TabsTrigger>
               </TabsList>
             </Tabs>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <TooltipProvider delayDuration={500}><Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Export staff" onClick={exportStaff} disabled={loading || filteredStaff.length === 0} className="hidden size-8 border-sidebar-border md:flex"><Download className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Export CSV</TooltipContent></Tooltip></TooltipProvider>
+            <TooltipProvider delayDuration={500}><Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh team" onClick={() => void loadStaff()} disabled={loading} className="hidden size-8 border-sidebar-border md:flex"><RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} /></Button></TooltipTrigger><TooltipContent>Refresh staff</TooltipContent></Tooltip></TooltipProvider>
+            <InviteTeamMemberModal>
+              <Button className="h-8 shrink-0 gap-1.5 px-2.5 text-xs font-medium"><UserPlus className="size-3.5" />Add Staff Member</Button>
+            </InviteTeamMemberModal>
+          </div>
           </div>
 
           {/* Toolbar */}
           <div className="flex flex-col xl:flex-row items-start xl:items-center justify-between gap-4">
             <div className="flex w-full xl:w-auto flex-wrap items-center gap-2">
-              <Input placeholder="Filter staff..." className="h-8 px-2 w-full sm:w-[250px] text-xs font-normal bg-background dark:bg-black border-sidebar-border" />
-              {Object.entries({
-                "Role": ["Administrator", "Manager", "Coordinator", "Staff"],
-                "Sector": ["Local Government Unit", "NGO", "Private Sector", "Academe"]
-              }).map(([filterName, options]) => (
+              <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, email, or PRCS license..." className="h-8 px-2 w-full sm:w-[300px] text-xs font-normal bg-muted/70 dark:bg-muted/60 border-sidebar-border" />
+              {Object.entries(STAFF_FILTERS).map(([filterName, options]) => (
                 <Popover key={filterName}>
                   <PopoverTrigger asChild>
-                    <Button variant="outline" className="hidden md:flex h-8 px-2 text-xs font-medium gap-2 border-sidebar-border border-dashed !bg-background text-foreground hover:text-foreground hover:bg-accent dark:!bg-black dark:text-foreground dark:text-white dark:hover:text-foreground dark:text-foreground dark:text-white dark:hover:bg-accent dark:hover:bg-white/5">
+                    <Button variant="filter" size="filter" className="hidden md:flex">
                       <PlusCircle className="h-3.5 w-3.5" />
                       {filterName}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-[200px] p-3 flex flex-col gap-3" align="start">
-                    <div className="flex flex-col gap-2.5">
+                  <PopoverContent className="w-56 p-3" align="start">
+                    <div className="flex flex-col gap-3">
                       {options.map((option) => (
-                          <div key={option} className="flex items-center space-x-2">
-                            <Checkbox id={`filter-${filterName}-${option}`} className="border-sidebar-border data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:data-[state=checked]:border-white dark:data-[state=checked]:bg-white dark:data-[state=checked]:text-black h-3.5 w-3.5 rounded-[4px]" />
-                            <label htmlFor={`filter-${filterName}-${option}`} className="text-xs font-normal text-foreground dark:text-white leading-none cursor-pointer">
-                              {option}
-                            </label>
-                          </div>
+                        <label key={option} htmlFor={`filter-${filterName}-${option}`} className="flex cursor-pointer items-center gap-2 text-xs">
+                          <Checkbox
+                            id={`filter-${filterName}-${option}`}
+                            checked={filters[filterName].includes(option)}
+                            onCheckedChange={() => toggleFilter(filterName, option)}
+                            className="size-3.5 rounded-[4px] border-sidebar-border"
+                          />
+                          <span>{option}</span>
+                        </label>
                         ))}
                     </div>
-                    <Button className="h-7 text-xs w-full bg-primary text-primary-foreground hover:bg-primary/90 dark:bg-white dark:text-black dark:hover:bg-zinc-200">
-                      Clear Filter
-                    </Button>
                   </PopoverContent>
                 </Popover>
               ))}
-            </div>
-            <div className="flex w-full xl:w-auto items-center gap-2">
-              <Button variant="outline" className="hidden md:flex h-8 px-2 text-xs font-medium gap-2 border-sidebar-border !bg-background text-foreground hover:text-foreground hover:bg-accent dark:!bg-black dark:text-white dark:hover:text-foreground dark:text-white dark:hover:bg-accent dark:hover:bg-white/5">
-                <RefreshCw className="h-3.5 w-3.5" />
-                Refresh
-              </Button>
-              <InviteTeamMemberModal>
-                <Button className="h-8 text-xs font-medium gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 dark:bg-[#e5e5e5] dark:text-black dark:hover:bg-[#d5d5d5]">
-                  <UserPlus className="h-3.5 w-3.5" />
-                  Invite Team Member
-                </Button>
-              </InviteTeamMemberModal>
+              {(activeFilterCount > 0 || search.trim().length > 0) && <Button variant="ghost" onClick={() => { setSearch(""); setFilters({ Role: [], Facility: [], Status: [] }) }} className="h-8 shrink-0 gap-2 px-2 text-xs font-medium text-muted-foreground"><RotateCcw className="size-3.5" />Reset Filter</Button>}
             </div>
           </div>
 
-          {/* Mobile Pagination (Sticky) */}
-          <div className="md:hidden flex items-center justify-between pt-2 border-t border-sidebar-border mt-2">
-            <span className="text-xs text-muted-foreground font-medium">Page 1 of 1</span>
-            <div className="flex items-center gap-1">
-              <Button variant="outline" size="icon" className="h-7 w-7 border-sidebar-border bg-transparent opacity-50 cursor-not-allowed">
-                <ChevronLeft className="h-3 w-3" />
-              </Button>
-              <Button variant="outline" size="icon" className="h-7 w-7 border-sidebar-border bg-transparent opacity-50 cursor-not-allowed">
-                <ChevronRight className="h-3 w-3" />
-              </Button>
-            </div>
-          </div>
+
         </div>
 
         <div className="flex flex-col gap-4 p-4 md:pt-0 pl-3 pr-4 pb-24 md:pb-4">
@@ -199,197 +274,158 @@ export function TeamManagementPage() {
                     <TableHead className="w-12 text-center pl-4">
                       <Checkbox className="border-sidebar-border" />
                     </TableHead>
-                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Name</TableHead>
+                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Staff Member</TableHead>
                     <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Status</TableHead>
-                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Position</TableHead>
-                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Sector</TableHead>
-                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Email</TableHead>
-                    <TableHead className="w-12"></TableHead>
+                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Role (RBAC)</TableHead>
+                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Assigned Facility</TableHead>
+                    <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Contact Number</TableHead>
+                    <TableHead aria-label="Actions" className="w-12" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {MOCK_STAFF.map((staff) => (
+                {loading ? <TableSkeletonRows columns={7} rows={5} /> : filteredStaff.map((staff) => (
                     <TableRow 
                       key={staff.id} 
-                      className={`border-sidebar-border cursor-pointer transition-colors group ${selectedStaff?.id === staff.id ? 'bg-accent dark:bg-white/10' : 'hover:bg-accent dark:hover:bg-white/5'}`}
-                      onClick={() => setSelectedStaff(staff)}
+                      className="border-sidebar-border cursor-pointer transition-colors group hover:bg-accent dark:hover:bg-white/5"
+                      onClick={() => navigate(`/dashboard/team/${staff.id}`)}
+                      onKeyDown={(event) => { if (event.key === "Enter") navigate(`/dashboard/team/${staff.id}`) }}
+                      tabIndex={0}
                     >
                       <TableCell className="pl-4">
                         <Checkbox className="border-sidebar-border data-[state=checked]:bg-primary dark:data-[state=checked]:bg-white data-[state=checked]:text-primary-foreground dark:data-[state=checked]:text-black" />
                       </TableCell>
-                      <TableCell className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">
-                        <div className="flex items-center gap-3">
-                          <div className="h-6 w-6 rounded-full overflow-hidden bg-accent dark:bg-white/10 shrink-0">
-                            {staff.avatar ? (
-                              <img src={staff.avatar} alt={staff.name} className="h-full w-full object-cover" />
-                            ) : (
-                              <div className="h-full w-full flex items-center justify-center text-[10px] font-semibold text-foreground dark:text-white">
-                                {staff.name.charAt(0)}
-                              </div>
-                            )}
-                          </div>
-                          <span>{staff.name}</span>
+                      <TableCell className="text-xs font-medium text-foreground dark:text-white">
+                        <div className="min-w-0">
+                          <div className="truncate font-medium">{staff.name}</div>
+                          <div className="truncate text-xs font-normal text-muted-foreground">{staff.email}</div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium text-white whitespace-nowrap border ${
-                          staff.status === 'Active' ? 'bg-[#22C55E] border-[#22C55E]/20' : 
-                          staff.status === 'Pending' ? 'bg-amber-500 border-amber-500/20' : 
-                          'bg-zinc-500 border-zinc-500/20'
-                        }`}>
-                          {staff.status}
-                        </div>
+                        <StatusBadge status={staff.status} />
                       </TableCell>
-                      <TableCell className="text-xs text-foreground dark:text-white whitespace-nowrap">
-                        <div className="w-fit bg-muted dark:bg-[#222] px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap">
-                          {staff.position}
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-xs text-foreground dark:text-white whitespace-nowrap">
-                        {staff.sector}
-                      </TableCell>
-                      <TableCell className="text-xs text-foreground dark:text-white whitespace-nowrap">
-                        {staff.email}
-                      </TableCell>
+                      <TableCell><span className="inline-flex w-fit max-w-48 rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 text-xs dark:bg-[#222]">{staff.role}</span></TableCell>
+                      <TableCell className="max-w-48 truncate text-xs" title={staff.facility}>{staff.facility}</TableCell>
+                      <TableCell className="whitespace-nowrap text-xs">{staff.phone}</TableCell>
                       <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground dark:text-white group-hover:text-foreground dark:text-white">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-[160px] rounded-xl border-border shadow-md">
-                            <DropdownMenuItem className="text-xs cursor-pointer rounded-md">Edit Profile</DropdownMenuItem>
-                            <DropdownMenuItem className="text-xs cursor-pointer rounded-md text-red-500 hover:!text-red-500 hover:!bg-red-500/10">Deactivate</DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <TableRowActions label={`Actions for ${staff.name}`}>
+                          <DropdownMenuItem onSelect={() => openStaffAction(staff, "role")}>Edit Role</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => openStaffAction(staff, "password")}>Reset Password</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          {staff.status === "Deactivated"
+                            ? <DropdownMenuItem onSelect={() => void toggleStaffActive(staff, true)}>Activate Account</DropdownMenuItem>
+                            : <DropdownMenuItem variant="destructive" onSelect={() => setStaffToDeactivate(staff)}>Deactivate Account</DropdownMenuItem>}
+                        </TableRowActions>
                       </TableCell>
                     </TableRow>
                   ))}
+                  {!loading && filteredStaff.length === 0 && (
+                    <TableEmptyState
+                      colSpan={7}
+                      icon={UsersRound}
+                      title={hasStaffQuery ? "No staff match this view" : "No staff members yet"}
+                      description={hasStaffQuery ? "Try changing or clearing the selected search and filters." : "Add your first staff member to begin managing facility access."}
+                      action={hasStaffQuery
+                        ? <Button variant="outline" onClick={() => { setActiveTab("all"); setSearch(""); setFilters({ Role: [], Facility: [], Status: [] }) }} className="h-8 gap-1.5 px-2.5 text-xs"><RotateCcw className="size-3.5" />Reset Filter</Button>
+                        : <InviteTeamMemberModal><Button className="h-8 gap-1.5 px-2.5 text-xs"><UserPlus className="size-3.5" />Add Staff Member</Button></InviteTeamMemberModal>}
+                    />
+                  )}
                 </TableBody>
               </Table>
             </div>
           </div>
 
-          {/* Desktop Pagination Footer */}
-          <div className="hidden md:flex flex-row items-center justify-between text-xs text-muted-foreground gap-4">
-            <div>0 of {MOCK_STAFF.length} row(s) selected.</div>
-            
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-2">
-                <span>Rows per page</span>
-                <div className="flex items-center justify-between border border-sidebar-border bg-card dark:bg-[#111] hover:bg-accent dark:hover:bg-[#222] cursor-pointer rounded-md px-2 py-1 gap-2 transition-colors">
-                  <span>10</span>
-                  <ChevronDown className="h-3 w-3" />
-                </div>
-              </div>
-              <div className="flex items-center gap-4">
-                <span>Page 1 of 1</span>
-                <div className="flex items-center gap-1">
-                  <Button variant="outline" size="icon" className="h-7 w-7 border-sidebar-border bg-transparent opacity-50 cursor-not-allowed">
-                    <ChevronsLeft className="h-3 w-3" />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-7 w-7 border-sidebar-border bg-transparent opacity-50 cursor-not-allowed">
-                    <ChevronLeft className="h-3 w-3" />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-7 w-7 border-sidebar-border bg-transparent opacity-50 cursor-not-allowed">
-                    <ChevronRight className="h-3 w-3" />
-                  </Button>
-                  <Button variant="outline" size="icon" className="h-7 w-7 border-sidebar-border bg-transparent opacity-50 cursor-not-allowed">
-                    <ChevronsRight className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
 
           {/* Mobile Card List */}
           <div className="flex md:hidden flex-col gap-4">
-            {MOCK_STAFF.map((staff) => (
+            {loading ? Array.from({ length: 4 }, (_, index) => <article key={`staff-skeleton-${index}`} className="flex flex-col gap-4 rounded-md border border-sidebar-border p-4" aria-hidden="true"><div className="flex justify-between gap-3"><div className="flex-1 space-y-2"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-3.5 w-1/2" /></div><Skeleton className="h-5 w-16" /></div><Skeleton className="h-3.5 w-3/4" /><Skeleton className="h-3.5 w-2/3" /></article>) : filteredStaff.map((staff) => (
               <div 
                 key={staff.id} 
-                className={`flex flex-col p-4 rounded-xl border border-sidebar-border bg-card dark:bg-[#111] gap-4 cursor-pointer transition-colors ${selectedStaff?.id === staff.id ? 'ring-1 ring-ring dark:ring-white/20' : 'hover:bg-accent dark:hover:bg-white/5'}`}
-                onClick={() => setSelectedStaff(staff)}
+                className="flex flex-col p-4 rounded-xl border border-sidebar-border bg-card dark:bg-[#111] gap-4 cursor-pointer transition-colors hover:bg-accent dark:hover:bg-white/5"
+                onClick={() => navigate(`/dashboard/team/${staff.id}`)}
               >
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className="h-8 w-8 rounded-full overflow-hidden bg-accent dark:bg-white/10 shrink-0">
-                      {staff.avatar ? (
-                        <img src={staff.avatar} alt={staff.name} className="h-full w-full object-cover" />
-                      ) : (
-                        <div className="h-full w-full flex items-center justify-center text-xs font-semibold text-foreground dark:text-white">
-                          {staff.name.charAt(0)}
-                        </div>
-                      )}
-                    </div>
-                    <h3 className="text-sm font-semibold text-foreground dark:text-white">{staff.name}</h3>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-sm font-semibold text-foreground dark:text-white">{staff.name}</h3>
+                    <p className="truncate text-xs text-muted-foreground">{staff.email}</p>
                   </div>
-                  <div className={`inline-flex items-center px-1.5 py-0.5 rounded-sm text-[10px] font-medium text-white whitespace-nowrap border ${
-                    staff.status === 'Active' ? 'bg-[#22C55E] border-[#22C55E]/20' : 
-                    staff.status === 'Pending' ? 'bg-amber-500 border-amber-500/20' : 
-                    'bg-zinc-500 border-zinc-500/20'
-                  }`}>
-                    {staff.status}
-                  </div>
+                  <StatusBadge status={staff.status} />
                 </div>
-                
+
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Position</span>
-                    <div className="w-fit bg-muted dark:bg-[#222] px-1.5 py-0.5 rounded text-[10px] whitespace-nowrap">
-                      {staff.position}
+                    <span className="text-xs text-muted-foreground">Role</span>
+                    <div className="max-w-[65%] truncate rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 text-right text-xs dark:bg-[#222]">
+                      {staff.role}
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Sector</span>
-                    <span className="text-xs text-foreground dark:text-white text-right">{staff.sector}</span>
+                    <span className="text-xs text-muted-foreground">Facility</span>
+                    <span className="max-w-[65%] truncate text-right text-xs text-foreground dark:text-white">{staff.facility}</span>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Email</span>
-                    <span className="text-xs text-foreground dark:text-white text-right">{staff.email}</span>
+                    <span className="text-xs text-muted-foreground">Contact</span>
+                    <span className="text-xs text-foreground dark:text-white text-right">{staff.phone}</span>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-end pt-3 border-t border-sidebar-border">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="h-8 w-8 text-foreground dark:text-white">
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[160px] rounded-xl border-border shadow-md">
-                      <DropdownMenuItem className="text-xs cursor-pointer rounded-md">Edit Profile</DropdownMenuItem>
-                      <DropdownMenuItem className="text-xs cursor-pointer rounded-md text-red-500 hover:!text-red-500 hover:!bg-red-500/10">Deactivate</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <TableRowActions label={`Actions for ${staff.name}`}>
+                    <DropdownMenuItem onSelect={() => openStaffAction(staff, "role")}>Edit Role</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => openStaffAction(staff, "password")}>Reset Password</DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {staff.status === "Deactivated"
+                      ? <DropdownMenuItem onSelect={() => void toggleStaffActive(staff, true)}>Activate Account</DropdownMenuItem>
+                      : <DropdownMenuItem variant="destructive" onSelect={() => setStaffToDeactivate(staff)}>Deactivate Account</DropdownMenuItem>}
+                  </TableRowActions>
                 </div>
               </div>
             ))}
+            {!loading && filteredStaff.length === 0 && (
+              <div className="rounded-md border border-sidebar-border bg-card dark:bg-[#111]">
+                <EmptyStateContent
+                  icon={UsersRound}
+                  title={hasStaffQuery ? "No staff match this view" : "No staff members yet"}
+                  description={hasStaffQuery ? "Try changing or clearing the selected search and filters." : "Add your first staff member to begin managing facility access."}
+                  action={hasStaffQuery
+                    ? <Button variant="outline" onClick={() => { setActiveTab("all"); setSearch(""); setFilters({ Role: [], Facility: [], Status: [] }) }} className="h-8 gap-1.5 px-2.5 text-xs"><RotateCcw className="size-3.5" />Reset Filter</Button>
+                    : <InviteTeamMemberModal><Button className="h-8 gap-1.5 px-2.5 text-xs"><UserPlus className="size-3.5" />Add Staff Member</Button></InviteTeamMemberModal>}
+                />
+              </div>
+            )}
           </div>
+
+          <TablePaginationFooter rowCount={filteredStaff.length} />
 
         </div>
       </div>
 
-      {/* Desktop Floating Sidepeek Overlay */}
-      {!isMobile && (
-        <div 
-          className={`fixed top-0 right-0 h-screen w-[100%] sm:w-[400px] z-50 transition-transform duration-300 ease-in-out shadow-2xl ${selectedStaff ? 'translate-x-0' : 'translate-x-full'}`}
-        >
-          <TeamManagementSidepeek staff={selectedStaff} onClose={() => setSelectedStaff(null)} />
-        </div>
-      )}
 
-      {/* Mobile Sidepeek Drawer (from underneath with drag-to-dismiss) */}
-      {isMobile && (
-        <Drawer open={!!selectedStaff} onOpenChange={(open) => !open && setSelectedStaff(null)}>
-          <DrawerContent className="p-0 bg-background dark:bg-background dark:bg-[#0a0a0a] border-t border-sidebar-border border-x-0 border-b-0 before:hidden rounded-t-xl overflow-hidden !h-[80dvh] flex flex-col focus-visible:outline-none">
-            <div className="sr-only">
-              <DrawerTitle>Staff Details</DrawerTitle>
-            </div>
-            <TeamManagementSidepeek staff={selectedStaff} onClose={() => setSelectedStaff(null)} />
-          </DrawerContent>
-        </Drawer>
-      )}
+      <ConfirmSensitiveActionDialog
+        open={staffToDeactivate !== null}
+        onOpenChange={(open) => { if (!open) setStaffToDeactivate(null) }}
+        title={`Are you sure you want to deactivate “${staffToDeactivate?.name ?? "this staff account"}”?`}
+        description="This staff member will lose access to the clinic system until their account is reactivated."
+        confirmLabel="I understand, deactivate this account"
+        onConfirm={() => {
+          if (staffToDeactivate) void toggleStaffActive(staffToDeactivate, false)
+          setStaffToDeactivate(null)
+        }}
+      />
+
+      <Dialog open={staffAction !== null} onOpenChange={(open) => { if (!open) setStaffAction(null) }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{staffAction?.kind === "role" ? "Edit staff role" : "Reset staff password"}</DialogTitle>
+            <DialogDescription>{staffAction?.staff.name}</DialogDescription>
+          </DialogHeader>
+          {staffAction?.kind === "role" ? (
+            <div className="grid gap-2 py-2"><Label htmlFor="staff-role-edit">Role <span className="text-destructive">*</span></Label><Select value={actionRole} onValueChange={setActionRole}><SelectTrigger id="staff-role-edit" className="h-9"><SelectValue placeholder="Select role" /></SelectTrigger><SelectContent><SelectItem value="Nurse">Nurse</SelectItem><SelectItem value="Midwife">Midwife</SelectItem><SelectItem value="Admin">Admin</SelectItem></SelectContent></Select></div>
+          ) : (
+            <div className="grid gap-2 py-2"><Label htmlFor="staff-new-password">New Password <span className="text-destructive">*</span></Label><Input id="staff-new-password" type="password" autoComplete="new-password" value={newPassword} onChange={(event) => setNewPassword(event.target.value)} placeholder="At least 6 characters" aria-invalid={newPassword.length > 0 && newPassword.length < 6} /><p className="text-xs text-muted-foreground">The password must contain at least 6 characters.</p></div>
+          )}
+          <DialogFooter className="gap-2 sm:justify-end"><Button variant="outline" onClick={() => setStaffAction(null)}>Cancel</Button><Button disabled={savingAction || (staffAction?.kind === "password" && newPassword.trim().length < 6)} onClick={() => void submitStaffAction()}>{savingAction ? "Saving…" : staffAction?.kind === "role" ? "Save Role" : "Reset Password"}</Button></DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -2,7 +2,19 @@
   "mcpServers": {
     "shadcn": {
       "command": "npx",
-      "args": ["-y", "shadcn@latest", "mcp", "start"]
+      "args": ["shadcn@latest", "mcp"]
+    },
+    "puppeteer": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    },
+    "lucide-icons": {
+      "command": "npx",
+      "args": ["-y", "lucide-icons-mcp"]
+    },
+    "fetch": {
+      "command": "npx",
+      "args": ["-y", "mcp-fetch-server"]
     }
   }
 }

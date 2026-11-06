@@ -4,14 +4,75 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
 import { format } from "date-fns"
-import { X, Calendar as CalendarIcon } from "lucide-react"
+import { Calendar as CalendarIcon } from "lucide-react"
+import { toast } from "sonner"
+import type { DateRange } from "react-day-picker"
+import type { AppEvent } from "./types"
 
-export function ExportCalendarModal({ children }: { children: React.ReactNode }) {
-  const [dateRange, setDateRange] = React.useState<any>()
+export function ExportCalendarModal({ children, events = [], viewDate = new Date(), view = "month" }: { children: React.ReactNode; events?: AppEvent[]; viewDate?: Date; view?: string }) {
+  const [dateRange, setDateRange] = React.useState<DateRange | undefined>()
+  const [fileFormat, setFileFormat] = React.useState("pdf")
+  const [rangeType, setRangeType] = React.useState("current")
+
+  const exportEvents = () => {
+    let filtered = events.filter((event) => event.start)
+    if (rangeType === "current") {
+      filtered = filtered.filter((event) => view === "week"
+        ? event.start! >= new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() - ((viewDate.getDay() + 6) % 7)) && event.start! < new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() - ((viewDate.getDay() + 6) % 7) + 5)
+        : event.start!.getMonth() === viewDate.getMonth() && event.start!.getFullYear() === viewDate.getFullYear())
+    } else if (rangeType === "next30") {
+      const now = new Date()
+      const end = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
+      filtered = filtered.filter((event) => event.start! >= now && event.start! <= end)
+    } else if (rangeType === "custom" && dateRange?.from) {
+      const from = new Date(dateRange.from)
+      const to = dateRange.to ? new Date(dateRange.to) : new Date(dateRange.from)
+      to.setHours(23, 59, 59, 999)
+      filtered = filtered.filter((event) => event.start! >= from && event.start! <= to)
+    }
+    const rows = filtered.map((event) => ({
+      mother: event.patient || event.title || "",
+      date: event.start ? format(event.start, "yyyy-MM-dd") : "",
+      time: event.start ? format(event.start, "h:mm a") : "",
+      appointmentType: event.appointmentType || "",
+      status: event.status || "",
+      facility: event.venue || "",
+    }))
+    const fileBase = `appointments-${format(viewDate, "yyyy-MM-dd")}`
+    if (fileFormat === "json") {
+      downloadFile(JSON.stringify(rows, null, 2), `${fileBase}.json`, "application/json;charset=utf-8")
+      toast.success(`Exported ${rows.length} appointments`)
+      return
+    }
+    if (fileFormat === "csv") {
+      const columns = ["Mother", "Date", "Time", "Appointment Type", "Status", "Facility"]
+      const csv = [columns, ...rows.map((row) => [row.mother, row.date, row.time, row.appointmentType, row.status, row.facility])]
+        .map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n")
+      downloadFile(`\uFEFF${csv}`, `${fileBase}.csv`, "text/csv;charset=utf-8")
+      toast.success(`Exported ${rows.length} appointments`)
+      return
+    }
+    const printWindow = window.open("", "_blank")
+    if (!printWindow) { toast.error("Allow pop-ups to print the appointment schedule"); return }
+    const bodyRows = rows.map((row) => `<tr><td>${escapeHtml(row.mother)}</td><td>${escapeHtml(row.date)}</td><td>${escapeHtml(row.time)}</td><td>${escapeHtml(row.appointmentType)}</td><td>${escapeHtml(row.status)}</td><td>${escapeHtml(row.facility)}</td></tr>`).join("")
+    printWindow.document.write(`<!doctype html><html><head><title>Appointment Schedule</title><style>body{font:14px Arial,sans-serif;margin:32px;color:#111}h1{font-size:20px}table{border-collapse:collapse;width:100%}th,td{padding:8px;border-bottom:1px solid #ddd;text-align:left}th{background:#f3f4f6}</style></head><body><h1>Appointment Schedule</h1><p>${rows.length} appointments</p><table><thead><tr><th>Mother</th><th>Date</th><th>Time</th><th>Appointment type</th><th>Status</th><th>Facility</th></tr></thead><tbody>${bodyRows}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`)
+    printWindow.document.close()
+    toast.success(`Prepared ${rows.length} appointments for printing`)
+  }
+
+  const downloadFile = (content: string, name: string, mimeType: string) => {
+    const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
+    const anchor = document.createElement("a")
+    anchor.href = url
+    anchor.download = name
+    anchor.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character)
 
   return (
     <ResponsiveModal 
@@ -24,7 +85,7 @@ export function ExportCalendarModal({ children }: { children: React.ReactNode })
           {/* File Format */}
           <div className="flex flex-col gap-3">
             <h4 className="text-xs font-medium text-foreground dark:text-white">File Format</h4>
-            <RadioGroup defaultValue="pdf" className="gap-2.5">
+            <RadioGroup value={fileFormat} onValueChange={setFileFormat} className="gap-2.5">
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="pdf" id="format-pdf" className="border-sidebar-border data-[state=checked]:border-primary data-[state=checked]:text-primary dark:data-[state=checked]:border-white dark:data-[state=checked]:text-foreground dark:text-white h-3.5 w-3.5" />
                 <Label htmlFor="format-pdf" className="text-xs font-normal">
@@ -43,7 +104,7 @@ export function ExportCalendarModal({ children }: { children: React.ReactNode })
           {/* Date Range */}
           <div className="flex flex-col gap-3">
             <h4 className="text-xs font-medium text-foreground dark:text-white">Date Range</h4>
-            <RadioGroup defaultValue="current" className="gap-2.5">
+            <RadioGroup value={rangeType} onValueChange={setRangeType} className="gap-2.5">
               <div className="flex items-center space-x-2">
                 <RadioGroupItem value="current" id="range-current" className="border-sidebar-border data-[state=checked]:border-primary data-[state=checked]:text-primary dark:data-[state=checked]:border-white dark:data-[state=checked]:text-foreground dark:text-white h-3.5 w-3.5" />
                 <Label htmlFor="range-current" className="text-xs font-normal">
@@ -86,7 +147,6 @@ export function ExportCalendarModal({ children }: { children: React.ReactNode })
                   </PopoverTrigger>
                   <PopoverContent className="w-auto p-0" align="start">
                     <Calendar
-                      initialFocus
                       mode="range"
                       defaultMonth={dateRange?.from}
                       selected={dateRange}
@@ -125,7 +185,7 @@ export function ExportCalendarModal({ children }: { children: React.ReactNode })
               <div className="flex items-center space-x-2">
                 <Checkbox id="detail-title" className="border-sidebar-border data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground dark:data-[state=checked]:border-white dark:data-[state=checked]:bg-white dark:data-[state=checked]:text-black h-3.5 w-3.5 rounded-full" />
                 <Label htmlFor="detail-title" className="text-xs font-normal text-foreground dark:text-white">
-                  Campaign Title & Travel Time
+                  Appointment, Mother & Provider
                 </Label>
               </div>
               <div className="flex items-center space-x-2">
@@ -148,7 +208,7 @@ export function ExportCalendarModal({ children }: { children: React.ReactNode })
           <Button variant="secondary" className="flex-1 text-xs font-medium border-sidebar-border text-foreground hover:bg-accent dark:bg-[#1e1e1e] dark:hover:bg-[#1e1e1e]/80 dark:text-white h-8">
             Cancel
           </Button>
-          <Button className="flex-1 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 dark:bg-white dark:text-black dark:hover:bg-zinc-200 h-8">
+          <Button onClick={exportEvents} className="flex-1 text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 dark:bg-white dark:text-black dark:hover:bg-zinc-200 h-8">
             Export Calendar
           </Button>
         </div>
