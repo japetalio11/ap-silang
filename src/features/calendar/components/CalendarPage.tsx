@@ -125,7 +125,7 @@ export function CalendarPage() {
     return matches("Appointment Type", event.appointmentType) && matches("Status", event.status) && matches("Provider", event.provider)
   }), [events, filters])
 
-  const handleCreateAppointment = async (_event: AppEvent, values: AppointmentFormValues) => {
+  const handleCreateAppointment = async (event: AppEvent, values: AppointmentFormValues) => {
     if (!session?.token) throw new Error("Your session has expired. Sign in again to schedule an appointment.")
     const response = await createAppointment(session.token, {
       mother_id: values.motherId,
@@ -133,11 +133,13 @@ export function CalendarPage() {
       appointment_time: values.time,
       appointment_type: values.appointmentType,
     })
-    const createdEvent = {
+    const createdFromApi = response.data ? appointmentToEvent(response.data) : null
+    const createdEvent: AppEvent = {
       ...event,
-      ...appointmentToEvent(response.data),
-      patient: event.patient,
-      title: event.title,
+      ...(createdFromApi ?? {}),
+      id: createdFromApi?.id ?? event.id,
+      patient: event.patient ?? createdFromApi?.patient,
+      title: event.title ?? createdFromApi?.title,
       motherId: values.motherId,
     }
     setEvents((current) => [...current.filter((item) => item.id !== createdEvent.id), createdEvent])
