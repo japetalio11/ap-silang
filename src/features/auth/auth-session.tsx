@@ -23,13 +23,13 @@ export type AuthFacility = {
 
 type AuthSession = { token: string; user: AuthUser; facility?: AuthFacility }
 type LoginWorkspace = "admin" | "staff"
-type LoginCredentials = { identifier: string; password: string; rememberMe: boolean; workspace: LoginWorkspace }
+type LoginCredentials = { identifier: string; password: string; rememberMe: boolean; workspace?: LoginWorkspace }
 
 type AuthSessionContextValue = {
   session: AuthSession | null
   isAuthenticated: boolean
   login: (credentials: LoginCredentials) => Promise<void>
-  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace: LoginWorkspace) => Promise<void>
+  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<void>
   logout: () => void
 }
 
@@ -54,10 +54,6 @@ function getStoredSession(): AuthSession | null {
     try {
       const session = JSON.parse(value) as AuthSession
       if (session.token && session.user?.user_id) {
-        // A previously authenticated staff member can reopen cached records
-        // while disconnected, even if the server token expired in the meantime.
-        // The expired token is never accepted for online requests; reconnecting
-        // asks the staff member to authenticate again before syncing.
         if (!isTokenExpired(session.token) || !navigator.onLine) return session
       }
       storage.removeItem(SESSION_KEY)
@@ -176,20 +172,22 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("online", warm)
   }, [session?.token, session?.user.user_id, session?.user.facility_id])
 
-  const completeLogin = useCallback((response: { token: string; user: AuthUser }, rememberMe: boolean, workspace: LoginWorkspace) => {
+  const completeLogin = useCallback((response: { token: string; user: AuthUser }, rememberMe: boolean, workspace?: LoginWorkspace) => {
     if (!response?.token || !response.user?.user_id) {
       throw new Error("The server returned an incomplete sign-in response.")
     }
 
-    const adminRoles = new Set(["Admin", "SystemAdmin"])
-    const isAdmin = adminRoles.has(response.user.role)
     if (response.user.role === "Mother") {
       throw new Error("This account uses the patient portal and cannot open the staff workspace.")
     }
-    if ((workspace === "admin") !== isAdmin) {
-      throw new Error(isAdmin
-        ? "This account belongs to the Administrator workspace. Select Administrator and try again."
-        : "This account belongs to the Health worker workspace. Select Health worker and try again.")
+    if (workspace) {
+      const adminRoles = new Set(["Admin", "SystemAdmin"])
+      const isAdmin = adminRoles.has(response.user.role)
+      if ((workspace === "admin") !== isAdmin) {
+        throw new Error(isAdmin
+          ? "This account belongs to the Administrator workspace. Select Administrator and try again."
+          : "This account belongs to the Health worker workspace. Select Health worker and try again.")
+      }
     }
 
     const nextSession = { token: response.token, user: response.user }
@@ -207,7 +205,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     completeLogin(response, rememberMe, workspace)
   }, [completeLogin])
 
-  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace: LoginWorkspace) => {
+  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/google", {
       method: "POST",
       body: JSON.stringify({ accessToken }),
@@ -220,7 +218,6 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>
 }
 
-// This hook intentionally shares the auth context module with its provider.
 // eslint-disable-next-line react-refresh/only-export-components
 export function useAuthSession() {
   const context = useContext(AuthSessionContext)

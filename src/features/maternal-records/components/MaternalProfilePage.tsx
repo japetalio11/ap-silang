@@ -555,7 +555,7 @@ export function MaternalProfilePage() {
   }
 
   const handleSaveLabRecord = async (values: LaboratoryFormValues) => {
-    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    if (!session?.token || !maternalRecord) throw new Error("Your session has expired or patient record is missing.")
     const fileUrls = values.files.length
       ? await Promise.all(values.files.map(async (file) => (await uploadMaternalLabFile(session.token, file)).file_url))
       : [undefined]
@@ -565,7 +565,7 @@ export function MaternalProfilePage() {
         pregnancy_id: values.pregnancyId,
         visit_id: values.visitId || undefined,
         screening_type: values.screeningType,
-        date_of_screening: values.screeningDate,
+        date_of_screening: values.screeningDate ? new Date(values.screeningDate).toISOString() : new Date().toISOString(),
         result: values.result || undefined,
         remarks: values.remarks || undefined,
         file_url: fileUrl,
