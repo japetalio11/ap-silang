@@ -1,5 +1,31 @@
 import { apiRequest } from "@/lib/api"
 
+export type MaternalPrenatalVisit = {
+  visit_id?: string
+  pregnancy_id?: string
+  visit_date?: string | null
+  visit_number?: number | null
+  trimester?: number | null
+  age_of_gestation_weeks?: number | null
+  risk_level_assessed?: string | null
+  tews_score?: number | null
+  bp_systolic?: number | null
+  bp_diastolic?: number | null
+  weight_kg?: number | string | null
+  temperature_celsius?: number | string | null
+  pulse_rate_bpm?: number | null
+  fundic_height_cm?: number | string | null
+  fetal_heart_tone_bpm?: number | null
+  fetal_presentation?: string | null
+  chief_complaint?: string | null
+  danger_signs_observed?: string | null
+  has_vaginal_bleeding?: boolean
+  has_pallor?: boolean
+  has_edema?: boolean
+  has_fever?: boolean
+  healthWorker?: { first_name?: string; last_name?: string; role?: string }
+}
+
 export type MaternalPregnancy = {
   pregnancy_id: string
   lmp_date?: string | null
@@ -11,27 +37,7 @@ export type MaternalPregnancy = {
   height_cm?: number | string | null
   bmi_1st_trimester?: number | string | null
   bmi_category?: string | null
-  prenatalVisits?: Array<{
-    visit_id?: string
-    pregnancy_id?: string
-    visit_date?: string | null
-    visit_number?: number | null
-    trimester?: number | null
-    age_of_gestation_weeks?: number | null
-    risk_level_assessed?: string | null
-    tews_score?: number | null
-    bp_systolic?: number | null
-    bp_diastolic?: number | null
-    weight_kg?: number | string | null
-    temperature_celsius?: number | string | null
-    pulse_rate_bpm?: number | null
-    fundic_height_cm?: number | string | null
-    fetal_heart_tone_bpm?: number | null
-    fetal_presentation?: string | null
-    chief_complaint?: string | null
-    danger_signs_observed?: string | null
-    healthWorker?: { first_name?: string; last_name?: string }
-  }>
+  prenatalVisits?: MaternalPrenatalVisit[]
   labScreenings?: Array<MaternalLabRecord>
   deliveryOutcomes?: Array<MaternalDelivery>
 }
@@ -257,9 +263,6 @@ export async function getMaternalProfile(token: string, motherId: string) {
     result = latest.serverRecord ?? latest.baseRecord
   }
 
-  // The shared API layer returns stale cached responses as successful reads.
-  // Overlay the local outbox in both offline and online mode so edits remain
-  // visible after route changes or a browser refresh before they sync.
   const { getPendingMotherUpdates } = await import("@/features/dashboard/offline-maternal-sync")
   const queued = (await getPendingMotherUpdates()).filter((item) => item.motherId === motherId)
   result = queued.reduce((current, item) => applyMotherProfileChanges(current, item.changes), result)
