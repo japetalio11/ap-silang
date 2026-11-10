@@ -233,7 +233,7 @@ export function MaternalRecordsPage() {
         throw new Error(`The maternal profile was created, but its pregnancy details could not be saved: ${error instanceof Error ? error.message : "Please try again."}`, { cause: error })
       }
     }
-    toast.success(response.already_exists ? "Mother added to this facility" : "Maternal record created")
+    toast.success(response.already_exists ? "Mother added to this facility" : response.offline ? "Maternal record saved offline" : "Maternal record created")
     await loadRecords()
   }
 
@@ -457,7 +457,14 @@ export function MaternalRecordsPage() {
                         <Checkbox aria-label={`Select ${name}`} checked={selected} onCheckedChange={(checked) => setSelectedMotherIds((current) => checked === true ? [...current, record.mother_id] : current.filter((id) => id !== record.mother_id))} className="border-sidebar-border" />
                       </TableCell>
                       <TableCell>
-                        <span className="font-medium text-foreground">{name}</span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-medium text-foreground">{name}</span>
+                          {(record.sync_status === "pending_create" || record.mother_id.startsWith("temp-")) && (
+                            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                              Offline
+                            </span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>{latestPregnancy ? `G${latestPregnancy.gravida ?? "—"} P${latestPregnancy.parity ?? "—"}` : "—"}</TableCell>
                       <TableCell>

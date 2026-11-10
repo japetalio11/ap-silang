@@ -53,8 +53,38 @@ export function AuthForm() {
   const [rememberMe, setRememberMe] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isGoogleReady, setIsGoogleReady] = useState(false)
+  const [offlinePin, setOfflinePin] = useState("")
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine)
   const navigate = useNavigate()
-  const { login, loginWithGoogle, isAuthenticated } = useAuthSession()
+  const { login, loginWithGoogle, unlockOffline, isAuthenticated } = useAuthSession()
+  const savedOfflineUserStr = typeof window !== "undefined" ? window.localStorage.getItem("silang.auth.offline-user") : null
+  const savedOfflineUser = savedOfflineUserStr ? JSON.parse(savedOfflineUserStr) : null
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
+
+  const handleOfflineUnlock = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!offlinePin) {
+      toast.error("Enter your 4-digit PIN")
+      return
+    }
+    const success = unlockOffline(offlinePin)
+    if (success) {
+      toast.success("Offline workspace unlocked")
+      navigate("/dashboard", { replace: true })
+    } else {
+      toast.error("Invalid PIN for this device")
+    }
+  }
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { identifier: "", password: "" },
@@ -155,6 +185,31 @@ export function AuthForm() {
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Welcome to Silang</h1>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Sign in to access your community health workspace.</p>
             </header>
+
+            {isOffline && savedOfflineUser && (
+              <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                <div className="font-semibold text-amber-800 dark:text-amber-200">
+                  Offline Mode Active
+                </div>
+                <p className="mt-0.5 text-muted-foreground">
+                  Logged on as {savedOfflineUser.first_name} {savedOfflineUser.last_name}. Enter your 4-digit PIN to access local workspace:
+                </p>
+                <form onSubmit={handleOfflineUnlock} className="mt-2 flex gap-2">
+                  <Input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    placeholder="4-digit PIN"
+                    value={offlinePin}
+                    onChange={(e) => setOfflinePin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className="h-8 bg-background text-xs"
+                  />
+                  <Button type="submit" size="sm" className="h-8 shrink-0 text-xs">
+                    Unlock
+                  </Button>
+                </form>
+              </div>
+            )}
 
             <Button type="button" variant="outline" disabled={!isGoogleReady || isSubmitting} onClick={handleGoogleSignIn} className="mb-3 h-9 w-full gap-2 border-border bg-white text-xs text-foreground dark:bg-card hover:bg-muted/40">
               <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4">

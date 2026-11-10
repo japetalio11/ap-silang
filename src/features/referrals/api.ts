@@ -1,4 +1,6 @@
 import { apiRequest } from "@/lib/api"
+import { db, type LocalReferral } from "@/lib/db/silangDatabase"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 
 export function getReferralGatewayLink(referralId: string) {
   const route = `/referral/${encodeURIComponent(referralId)}`
@@ -168,22 +170,146 @@ export const clarifyPublicReferral = (identifier: string, input: { pin: string; 
     body: JSON.stringify(input),
   })
 
-export const getReferrals = (token: string) =>
-  apiRequest<{ data?: ReferralApiRecord[]; message?: string }>("/referral/getAll", { token })
+export const getReferrals = async (token: string): Promise<{ data?: ReferralApiRecord[]; message?: string }> => {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const local = await db.referrals.toArray().catch(() => [])
+    if (local.length > 0) {
+      return { data: local as any }
+    }
+  }
+
+  try {
+    const res = await apiRequest<{ data?: ReferralApiRecord[]; message?: string }>("/referral/getAll", { token })
+    if (Array.isArray(res.data)) {
+      for (const r of res.data) {
+        await db.referrals.put({
+          ...r,
+          id: r.referral_id,
+          sync_status: "synced",
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+    }
+    const pending = await db.referrals.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
+    const onlineIds = new Set((res.data || []).map((r) => r.referral_id))
+    const uniquePending = pending.filter((r) => !onlineIds.has(r.referral_id))
+    return { data: [...uniquePending, ...(res.data || [])] as ReferralApiRecord[] }
+  } catch (error) {
+    const local = await db.referrals.toArray().catch(() => [])
+    if (local.length > 0) {
+      return { data: local as any }
+    }
+    throw error
+  }
+}
 
 export const getReferralFacilities = () =>
   apiRequest<{ result?: ReferralFacility[] }>("/facility/public-list")
 
-export const createReferral = (token: string, input: CreateReferralInput) =>
-  apiRequest<{ data?: ReferralApiRecord; message?: string }>("/referral/register", {
-    method: "POST",
-    token,
-    body: JSON.stringify(input),
-  })
+export const createReferral = async (token: string, input: CreateReferralInput): Promise<{ data?: ReferralApiRecord; message?: string; offline?: boolean }> => {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine
 
-export const updateReferralStatus = (token: string, referral: ReferralApiRecord, status: string) =>
-  apiRequest<{ data?: ReferralApiRecord; message?: string }>(`/referral/respond/${encodeURIComponent(referral.referral_id)}`, {
+  if (isOffline) {
+    const tempId = `temp-ref-${crypto.randomUUID()}`
+    const localRef: LocalReferral = {
+      id: tempId,
+      referral_id: tempId,
+      mother_id: input.mother_id,
+      pregnancy_id: input.pregnancy_id,
+      from_facility_id: input.from_facility_id,
+      to_facility_id: input.to_facility_id,
+      reason: input.reason,
+      status: "Pending",
+      date_referred: new Date().toISOString(),
+      is_completed: false,
+      sync_status: "pending_create",
+      updated_at: Date.now(),
+    }
+    await db.referrals.put(localRef)
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "referral",
+      action: "CREATE",
+      endpoint: "/referral/register",
+      method: "POST",
+      payload: input,
+      temp_id: tempId,
+    })
+    return { message: "Referral saved offline", data: localRef as any, offline: true }
+  }
+
+  try {
+    const res = await apiRequest<{ data?: ReferralApiRecord; message?: string }>("/referral/register", {
+      method: "POST",
+      token,
+      body: JSON.stringify(input),
+    })
+    if (res.data) {
+      await db.referrals.put({
+        ...res.data,
+        id: res.data.referral_id,
+        sync_status: "synced",
+        updated_at: Date.now(),
+      }).catch(() => {})
+    }
+    return res
+  } catch (error: any) {
+    if (error instanceof TypeError || !navigator.onLine) {
+      const tempId = `temp-ref-${crypto.randomUUID()}`
+      const localRef: LocalReferral = {
+        id: tempId,
+        referral_id: tempId,
+        mother_id: input.mother_id,
+        pregnancy_id: input.pregnancy_id,
+        from_facility_id: input.from_facility_id,
+        to_facility_id: input.to_facility_id,
+        reason: input.reason,
+        status: "Pending",
+        date_referred: new Date().toISOString(),
+        is_completed: false,
+        sync_status: "pending_create",
+        updated_at: Date.now(),
+      }
+      await db.referrals.put(localRef)
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "referral",
+        action: "CREATE",
+        endpoint: "/referral/register",
+        method: "POST",
+        payload: input,
+        temp_id: tempId,
+      })
+      return { message: "Referral saved offline", data: localRef as any, offline: true }
+    }
+    throw error
+  }
+}
+
+export const updateReferralStatus = async (token: string, referral: ReferralApiRecord, status: string) => {
+  await db.referrals.update(referral.referral_id, {
+    status,
+    is_completed: ["completed", "cancelled", "rejected"].includes(status.toLowerCase()),
+    sync_status: "pending_update",
+    updated_at: Date.now(),
+  }).catch(() => {})
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "referral",
+      action: "UPDATE",
+      endpoint: `/referral/respond/${encodeURIComponent(referral.referral_id)}`,
+      method: "PUT",
+      payload: { status, is_completed: ["completed", "cancelled", "rejected"].includes(status.toLowerCase()), version: referral.version ?? 1 },
+      temp_id: referral.referral_id,
+    })
+    return { message: "Referral status updated offline" }
+  }
+
+  return apiRequest<{ data?: ReferralApiRecord; message?: string }>(`/referral/respond/${encodeURIComponent(referral.referral_id)}`, {
     method: "PUT",
     token,
     body: JSON.stringify({ status, is_completed: ["completed", "cancelled", "rejected"].includes(status.toLowerCase()), version: referral.version ?? 1 }),
   })
+}

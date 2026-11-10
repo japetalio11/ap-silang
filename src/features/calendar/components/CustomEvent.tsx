@@ -27,7 +27,7 @@ export function CustomEvent({ event, onClick, compact = false }: {
   if (event.type === "availability") {
     return (
       <div onClick={(e) => { e.stopPropagation(); onClick?.(event) }} className="mt-1 flex w-full justify-end pr-1">
-        <StatusBadge status={event.title} className={`cursor-pointer ${isMobile ? "px-3 py-1.5" : "px-2 py-1 text-xs"}`} />
+        <StatusBadge status={String(event.title ?? "")} className={`cursor-pointer ${isMobile ? "px-3 py-1.5" : "px-2 py-1 text-xs"}`} />
       </div>
     )
   }

@@ -302,7 +302,7 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
                   </Tabs>
                   {destinationType === "in-system" && (
                     <Field id="network-facility" label="Receiving Facility" required error={errors.destinationFacilityId}>
-                      <Select modal={false} value={destinationFacilityId} onValueChange={(value) => { setDestinationFacilityId(value); setErrors((current) => ({ ...current, destinationFacilityId: "" })) }}>
+                      <Select value={destinationFacilityId} onValueChange={(value) => { setDestinationFacilityId(value); setErrors((current) => ({ ...current, destinationFacilityId: "" })) }}>
                         <SelectTrigger id="network-facility" className="w-full">
                           <SelectValue placeholder="Select facility" />
                         </SelectTrigger>

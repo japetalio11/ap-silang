@@ -77,12 +77,11 @@ export function CalendarPage() {
     const distanceX = touchStartPos.x - touchEndPos.x
     const distanceY = Math.abs(touchStartPos.y - touchEndPos.y)
     
-    // Check if it's a horizontal swipe (X distance > Y distance) and meets the minimum threshold
     if (Math.abs(distanceX) > distanceY && Math.abs(distanceX) > minSwipeDistance) {
       const isLeftSwipe = distanceX > minSwipeDistance
       const isRightSwipe = distanceX < -minSwipeDistance
 
-      const views = ["month", "week"]
+      const views = ["month", "week"] as const
       const currentIndex = views.indexOf(view)
 
       if (isLeftSwipe && currentIndex < views.length - 1) {
@@ -94,7 +93,6 @@ export function CalendarPage() {
     }
   }
 
-  // Set default date to current date so it highlights today (e.g. Tue 30)
   const [viewDate, setViewDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(new Date())
 
@@ -251,7 +249,7 @@ export function CalendarPage() {
         <CustomToolbar
           date={viewDate}
           view={view}
-          onViewChange={setView}
+          onViewChange={(v) => setView(v as "month" | "week")}
           onNavigate={handleNavigate}
           onCreateAppointment={() => setIsCreateModalOpen(true)}
           filters={filters}

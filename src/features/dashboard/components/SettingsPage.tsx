@@ -16,7 +16,6 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { apiRequest } from "@/lib/api"
 import { toast } from "sonner"
 import { z } from "zod"
-import { Calendar } from "@/components/ui/calendar"
 import { getClosedDates, removeClosedDate, type ClosedDateRecord } from "@/features/calendar/closed-dates"
 
 import { AddDate } from "./add-date"

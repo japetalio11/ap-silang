@@ -4,6 +4,8 @@ import { requestPersistentStorage, warmOfflineData } from "@/lib/offline-prefetc
 import { toast } from "sonner"
 
 const SESSION_KEY = "silang.auth.session"
+const OFFLINE_SESSION_KEY = "silang.auth.offline-session"
+const OFFLINE_USER_KEY = "silang.auth.offline-user"
 
 export type AuthUser = {
   user_id: string
@@ -30,6 +32,7 @@ type AuthSessionContextValue = {
   isAuthenticated: boolean
   login: (credentials: LoginCredentials) => Promise<void>
   loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<void>
+  unlockOffline: (pin: string) => boolean
   logout: () => void
 }
 
@@ -54,12 +57,22 @@ function getStoredSession(): AuthSession | null {
     try {
       const session = JSON.parse(value) as AuthSession
       if (session.token && session.user?.user_id) {
-        if (!isTokenExpired(session.token) || !navigator.onLine) return session
+        if (!isTokenExpired(session.token) || !navigator.onLine) {
+          window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(session))
+          return session
+        }
       }
       storage.removeItem(SESSION_KEY)
     } catch {
       storage.removeItem(SESSION_KEY)
     }
+  }
+  const offlineSaved = window.localStorage.getItem(OFFLINE_SESSION_KEY)
+  if (offlineSaved && (!navigator.onLine || typeof navigator === "undefined")) {
+    try {
+      const session = JSON.parse(offlineSaved) as AuthSession
+      if (session.token && session.user?.user_id) return session
+    } catch {}
   }
   return null
 }
@@ -70,6 +83,7 @@ function clearStoredSession() {
 }
 
 function persistStoredSession(session: AuthSession) {
+  window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(session))
   for (const storage of [window.localStorage, window.sessionStorage]) {
     const saved = storage.getItem(SESSION_KEY)
     if (!saved) continue
@@ -192,9 +206,26 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
 
     const nextSession = { token: response.token, user: response.user }
     clearStoredSession()
+    window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(nextSession))
+    window.localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify(response.user))
     const storage = rememberMe ? window.localStorage : window.sessionStorage
     storage.setItem(SESSION_KEY, JSON.stringify(nextSession))
     setSession(nextSession)
+  }, [])
+
+  const unlockOffline = useCallback((pin: string): boolean => {
+    const offlineSaved = window.localStorage.getItem(OFFLINE_SESSION_KEY)
+    if (!offlineSaved) return false
+    try {
+      const parsed = JSON.parse(offlineSaved) as AuthSession
+      const savedPin = window.localStorage.getItem(`silang.offline-pin:${parsed.user.user_id}`)
+      if (savedPin && savedPin !== pin) return false
+      window.localStorage.setItem(SESSION_KEY, offlineSaved)
+      setSession(parsed)
+      return true
+    } catch {
+      return false
+    }
   }, [])
 
   const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials) => {
@@ -213,7 +244,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     completeLogin(response, rememberMe, workspace)
   }, [completeLogin])
 
-  const value = useMemo(() => ({ session, isAuthenticated: Boolean(session), login, loginWithGoogle, logout }), [session, login, loginWithGoogle, logout])
+  const value = useMemo(() => ({ session, isAuthenticated: Boolean(session), login, loginWithGoogle, unlockOffline, logout }), [session, login, loginWithGoogle, unlockOffline, logout])
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>
 }

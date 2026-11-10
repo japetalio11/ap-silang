@@ -1,6 +1,11 @@
 import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
 import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate, Navigate, type Location } from "react-router-dom"
+import { registerSW } from "virtual:pwa-register"
+import { requestPersistentStorage } from "@/lib/offline-prefetch"
+
+registerSW({ immediate: true })
+void requestPersistentStorage()
 
 import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider"

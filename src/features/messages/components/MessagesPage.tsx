@@ -984,7 +984,7 @@ export function MessagesPage() {
                     <Button
                       type="submit"
                       size="icon"
-                      disabled={(!draft.trim() && !attachment) || !selected.id}
+                      disabled={(!draft.trim() && !attachment) || !selected.id || isSending}
                       aria-label="Send message"
                       className="size-10 shrink-0"
                     >
