@@ -14,6 +14,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import type { AppEvent } from "./types"
 import { toast } from "sonner"
+import { format } from "date-fns"
+import { getClosedDates } from "../closed-dates"
 
 const appointmentTimes = Array.from({ length: 21 }, (_, index) => {
   const totalMinutes = 7 * 60 + index * 30
@@ -39,13 +41,14 @@ function Field({ id, label, required, children }: { id: string; label: string; r
 
 export type AppointmentMotherOption = { id: string; userId?: string; name: string; serial: string; age: string }
 
-export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMother, mothers = [], loadingMothers = false }: {
+export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMother, mothers = [], loadingMothers = false, facilityId }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (event: AppEvent, values: AppointmentFormValues) => Promise<AppEvent | void> | AppEvent | void
   initialMother?: AppointmentMotherOption
   mothers?: AppointmentMotherOption[]
   loadingMothers?: boolean
+  facilityId?: string | null
 }) {
   const [motherQuery, setMotherQuery] = useState("")
   const [selectedMotherId, setSelectedMotherId] = useState(initialMother?.id ?? "")
@@ -62,11 +65,21 @@ export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMo
     return mothers.filter((mother) => `${mother.name} ${mother.serial}`.toLowerCase().includes(query))
   }, [motherQuery, mothers])
 
-  const handleOpenChange = (nextOpen: boolean) => {
-    if (nextOpen) {
-    form.reset({ motherId: initialMother?.id ?? "", appointmentType: "Prenatal Checkup", date: "", time: "09:00" })
+  const resetFormState = () => {
+    form.reset({
+      motherId: initialMother?.id ?? "",
+      appointmentType: "Prenatal Checkup",
+      date: "",
+      time: "09:00",
+    })
+    form.clearErrors()
     setMotherQuery("")
     setSelectedMotherId(initialMother?.id ?? "")
+  }
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      resetFormState()
     }
     onOpenChange(nextOpen)
   }
@@ -84,6 +97,11 @@ export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMo
       form.setError("date", { message: "Enter a valid date." })
       return
     }
+    const closed = getClosedDates(facilityId).find((item) => item.date === values.date)
+    if (closed) {
+      form.setError("date", { message: `Facility is closed on this date (${closed.reason}). Please select another date.` })
+      return
+    }
     const event: AppEvent = {
       motherId: mother.id,
       title: mother.name,
@@ -98,6 +116,7 @@ export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMo
     try {
       const createdEvent = await onCreate(event, values)
       toast.success("Appointment scheduled")
+      resetFormState()
       onOpenChange(false)
       return createdEvent
     } catch (error) {
@@ -134,9 +153,37 @@ export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMo
             )} />}
             {initialMother && <div className="flex flex-col gap-2"><Field id="appointment-mother-fixed" label="Mother"><div id="appointment-mother-fixed" className="flex h-9 min-w-0 items-center rounded-md border border-input bg-background px-3 text-xs text-foreground"><span className="truncate">{initialMother.name}</span></div></Field></div>}
             <FormField control={form.control} name="appointmentType" render={({ field }) => <FormItem><Field id="appointment-type" label="Appointment Type" required><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger id="appointment-type" className="h-9 w-full text-xs"><SelectValue placeholder="Choose appointment type" /></SelectTrigger></FormControl><SelectContent position="popper" align="start" side="bottom" sideOffset={4} className="w-[var(--radix-select-trigger-width)]"><SelectItem value="Prenatal Checkup">Prenatal Checkup</SelectItem><SelectItem value="Postpartum Follow-up">Postpartum Follow-up</SelectItem><SelectItem value="High-Risk Consultation">High-Risk Consultation</SelectItem><SelectItem value="General Visit">General Visit</SelectItem></SelectContent></Select><FormMessage /></Field></FormItem>} />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <FormField control={form.control} name="date" render={({ field }) => <FormItem><Field id="appointment-date" label="Date" required><DateInput id="appointment-date" value={field.value} onChange={field.onChange} /></Field><FormMessage /></FormItem>} />
-              <FormField control={form.control} name="time" render={({ field }) => <FormItem><Field id="appointment-time" label="Time" required><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger id="appointment-time" className="h-8 w-full text-xs"><SelectValue placeholder="Choose time" /></SelectTrigger></FormControl><SelectContent position="popper" align="start" side="bottom" sideOffset={4} className="w-[var(--radix-select-trigger-width)]">{appointmentTimes.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></Field><FormMessage /></FormItem>} />
+            <div className="space-y-1">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="date"
+                  render={({ field }) => (
+                    <FormItem className="space-y-0">
+                      <Field id="appointment-date" label="Date" required>
+                        <DateInput
+                          id="appointment-date"
+                          value={field.value}
+                          onChange={(val) => {
+                            field.onChange(val)
+                            if (form.formState.errors.date) form.clearErrors("date")
+                          }}
+                          disabledDates={(day) => {
+                            const dateStr = format(day, "yyyy-MM-dd")
+                            return getClosedDates(facilityId).some((item) => item.date === dateStr)
+                          }}
+                        />
+                      </Field>
+                    </FormItem>
+                  )}
+                />
+                <FormField control={form.control} name="time" render={({ field }) => <FormItem className="space-y-0"><Field id="appointment-time" label="Time" required><Select value={field.value} onValueChange={field.onChange}><FormControl><SelectTrigger id="appointment-time" className="h-8 w-full text-xs"><SelectValue placeholder="Choose time" /></SelectTrigger></FormControl><SelectContent position="popper" align="start" side="bottom" sideOffset={4} className="w-[var(--radix-select-trigger-width)]">{appointmentTimes.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent></Select></Field><FormMessage /></FormItem>} />
+              </div>
+              {form.formState.errors.date && (
+                <div className="rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-[11px] font-medium text-destructive">
+                  {form.formState.errors.date.message}
+                </div>
+              )}
             </div>
             <DialogFooter className="flex-row justify-between gap-3 pt-3 sm:justify-between">
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="h-8 flex-1 text-xs sm:min-w-24 sm:flex-initial">Cancel</Button>

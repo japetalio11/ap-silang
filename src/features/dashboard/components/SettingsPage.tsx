@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react"
-import { Bell, Building2, UserRound, WifiOff, Upload, X } from "lucide-react"
+import { Bell, Building2, UserRound, WifiOff, Upload, X, Calendar as CalendarIcon, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -16,6 +16,10 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { apiRequest } from "@/lib/api"
 import { toast } from "sonner"
 import { z } from "zod"
+import { Calendar } from "@/components/ui/calendar"
+import { getClosedDates, removeClosedDate, type ClosedDateRecord } from "@/features/calendar/closed-dates"
+
+import { AddDate } from "./add-date"
 
 function SettingToggle({ title, description, defaultChecked = false }: { title: string; description: string; defaultChecked?: boolean }) {
   const key = `silang.settings.${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
@@ -53,6 +57,19 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
   const [passwordError, setPasswordError] = useState("")
   const [saving, setSaving] = useState(false)
   const [storageUsage, setStorageUsage] = useState({ used: 0, quota: 0 })
+  const [openAddDate, setOpenAddDate] = useState(false)
+  const [closedDates, setClosedDates] = useState<ClosedDateRecord[]>([])
+
+  const refreshClosedDates = useCallback(() => {
+    setClosedDates(getClosedDates(facilityId))
+  }, [facilityId])
+
+  useEffect(() => {
+    refreshClosedDates()
+    const handleUpdate = () => refreshClosedDates()
+    window.addEventListener("silang:closed-dates-updated", handleUpdate)
+    return () => window.removeEventListener("silang:closed-dates-updated", handleUpdate)
+  }, [refreshClosedDates])
 
   const loadSettings = useCallback(async () => {
     if (!token || !userId) return
@@ -153,6 +170,7 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
             { value: "facility", label: "Facility Profile", Icon: Building2 },
             { value: "offline", label: "Offline & Sync", Icon: WifiOff },
             { value: "notifications", label: "Notifications", Icon: Bell },
+            { value: "Calendar", label: "Calendar", Icon: CalendarIcon},
           ].map(({ value, label, Icon }) => (
             <button
               key={value}
@@ -278,8 +296,73 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
         </div>
       </TabsContent>
 
+      <TabsContent value="Calendar" className="mt-0 w-full space-y-4">
+        <Card className="rounded-md border-sidebar-border shadow-none ring-0">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>Facility Calendar</CardTitle>
+              <p className="text-xs text-muted-foreground">Manage clinic closed dates and scheduling exceptions.</p>
+            </div>
+            <Button size="sm" className="h-8 text-xs" onClick={() => setOpenAddDate(true)}>
+              Add Closed Date
+            </Button>
+          </CardHeader>
+
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-medium">
+              <span>Closed Dates & Exemptions</span>
+              <span className="text-muted-foreground font-normal">{closedDates.length} date{closedDates.length === 1 ? "" : "s"}</span>
+            </div>
+
+            {closedDates.length === 0 ? (
+              <div className="rounded-md border border-sidebar-border bg-muted/20 p-4 text-xs text-muted-foreground">
+                No closed dates configured.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {closedDates.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 rounded-md border border-sidebar-border bg-card p-3 transition-colors hover:bg-muted/10"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-8 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+                        <CalendarIcon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-foreground">{item.date}</p>
+                        <p className="text-[11px] text-muted-foreground">{item.reason}</p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        removeClosedDate(item.id, facilityId)
+                        toast.success(`Removed closed date ${item.date}`)
+                      }}
+                      aria-label={`Remove closed date ${item.date}`}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
       </div>
     </Tabs>
+    <AddDate
+      open={openAddDate}
+      onClose={() => setOpenAddDate(false)}
+      facilityId={facilityId}
+      onDateAdded={refreshClosedDates}
+    />
     </DialogContent>
   </Dialog>
 }

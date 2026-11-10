@@ -15,9 +15,9 @@ type DateInputProps = {
   placeholder?: string
   disableFuture?: boolean
   className?: string
+  disabledDates?: (date: Date) => boolean
 }
 
-/** Shared typed date input with the maternal DOB format and calendar picker. */
 export function DateInput({
   id,
   value,
@@ -25,6 +25,7 @@ export function DateInput({
   placeholder = "MM/DD/YYYY",
   disableFuture = false,
   className,
+  disabledDates,
 }: DateInputProps) {
   const [internalDate, setInternalDate] = useState("")
   const [inputValue, setInputValue] = useState("")
@@ -100,7 +101,11 @@ export function DateInput({
             mode="single"
             selected={selectedDate}
             onSelect={chooseDate}
-            disabled={disableFuture ? { after: new Date() } : undefined}
+            disabled={(day) => {
+              if (disableFuture && day > new Date()) return true
+              if (disabledDates && disabledDates(day)) return true
+              return false
+            }}
             captionLayout="dropdown"
             startMonth={new Date(1900, 0)}
             endMonth={disableFuture ? new Date() : addMonths(new Date(), 24)}
