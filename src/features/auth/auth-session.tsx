@@ -14,6 +14,8 @@ export type AuthUser = {
   last_name: string
   role: string
   facility_id: string | null
+  email?: string | null
+  phone_number?: string | null
 }
 
 export type AuthFacility = {
@@ -21,6 +23,9 @@ export type AuthFacility = {
   facility_name: string
   type: string
   facility_profile_url?: string | null
+  contact_number?: string | null
+  email?: string | null
+  address?: string | null
 }
 
 type AuthSession = { token: string; user: AuthUser; facility?: AuthFacility }
@@ -163,6 +168,9 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         if (!isCurrent || !result?.facility_id) return
         const nextSession = { ...session, facility: result }
         persistStoredSession(nextSession)
+        try {
+          window.localStorage.setItem("silang.facility.profile", JSON.stringify(result))
+        } catch {}
         setSession((current) => current?.token === session.token ? nextSession : current)
       })
       .catch(() => {

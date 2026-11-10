@@ -9,6 +9,7 @@ import {
 import {
   CheckCheck,
   ChevronDown,
+  CloudOff,
   FileText,
   Image,
   Link2,
@@ -73,7 +74,7 @@ type ChatMessage = {
   time: string
   isRead?: boolean
   kind?: string
-  status?: "sending" | "sent" | "failed"
+  status?: "sending" | "sent" | "failed" | "offline"
 }
 
 type MessagePayload = MessageRecord & {
@@ -96,12 +97,14 @@ function toChatMessage(
   message: MessagePayload,
   currentUserId: string
 ): ChatMessage {
+  const isOffline = message.message_id.startsWith("temp-") || (message as any).sync_status === "pending_create"
   return {
     id: message.message_id,
     from: message.sender_id === currentUserId ? "staff" : "mother",
     text: message.message_content ?? "",
     time: formatMessageTime(message.message_date),
     kind: message.message_type?.toLowerCase() ?? "text",
+    status: isOffline ? "offline" : undefined,
   }
 }
 
@@ -300,7 +303,8 @@ export function MessagesPage() {
         for (const [id, msgs] of Object.entries(current)) {
           const pending = msgs.filter(
             (msg) =>
-              msg.status === "sending" && inFlightMessagesRef.current.has(msg.id)
+              (msg.status === "sending" && inFlightMessagesRef.current.has(msg.id)) ||
+              msg.status === "offline"
           )
           if (pending.length > 0) {
             const existingIds = new Set((merged[id] ?? []).map((m) => m.id))
@@ -502,6 +506,7 @@ export function MessagesPage() {
         inFlightMessagesRef.current.delete(tempTextId)
         const serverMsg = res.data
         if (serverMsg?.message_id) {
+          const isOfflineMsg = res.offline || serverMsg.message_id.startsWith("temp-")
           setThreads((current) => ({
             ...current,
             [targetId]: (current[targetId] ?? []).map((msg) =>
@@ -509,7 +514,7 @@ export function MessagesPage() {
                 ? {
                     ...msg,
                     id: serverMsg.message_id,
-                    status: "sent",
+                    status: isOfflineMsg ? "offline" : "sent",
                     time: formatMessageTime(
                       serverMsg.message_date || new Date().toISOString()
                     ),
@@ -535,6 +540,7 @@ export function MessagesPage() {
         inFlightMessagesRef.current.delete(tempAttachmentId)
         const serverMsg = res.data
         if (serverMsg?.message_id) {
+          const isOfflineMsg = res.offline || serverMsg.message_id.startsWith("temp-")
           setThreads((current) => ({
             ...current,
             [targetId]: (current[targetId] ?? []).map((msg) =>
@@ -543,7 +549,7 @@ export function MessagesPage() {
                     ...msg,
                     id: serverMsg.message_id,
                     text: fileUrl,
-                    status: "sent",
+                    status: isOfflineMsg ? "offline" : "sent",
                     time: formatMessageTime(
                       serverMsg.message_date || new Date().toISOString()
                     ),
@@ -880,6 +886,12 @@ export function MessagesPage() {
                                 <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
                                   <Loader2 className="size-3 animate-spin" />
                                   <span>Sending...</span>
+                                </span>
+                              )}
+                              {message.status === "offline" && (
+                                <span className="flex items-center gap-1 text-[11px] font-medium text-amber-500">
+                                  <CloudOff className="size-3" />
+                                  <span>Offline (Queued)</span>
                                 </span>
                               )}
                               {message.status === "failed" && (

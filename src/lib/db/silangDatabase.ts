@@ -200,6 +200,31 @@ export interface LocalDeliveryOutcome {
   [key: string]: any
 }
 
+export interface LocalStaff {
+  id: string
+  user_id: string
+  facility_id?: string | null
+  first_name: string
+  middle_name?: string | null
+  last_name: string
+  role: string
+  phone_number?: string | null
+  email?: string | null
+  profile_url?: string | null
+  is_active: boolean
+  sync_status: SyncStatus
+  updated_at: number
+  [key: string]: any
+}
+
+export interface IdMapping {
+  temp_id: string
+  canonical_id: string
+  canonical_user_id?: string
+  entity_type: string
+  created_at: number
+}
+
 export interface LocalBlob {
   id: string
   data: Blob
@@ -220,6 +245,9 @@ export interface OfflineQueueItem {
     | "referral"
     | "message"
     | "delivery_outcome"
+    | "staff"
+    | "user_profile"
+    | "facility"
   action: "CREATE" | "UPDATE" | "DELETE"
   endpoint: string
   method: "POST" | "PUT" | "DELETE"
@@ -258,6 +286,8 @@ export class SilangDatabase extends Dexie {
   referrals!: Table<LocalReferral, string>
   messages!: Table<LocalMessage, string>
   deliveryOutcomes!: Table<LocalDeliveryOutcome, string>
+  staff!: Table<LocalStaff, string>
+  idMappings!: Table<IdMapping, string>
   offlineQueue!: Table<OfflineQueueItem, number>
   blobs!: Table<LocalBlob, string>
   conflicts!: Table<SyncConflict, number>
@@ -274,6 +304,8 @@ export class SilangDatabase extends Dexie {
       referrals: "id, referral_id, mother_id, pregnancy_id, from_facility_id, to_facility_id, status, sync_status, updated_at",
       messages: "id, message_id, sender_id, receiver_id, message_date, is_read, sync_status, updated_at",
       deliveryOutcomes: "id, delivery_id, pregnancy_id, mother_id, sync_status, updated_at",
+      staff: "id, user_id, facility_id, role, is_active, sync_status, updated_at",
+      idMappings: "temp_id, canonical_id, entity_type, created_at",
       offlineQueue: "++id, client_mutation_id, entity_type, action, status, created_at, retry_count",
       blobs: "id",
       conflicts: "++id, conflict_id, entity_type, entity_id, status, detected_at",

@@ -48,6 +48,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
+import { db } from "@/lib/db/silangDatabase"
 import { CreateAppointmentModal, type AppointmentMotherOption } from "@/features/calendar/components/CreateAppointmentModal"
 import type { AppointmentFormValues } from "@/features/calendar/components/CreateAppointmentModal"
 import { createAppointment } from "@/features/calendar/api"
@@ -138,10 +139,12 @@ function classifyBp(systolic?: number | null, diastolic?: number | null) {
 
 function getAttachmentName(fileUrl?: string | null, fallback = "EHR record") {
   if (!fileUrl) return fallback
+  if (fileUrl.startsWith("blob-")) return fallback
   try {
     const pathname = new URL(fileUrl, window.location.origin).pathname
     const name = decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) ?? "")
-    return name || fallback
+    if (!name || name.startsWith("blob-")) return fallback
+    return name
   } catch {
     return fallback
   }
@@ -158,12 +161,33 @@ function resolveAttachmentUrl(fileUrl?: string | null) {
 
 function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | null; onClose: () => void }) {
   const [zoom, setZoom] = useState(100)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [blobInfo, setBlobInfo] = useState<{ mimeType?: string; filename?: string } | null>(null)
   const fileUrl = record?.file_url
-  const fileName = getAttachmentName(fileUrl, record?.screening_type || "EHR record")
-  const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
-  const isImage = ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
-  const isPdf = extension === "pdf"
-  const previewUrl = resolveAttachmentUrl(fileUrl)
+
+  useEffect(() => {
+    let active = true
+    let createdUrl: string | null = null
+
+    if (fileUrl && fileUrl.startsWith("blob-")) {
+      db.blobs.get(fileUrl).then((localBlob) => {
+        if (!active || !localBlob) return
+        createdUrl = URL.createObjectURL(localBlob.data)
+        setBlobUrl(createdUrl)
+        setBlobInfo({ mimeType: localBlob.mime_type, filename: localBlob.filename })
+      }).catch(() => {})
+    } else {
+      setBlobUrl(null)
+      setBlobInfo(null)
+    }
+
+    return () => {
+      active = false
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl)
+      }
+    }
+  }, [fileUrl])
 
   useEffect(() => {
     if (!record) return
@@ -175,6 +199,14 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
   }, [record, onClose])
 
   if (!record || !fileUrl) return null
+
+  const rawFileName = blobInfo?.filename || (record as any)?.file_name || getAttachmentName(fileUrl, record?.screening_type || "EHR record")
+  const fileName = rawFileName.startsWith("blob-") ? (record?.screening_type || "EHR Record") : rawFileName
+  const mime = blobInfo?.mimeType?.toLowerCase() || ""
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
+  const isImage = mime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
+  const isPdf = mime.includes("pdf") || extension === "pdf"
+  const previewUrl = blobUrl || resolveAttachmentUrl(fileUrl)
 
   return (
     <div className="fixed inset-0 z-[100] bg-background/95 text-foreground" role="presentation" onClick={onClose}>
@@ -575,10 +607,10 @@ export function MaternalProfilePage() {
 
   const handleSaveLabRecord = async (values: LaboratoryFormValues) => {
     if (!session?.token || !maternalRecord) throw new Error("Your session has expired or patient record is missing.")
-    const fileUrls = values.files.length
-      ? await Promise.all(values.files.map(async (file) => (await uploadMaternalLabFile(session.token, file)).file_url))
-      : [undefined]
-    for (const fileUrl of fileUrls) {
+    const uploadedFiles = values.files.length
+      ? await Promise.all(values.files.map(async (file) => uploadMaternalLabFile(session.token, file)))
+      : [{ file_url: undefined, file_name: undefined }]
+    for (const uploaded of uploadedFiles) {
       await registerMaternalLabScreening(session.token, {
         mother_id: maternalRecord.mother_id,
         pregnancy_id: values.pregnancyId,
@@ -587,7 +619,8 @@ export function MaternalProfilePage() {
         date_of_screening: values.screeningDate ? new Date(values.screeningDate).toISOString() : new Date().toISOString(),
         result: values.result || undefined,
         remarks: values.remarks || undefined,
-        file_url: fileUrl,
+        file_url: uploaded.file_url,
+        file_name: (uploaded as any).file_name,
       })
     }
     toast.success("Laboratory record saved")

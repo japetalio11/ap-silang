@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { apiRequest } from "@/lib/api"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { toast } from "sonner"
 import { z } from "zod"
 import { getClosedDates, removeClosedDate, type ClosedDateRecord } from "@/features/calendar/closed-dates"
@@ -48,8 +49,34 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
   const [accountTab, setAccountTab] = useState("profile")
   const [offlineTab, setOfflineTab] = useState("storage")
   const [notificationTab, setNotificationTab] = useState("channels")
-  const [account, setAccount] = useState({ first_name: "", last_name: "", phone_number: "", email: "" })
-  const [facility, setFacility] = useState({ facility_name: "", type: "Rural Health Unit", contact_number: "", email: "", address: "" })
+  const [account, setAccount] = useState(() => ({
+    first_name: session?.user?.first_name ?? "",
+    last_name: session?.user?.last_name ?? "",
+    phone_number: (session?.user as any)?.phone_number ?? "",
+    email: (session?.user as any)?.email ?? "",
+  }))
+  const [facility, setFacility] = useState(() => {
+    try {
+      const cached = localStorage.getItem("silang.facility.profile")
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        return {
+          facility_name: parsed.facility_name ?? "",
+          type: parsed.type ?? "Rural Health Unit",
+          contact_number: parsed.contact_number ?? "",
+          email: parsed.email ?? "",
+          address: parsed.address ?? "",
+        }
+      }
+    } catch {}
+    return {
+      facility_name: session?.facility?.facility_name ?? "",
+      type: session?.facility?.type ?? "Rural Health Unit",
+      contact_number: session?.facility?.contact_number ?? "",
+      email: session?.facility?.email ?? "",
+      address: session?.facility?.address ?? "",
+    }
+  })
   const [accountErrors, setAccountErrors] = useState<Record<string, string>>({})
   const [facilityErrors, setFacilityErrors] = useState<Record<string, string>>({})
   const [passwordFields, setPasswordFields] = useState({ current: "", next: "", confirm: "" })
@@ -72,6 +99,36 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
 
   const loadSettings = useCallback(async () => {
     if (!token || !userId) return
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    if (isOffline) {
+      if (session?.user) {
+        setAccount({
+          first_name: session.user.first_name ?? "",
+          last_name: session.user.last_name ?? "",
+          phone_number: (session.user as any).phone_number ?? "",
+          email: session.user.email ?? "",
+        })
+      }
+      const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+      let current: any = null
+      if (cachedFacilityStr) {
+        try { current = JSON.parse(cachedFacilityStr) } catch {}
+      }
+      if (!current && session?.facility) {
+        current = session.facility
+      }
+      if (current) {
+        setFacility({
+          facility_name: current.facility_name ?? "",
+          type: current.type ?? "Rural Health Unit",
+          contact_number: current.contact_number ?? "",
+          email: current.email ?? "",
+          address: current.address ?? "",
+        })
+      }
+      return
+    }
+
     try {
       const userResponse = await apiRequest<{ result: { first_name?: string; last_name?: string; phone_number?: string; email?: string } }>(`/user/${encodeURIComponent(userId)}`, { token })
       const user = userResponse.result
@@ -79,12 +136,39 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
       if (facilityId) {
         const facilityResponse = await apiRequest<{ result: { facility_name?: string; type?: string; contact_number?: string; email?: string; address?: string } }>(`/facility/${encodeURIComponent(facilityId)}`, { token })
         const current = facilityResponse.result
+        localStorage.setItem("silang.facility.profile", JSON.stringify(current))
         setFacility({ facility_name: current.facility_name ?? "", type: current.type ?? "Rural Health Unit", contact_number: current.contact_number ?? "", email: current.email ?? "", address: current.address ?? "" })
       }
     } catch (error) {
+      if (session?.user) {
+        setAccount({
+          first_name: session.user.first_name ?? "",
+          last_name: session.user.last_name ?? "",
+          phone_number: (session.user as any).phone_number ?? "",
+          email: session.user.email ?? "",
+        })
+      }
+      const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+      let current: any = null
+      if (cachedFacilityStr) {
+        try { current = JSON.parse(cachedFacilityStr) } catch {}
+      }
+      if (!current && session?.facility) {
+        current = session.facility
+      }
+      if (current) {
+        setFacility({
+          facility_name: current.facility_name ?? "",
+          type: current.type ?? "Rural Health Unit",
+          contact_number: current.contact_number ?? "",
+          email: current.email ?? "",
+          address: current.address ?? "",
+        })
+        return
+      }
       toast.error(error instanceof Error ? error.message : "Unable to load settings")
     }
-  }, [token, userId, facilityId])
+  }, [token, userId, facilityId, session?.user, session?.facility])
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadSettings() }, 0)
@@ -107,13 +191,65 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
     }
     if (!token) return toast.error("Your session has expired. Sign in again.")
     setSaving(true)
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      const sessionStr = localStorage.getItem("silang.auth.session")
+      if (sessionStr) {
+        try {
+          const s = JSON.parse(sessionStr)
+          s.user = { ...s.user, ...parsed.data }
+          localStorage.setItem("silang.auth.session", JSON.stringify(s))
+        } catch {}
+      }
+      window.dispatchEvent(new CustomEvent("silang:profile-updated", { detail: parsed.data }))
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "user_profile",
+        action: "UPDATE",
+        endpoint: "/user/profile",
+        method: "PUT",
+        payload: parsed.data,
+      })
+      toast.success("Profile saved (offline, queued for sync)")
+      setAccountErrors({})
+      setSaving(false)
+      return
+    }
+
     try {
       const response = await apiRequest<{ result: { first_name: string; last_name: string } }>("/user/profile", { method: "PUT", token, body: JSON.stringify(parsed.data) })
       window.dispatchEvent(new CustomEvent("silang:profile-updated", { detail: response.result }))
       toast.success("Profile saved")
       setAccountErrors({})
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save profile") }
-    finally { setSaving(false) }
+    } catch (error: any) {
+      if (error instanceof TypeError || !navigator.onLine) {
+        const sessionStr = localStorage.getItem("silang.auth.session")
+        if (sessionStr) {
+          try {
+            const s = JSON.parse(sessionStr)
+            s.user = { ...s.user, ...parsed.data }
+            localStorage.setItem("silang.auth.session", JSON.stringify(s))
+          } catch {}
+        }
+        window.dispatchEvent(new CustomEvent("silang:profile-updated", { detail: parsed.data }))
+        await silangSyncEngine.enqueue({
+          client_mutation_id: crypto.randomUUID(),
+          entity_type: "user_profile",
+          action: "UPDATE",
+          endpoint: "/user/profile",
+          method: "PUT",
+          payload: parsed.data,
+        })
+        toast.success("Profile saved (offline, queued for sync)")
+        setAccountErrors({})
+      } else {
+        toast.error(error instanceof Error ? error.message : "Unable to save profile")
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveFacility = async () => {
@@ -130,14 +266,55 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
     }
     if (!token || !facilityId) return toast.error("No facility is associated with this account.")
     setSaving(true)
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      const updatedFacility = { ...facility, ...parsed.data, facility_id: facilityId }
+      localStorage.setItem("silang.facility.profile", JSON.stringify(updatedFacility))
+      window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updatedFacility }))
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "UPDATE",
+        endpoint: "/facility/update",
+        method: "PUT",
+        payload: updatedFacility,
+      })
+      toast.success("Facility profile saved (offline, queued for sync)")
+      setFacilityErrors({})
+      setSaving(false)
+      return
+    }
+
     try {
       const response = await apiRequest<{ result: { facility_id: string; facility_name: string; type: string; facility_profile_url?: string | null } }>("/facility/update", { method: "PUT", token, body: JSON.stringify({ ...parsed.data, facility_id: facilityId }) })
+      localStorage.setItem("silang.facility.profile", JSON.stringify(response.result))
       window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: response.result }))
       toast.success("Facility profile saved")
       setFacilityErrors({})
       await loadSettings()
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save facility profile") }
-    finally { setSaving(false) }
+    } catch (error: any) {
+      if (error instanceof TypeError || !navigator.onLine) {
+        const updatedFacility = { ...facility, ...parsed.data, facility_id: facilityId }
+        localStorage.setItem("silang.facility.profile", JSON.stringify(updatedFacility))
+        window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updatedFacility }))
+        await silangSyncEngine.enqueue({
+          client_mutation_id: crypto.randomUUID(),
+          entity_type: "facility",
+          action: "UPDATE",
+          endpoint: "/facility/update",
+          method: "PUT",
+          payload: updatedFacility,
+        })
+        toast.success("Facility profile saved (offline, queued for sync)")
+        setFacilityErrors({})
+      } else {
+        toast.error(error instanceof Error ? error.message : "Unable to save facility profile")
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   const updatePassword = async () => {

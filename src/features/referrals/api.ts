@@ -5,8 +5,6 @@ import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 export function getReferralGatewayLink(referralId: string) {
   const route = `/referral/${encodeURIComponent(referralId)}`
   const configuredAppUrl = import.meta.env.VITE_APP_URL?.trim().replace(/\/+$/, "")
-  // Referral codes are shared outside this browser, so use a complete URL.
-  // Keep local links on the local Vite app instead of the legacy backend host.
   const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname)
   const appUrl = import.meta.env.DEV
     ? isLocalHost ? window.location.origin : "http://localhost:5173"
@@ -170,12 +168,81 @@ export const clarifyPublicReferral = (identifier: string, input: { pin: string; 
     body: JSON.stringify(input),
   })
 
+async function enrichLocalReferral(r: LocalReferral): Promise<ReferralApiRecord> {
+  let pregnancy: any = (r as any).pregnancy
+  let fromFacility: any = (r as any).fromFacility
+  let toFacility: any = (r as any).toFacility
+
+  if (!pregnancy) {
+    const preg = r.pregnancy_id ? await db.pregnancies.get(r.pregnancy_id).catch(() => null) : null
+    const mother = r.mother_id ? await db.mothers.get(r.mother_id).catch(() => null) : null
+    const visits = r.pregnancy_id
+      ? await db.prenatalVisits.where("pregnancy_id").equals(r.pregnancy_id).reverse().sortBy("created_at").catch(() => [])
+      : []
+
+    let user = mother?.user
+    if (!user && mother) {
+      user = {
+        first_name: mother.first_name,
+        middle_name: mother.middle_name,
+        last_name: mother.last_name,
+        address: mother.address,
+        phone_number: mother.phone_number,
+      }
+    }
+
+    pregnancy = {
+      pregnancy_id: r.pregnancy_id,
+      mother_id: r.mother_id,
+      gravida: preg?.gravida,
+      parity: preg?.parity,
+      lmp_date: preg?.lmp_date,
+      edd_date: preg?.edd_date,
+      pregnancy_status: preg?.status || preg?.pregnancy_status,
+      mother: mother
+        ? {
+            family_serial_no: mother.family_serial_no,
+            birth_date: mother.date_of_birth,
+            blood_type: mother.blood_type,
+            user,
+          }
+        : undefined,
+      prenatalVisits: visits.map((v) => ({
+        visit_id: v.visit_id,
+        visit_date: v.visit_date,
+        bp_systolic: v.bp_systolic,
+        bp_diastolic: v.bp_diastolic,
+        temperature_celsius: v.temperature_celsius,
+        pulse_rate_bpm: v.pulse_rate_bpm,
+        weight_kg: v.weight_kg,
+        fundic_height_cm: v.fundic_height_cm,
+        fetal_heart_tone_bpm: v.fetal_heart_tone_bpm,
+        risk_level_assessed: v.risk_level_assessed,
+      })),
+    }
+  }
+
+  if (!toFacility && r.to_facility_id) {
+    try {
+      const cachedFacilities: ReferralFacility[] = JSON.parse(localStorage.getItem("silang.cached-facilities") || "[]")
+      toFacility = cachedFacilities.find((f) => f.facility_id === r.to_facility_id)
+    } catch {}
+  }
+
+  return {
+    ...r,
+    pregnancy,
+    fromFacility,
+    toFacility,
+    updated_at: typeof r.updated_at === "number" ? new Date(r.updated_at).toISOString() : r.updated_at,
+  } as unknown as ReferralApiRecord
+}
+
 export const getReferrals = async (token: string): Promise<{ data?: ReferralApiRecord[]; message?: string }> => {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     const local = await db.referrals.toArray().catch(() => [])
-    if (local.length > 0) {
-      return { data: local as any }
-    }
+    const enriched = await Promise.all(local.map(enrichLocalReferral))
+    return { data: enriched }
   }
 
   try {
@@ -193,31 +260,58 @@ export const getReferrals = async (token: string): Promise<{ data?: ReferralApiR
     const pending = await db.referrals.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
     const onlineIds = new Set((res.data || []).map((r) => r.referral_id))
     const uniquePending = pending.filter((r) => !onlineIds.has(r.referral_id))
-    return { data: [...uniquePending, ...(res.data || [])] as ReferralApiRecord[] }
+    const enrichedPending = await Promise.all(uniquePending.map(enrichLocalReferral))
+    return { data: [...enrichedPending, ...(res.data || [])] as ReferralApiRecord[] }
   } catch (error) {
     const local = await db.referrals.toArray().catch(() => [])
     if (local.length > 0) {
-      return { data: local as any }
+      const enriched = await Promise.all(local.map(enrichLocalReferral))
+      return { data: enriched }
     }
     throw error
   }
 }
 
-export const getReferralFacilities = () =>
-  apiRequest<{ result?: ReferralFacility[] }>("/facility/public-list")
+export const getReferralFacilities = async (): Promise<{ result?: ReferralFacility[] }> => {
+  const cached = typeof localStorage !== "undefined" ? localStorage.getItem("silang.cached-facilities") : null
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    if (cached) {
+      try {
+        return { result: JSON.parse(cached) }
+      } catch {}
+    }
+    return { result: [] }
+  }
+
+  try {
+    const res = await apiRequest<{ result?: ReferralFacility[] }>("/facility/public-list")
+    if (Array.isArray(res.result) && typeof localStorage !== "undefined") {
+      localStorage.setItem("silang.cached-facilities", JSON.stringify(res.result))
+    }
+    return res
+  } catch (err) {
+    if (cached) {
+      try {
+        return { result: JSON.parse(cached) }
+      } catch {}
+    }
+    return { result: [] }
+  }
+}
 
 export const createReferral = async (token: string, input: CreateReferralInput): Promise<{ data?: ReferralApiRecord; message?: string; offline?: boolean }> => {
   const isOffline = typeof navigator !== "undefined" && !navigator.onLine
 
   if (isOffline) {
     const tempId = `temp-ref-${crypto.randomUUID()}`
-    const localRef: LocalReferral = {
+    const baseRef: LocalReferral = {
       id: tempId,
       referral_id: tempId,
       mother_id: input.mother_id,
       pregnancy_id: input.pregnancy_id,
       from_facility_id: input.from_facility_id,
       to_facility_id: input.to_facility_id,
+      external_facility_name: input.external_facility_name,
       reason: input.reason,
       status: "Pending",
       date_referred: new Date().toISOString(),
@@ -225,7 +319,8 @@ export const createReferral = async (token: string, input: CreateReferralInput):
       sync_status: "pending_create",
       updated_at: Date.now(),
     }
-    await db.referrals.put(localRef)
+    const enriched = await enrichLocalReferral(baseRef)
+    await db.referrals.put(enriched as any)
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "referral",
@@ -235,7 +330,7 @@ export const createReferral = async (token: string, input: CreateReferralInput):
       payload: input,
       temp_id: tempId,
     })
-    return { message: "Referral saved offline", data: localRef as any, offline: true }
+    return { message: "Referral saved offline", data: enriched, offline: true }
   }
 
   try {
@@ -256,13 +351,14 @@ export const createReferral = async (token: string, input: CreateReferralInput):
   } catch (error: any) {
     if (error instanceof TypeError || !navigator.onLine) {
       const tempId = `temp-ref-${crypto.randomUUID()}`
-      const localRef: LocalReferral = {
+      const baseRef: LocalReferral = {
         id: tempId,
         referral_id: tempId,
         mother_id: input.mother_id,
         pregnancy_id: input.pregnancy_id,
         from_facility_id: input.from_facility_id,
         to_facility_id: input.to_facility_id,
+        external_facility_name: input.external_facility_name,
         reason: input.reason,
         status: "Pending",
         date_referred: new Date().toISOString(),
@@ -270,7 +366,8 @@ export const createReferral = async (token: string, input: CreateReferralInput):
         sync_status: "pending_create",
         updated_at: Date.now(),
       }
-      await db.referrals.put(localRef)
+      const enriched = await enrichLocalReferral(baseRef)
+      await db.referrals.put(enriched as any)
       await silangSyncEngine.enqueue({
         client_mutation_id: crypto.randomUUID(),
         entity_type: "referral",
@@ -280,7 +377,7 @@ export const createReferral = async (token: string, input: CreateReferralInput):
         payload: input,
         temp_id: tempId,
       })
-      return { message: "Referral saved offline", data: localRef as any, offline: true }
+      return { message: "Referral saved offline", data: enriched, offline: true }
     }
     throw error
   }

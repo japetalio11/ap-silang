@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowRight, Check, CheckCircle2, Clock3, Cloud, GitMerge, RefreshCw, Smartphone, Wifi, WifiOff, X } from "lucide-react"
+import { ArrowRight, Check, CheckCircle2, Clock3, Cloud, GitMerge, RefreshCw, Smartphone, Trash2, Wifi, WifiOff, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -227,6 +227,19 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
     }
   }
 
+  const discardItem = async (item: OfflineQueueItem) => {
+    if (!item.id) return
+    await silangSyncEngine.discardQueueItem(item.id)
+    await refreshQueue()
+    toast.success("Queued item discarded")
+  }
+
+  const clearFailedItems = async () => {
+    await silangSyncEngine.clearFailedQueueItems()
+    await refreshQueue()
+    toast.success("Failed queue items cleared")
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -274,18 +287,48 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
                   </div>
                 ) : (items.filter((item) => item.state === "pending").length > 0 || generalQueue.length > 0) ? (
                   <div className="flex flex-col gap-2">
+                    {generalQueue.some((item) => Boolean(item.last_error || item.status === "error")) && (
+                      <div className="flex items-center justify-between pb-1">
+                        <span className="text-xs text-muted-foreground">{generalQueue.length} operations in queue</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void clearFailedItems()}
+                          className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="mr-1 size-3" />
+                          Clear Failed Items
+                        </Button>
+                      </div>
+                    )}
                     {generalQueue.map((item) => (
                       <article key={item.id} className="rounded-md border border-sidebar-border p-3">
                         <div className="flex items-start justify-between gap-2">
                           <p className="truncate text-xs font-semibold capitalize">
                             {item.action === "CREATE" ? "New" : item.action} {item.entity_type.replace(/_/g, " ")}
                           </p>
-                          <span className="shrink-0 text-xs text-muted-foreground">{formatTimestamp(String(item.created_at))}</span>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs text-muted-foreground">{formatTimestamp(String(item.created_at))}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => void discardItem(item)}
+                              aria-label="Discard this queued item"
+                              className="size-6 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
                         </div>
                         <p className="mt-1 text-xs text-muted-foreground truncate">
                           {item.temp_id ? `Local ID: ${item.temp_id}` : item.endpoint}
                         </p>
                         {item.last_error && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{item.last_error}</p>}
+                        {!item.last_error && silangSyncEngine.isItemBlocked(item, generalQueue) && (
+                          <p className="mt-1 text-xs text-muted-foreground italic">Waiting for parent entity to sync</p>
+                        )}
                       </article>
                     ))}
                     {items.filter((item) => item.state === "pending").map((item) => (

@@ -101,8 +101,39 @@ export async function getMessages(token: string): Promise<MessageListResponse> {
   }
 }
 
-export function getMessageMothers(token: string) {
-  return apiRequest<{ result?: MessageMother[] }>("/mother/active", { token })
+export async function getMessageMothers(token: string): Promise<{ result?: MessageMother[] }> {
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const localMothers = await db.mothers.toArray().catch(() => [])
+    const mapped: MessageMother[] = localMothers.map((m) => ({
+      mother_id: m.mother_id,
+      user: m.user || {
+        user_id: m.user_id,
+        first_name: m.first_name,
+        last_name: m.last_name,
+        profile_url: m.profile_url,
+      },
+    }))
+    return { result: mapped }
+  }
+
+  try {
+    return await apiRequest<{ result?: MessageMother[] }>("/mother/active", { token })
+  } catch (error) {
+    const localMothers = await db.mothers.toArray().catch(() => [])
+    if (localMothers.length > 0) {
+      const mapped: MessageMother[] = localMothers.map((m) => ({
+        mother_id: m.mother_id,
+        user: m.user || {
+          user_id: m.user_id,
+          first_name: m.first_name,
+          last_name: m.last_name,
+          profile_url: m.profile_url,
+        },
+      }))
+      return { result: mapped }
+    }
+    throw error
+  }
 }
 
 export async function createMessage(
