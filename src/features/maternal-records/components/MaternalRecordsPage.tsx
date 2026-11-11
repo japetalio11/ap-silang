@@ -31,6 +31,7 @@ import { toast } from "sonner"
 import { differenceInCalendarDays, format, isValid } from "date-fns"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { connectMotherToFacility, deleteMaternalRecord, getLatestMaternalPregnancy, getLatestPrenatalVisit, getMaternalRecords, normalizeMaternalRisk, registerMaternalRecord, registerPregnancy, type MaternalRecord } from "../api"
+import { MaternalAvatar } from "./MaternalAvatar"
 
 const recordTabs = [
   { value: "all", label: "All" },
@@ -457,13 +458,20 @@ export function MaternalRecordsPage() {
                         <Checkbox aria-label={`Select ${name}`} checked={selected} onCheckedChange={(checked) => setSelectedMotherIds((current) => checked === true ? [...current, record.mother_id] : current.filter((id) => id !== record.mother_id))} className="border-sidebar-border" />
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-foreground">{name}</span>
-                          {(record.sync_status === "pending_create" || record.mother_id.startsWith("temp-")) && (
-                            <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
-                              Offline
-                            </span>
-                          )}
+                        <div className="flex items-center gap-2.5">
+                          <MaternalAvatar
+                            src={record.user?.profile_url || record.profile_url}
+                            name={name}
+                            className="size-7 text-[11px] border border-sidebar-border"
+                          />
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium text-foreground">{name}</span>
+                            {(record.sync_status === "pending_create" || record.mother_id.startsWith("temp-")) && (
+                              <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                                Offline
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>{latestPregnancy ? `G${latestPregnancy.gravida ?? "—"} P${latestPregnancy.parity ?? "—"}` : "—"}</TableCell>

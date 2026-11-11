@@ -1,5 +1,6 @@
 import { getMaternalProfile, type MaternalCompositeRecord, type RegisterMaternalRecordInput } from "@/features/maternal-records/api"
 import { ApiError, apiRequest } from "@/lib/api"
+import { db } from "@/lib/db/silangDatabase"
 
 export type OfflineConflictField = {
   key: keyof RegisterMaternalRecordInput
@@ -47,6 +48,7 @@ const fields: Array<{
   { key: "civil_status", label: "Civil Status", read: (record) => record.civil_status },
   { key: "blood_type", label: "Blood Type", read: (record) => record.blood_type },
   { key: "family_serial_no", label: "Family Serial No.", read: (record) => record.family_serial_no },
+  { key: "profile_url", label: "Profile Photo", read: (record) => record.user?.profile_url || record.profile_url },
 ]
 
 function openDatabase() {
@@ -136,9 +138,24 @@ async function sendMotherUpdate(token: string, motherId: string, changes: Partia
     else Object.assign(userChanges, { [key]: value })
   }
 
-  // The mother update endpoint also writes linked user fields before its MVCC
-  // check. Keep those writes separate so a stale mother version cannot partially
-  // overwrite the profile before the server reports a conflict.
+  if (userChanges.profile_url && typeof userChanges.profile_url === "string" && userChanges.profile_url.startsWith("blob-")) {
+    const localBlob = await db.blobs.get(userChanges.profile_url).catch(() => null)
+    if (localBlob) {
+      const formData = new FormData()
+      formData.append("file", localBlob.data, localBlob.filename)
+      const uploadRes = await apiRequest<{ file_url?: string; fileUrl?: string; profile_url?: string }>("/lab-screening/upload", {
+        method: "POST",
+        token,
+        body: formData,
+      }).catch(() => null)
+      const uploadedUrl = uploadRes?.file_url || uploadRes?.fileUrl || uploadRes?.profile_url
+      if (uploadedUrl) {
+        userChanges.profile_url = uploadedUrl
+        await db.blobs.delete(localBlob.id).catch(() => {})
+      }
+    }
+  }
+
   if (Object.keys(motherChanges).length) {
     await apiRequest<{ message?: string; result?: MaternalCompositeRecord }>(`/mother/update/${encodeURIComponent(motherId)}`, {
       method: "PUT",

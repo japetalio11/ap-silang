@@ -11,6 +11,7 @@ import {
   Baby,
   CalendarDays,
   CalendarPlus,
+  Camera,
   Download,
   FileText,
   HeartPulse,
@@ -85,6 +86,8 @@ import { DeliveryOutcomeDialog } from "./DeliveryOutcomeDialog"
 import { CreatePrescriptionDialog } from "./CreatePrescriptionDialog"
 import { ChangeStaffDialog, ConfirmRiskOverridePasswordDialog, EhrExportDialog, LaboratoryRecordDialog, PrenatalVitalsDialog, RiskOverrideDialog, type EncounterValues, type LaboratoryFormValues } from "./MaternalProfileActionModals"
 import { EditMaternalProfileDialog, NewPregnancyDialog, type RegistrationValues } from "./MaternalRegistrationModal"
+import { MaternalAvatar } from "./MaternalAvatar"
+import { UploadAvatarDialog } from "./UploadAvatarDialog"
 import { VitalDetailsDrawer } from "./VitalDetailsDrawer"
 
 const riskStyles = {
@@ -397,6 +400,7 @@ export function MaternalProfilePage() {
   const [isNewPregnancyOpen, setIsNewPregnancyOpen] = useState(false)
   const [isChangeStaffOpen, setIsChangeStaffOpen] = useState(false)
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
+  const [isUploadAvatarOpen, setIsUploadAvatarOpen] = useState(false)
   const [isReferralOpen, setIsReferralOpen] = useState(false)
   useEffect(() => {
     if (!session?.token || !motherId) return
@@ -466,8 +470,12 @@ export function MaternalProfilePage() {
       email: values.email.trim(),
       address: values.address.trim(),
       family_serial_no: values.familySerialNo.trim(),
+      civilStatus: values.civilStatus,
+      bloodType: values.bloodType,
       civil_status: values.civilStatus,
       blood_type: values.bloodType,
+      profile_url: values.profileUrl,
+      photo_url: values.profileUrl,
     }
     const motherName = [changes.first_name, changes.middle_name, changes.last_name].filter(Boolean).join(" ")
     const result = await updateMaternalRecord(session.token, motherId, changes, { baseRecord: maternalRecord, motherName })
@@ -478,11 +486,35 @@ export function MaternalProfilePage() {
         family_serial_no: changes.family_serial_no,
         civil_status: changes.civil_status,
         blood_type: changes.blood_type,
-        user: { ...current.user, first_name: changes.first_name, middle_name: changes.middle_name, last_name: changes.last_name, phone_number: changes.phone_number, email: changes.email, address: changes.address },
+        profile_url: changes.profile_url || current.profile_url,
+        photo_url: changes.photo_url || current.photo_url,
+        user: {
+          ...current.user,
+          first_name: changes.first_name,
+          middle_name: changes.middle_name,
+          last_name: changes.last_name,
+          phone_number: changes.phone_number,
+          email: changes.email,
+          address: changes.address,
+          profile_url: changes.profile_url || current.user?.profile_url,
+          photo_url: changes.photo_url || current.user?.photo_url,
+        },
       } : current)
       setIsEditProfileOpen(false)
       toast.info("Profile changes saved on this device", { description: "They will sync when the connection returns." })
       return
+    }
+    if (changes.profile_url) {
+      setMaternalRecord((current) => current ? {
+        ...current,
+        profile_url: changes.profile_url || current.profile_url,
+        photo_url: changes.photo_url || current.photo_url,
+        user: {
+          ...current.user,
+          profile_url: changes.profile_url || current.user?.profile_url,
+          photo_url: changes.photo_url || current.user?.photo_url,
+        },
+      } : current)
     }
     toast.success("Maternal profile updated")
     refreshProfile()
@@ -994,6 +1026,7 @@ export function MaternalProfilePage() {
               <DropdownMenuItem onClick={() => setIsEhrExportOpen(true)}><Download />Export Clinical Record</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setIsChangeStaffOpen(true)}><UserCog />Change Staff</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setIsEditProfileOpen(true)}><Pencil />Edit Profile</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsUploadAvatarOpen(true)}><Camera />Change Profile Photo</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -1003,7 +1036,22 @@ export function MaternalProfilePage() {
         <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1 pb-8">
           <Card className={`min-w-0 shrink-0 gap-4 rounded-md border py-4 shadow-none ring-0 ${riskStyle.card}`}>
             <CardHeader className="flex flex-row items-center gap-4 px-4 pb-1">
-              <div aria-hidden="true" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">{patientName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div>
+              <div className="relative group shrink-0">
+                <MaternalAvatar
+                  src={maternalRecord?.user?.profile_url || maternalRecord?.profile_url || maternalRecord?.photo_url}
+                  name={patientName}
+                  className="size-12 border-2 border-sidebar-border text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsUploadAvatarOpen(true)}
+                  aria-label="Change profile photo"
+                  title="Change profile photo"
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Camera className="size-4" />
+                </button>
+              </div>
               <div className="min-w-0 flex-1">
                 <CardTitle className={`truncate text-base font-semibold ${riskStyle.value}`}>{profile.fullName}</CardTitle>
                 <p className={`mt-0.5 text-xs ${riskStyle.label}`}>Maternal record · {profile.serialNo}</p>
@@ -1297,7 +1345,22 @@ export function MaternalProfilePage() {
       <EhrRecordPreview key={previewEhrRecord?.screening_id ?? "closed"} record={previewEhrRecord} onClose={() => setPreviewEhrRecord(null)} />
       <NewPregnancyDialog open={isNewPregnancyOpen} onOpenChange={setIsNewPregnancyOpen} onSubmit={handleCreatePregnancy} />
       <ChangeStaffDialog open={isChangeStaffOpen} onOpenChange={setIsChangeStaffOpen} patientName={patientName} staff={staffOptions} currentStaff={maternalRecord.assignedWorker} isLoading={isStaffLoading} onAssign={handleAssignStaff} />
-      <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
+      <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type, maternalRecord.user?.profile_url, maternalRecord.profile_url])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
+      <UploadAvatarDialog
+        open={isUploadAvatarOpen}
+        onOpenChange={setIsUploadAvatarOpen}
+        motherId={maternalRecord.mother_id}
+        patientName={patientName}
+        currentPhotoUrl={maternalRecord.user?.profile_url || maternalRecord.profile_url || maternalRecord.photo_url}
+        onSuccess={(newPhotoUrl) => {
+          setMaternalRecord((current) => current ? {
+            ...current,
+            profile_url: newPhotoUrl,
+            photo_url: newPhotoUrl,
+            user: { ...(current.user || {}), profile_url: newPhotoUrl, photo_url: newPhotoUrl },
+          } : current)
+        }}
+      />
       <CreateReferralModal open={isReferralOpen} onOpenChange={setIsReferralOpen} mothers={[maternalRecord]} facilities={referralFacilities} originFacilityId={session?.user.facility_id} initialMotherId={maternalRecord.mother_id} isSaving={isCreatingReferral} onSubmit={handleCreateReferral} />
       <ConfirmSensitiveActionDialog
         open={appointmentToCancel !== null}

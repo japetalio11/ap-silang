@@ -379,6 +379,8 @@ export class SilangSyncEngine {
             const uploadedUrls = await this.uploadBlobsIfAny(item.blob_ids, token)
             for (const [blobId, url] of Object.entries(uploadedUrls)) {
               if (resolvedPayload.file_url === blobId) resolvedPayload.file_url = url
+              if (resolvedPayload.profile_url === blobId) resolvedPayload.profile_url = url
+              if (resolvedPayload.photo_url === blobId) resolvedPayload.photo_url = url
             }
           }
 
@@ -602,6 +604,29 @@ export class SilangSyncEngine {
                   updated_at: Date.now(),
                 })
               }
+            }
+          } else if (item.entity_type === "mother" && item.action === "UPDATE") {
+            const rawId = String(resolvedPayload.mother_id || item.temp_id || item.endpoint.split("/").pop() || "")
+            const motherId = this.tempIdMap.get(rawId) || rawId
+            if (motherId) {
+              const localMother = await db.mothers.get(motherId)
+              if (localMother) {
+                const nextProfileUrl = (resolvedPayload.profile_url as string) || (resolvedPayload.photo_url as string) || localMother.profile_url
+                await db.mothers.update(motherId, {
+                  ...localMother,
+                  ...resolvedPayload,
+                  profile_url: nextProfileUrl,
+                  user: { ...(localMother.user || {}), ...(nextProfileUrl ? { profile_url: nextProfileUrl } : {}) },
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
+          }
+
+          if (item.blob_ids && item.blob_ids.length > 0) {
+            for (const blobId of item.blob_ids) {
+              await db.blobs.delete(blobId).catch(() => {})
             }
           }
 

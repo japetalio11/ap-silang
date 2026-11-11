@@ -20,6 +20,8 @@ export interface LocalMother {
   civil_status?: string | null
   blood_type?: string | null
   age?: number | null
+  profile_url?: string | null
+  photo_url?: string | null
   user?: any
   assignedWorker?: any
   pregnancies?: any[]

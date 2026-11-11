@@ -139,7 +139,11 @@ export type MaternalRecord = {
     phone_number?: string | null
     email?: string | null
     address?: string | null
+    profile_url?: string | null
+    photo_url?: string | null
   } | null
+  profile_url?: string | null
+  photo_url?: string | null
   pregnancies?: MaternalPregnancy[]
   sync_status?: string
 }
@@ -196,6 +200,8 @@ export type RegisterMaternalRecordInput = {
   birth_date: string
   civil_status: string
   blood_type: string
+  profile_url?: string
+  photo_url?: string
 }
 
 export type RegisterPregnancyInput = {
@@ -444,13 +450,21 @@ async function buildCompositeFromDexie(motherId: string): Promise<MaternalCompos
     blood_type: localMother.blood_type,
     assigned_worker_id: localMother.assigned_worker_id,
     assignedWorker: localMother.assignedWorker,
-    user: localMother.user || {
+    profile_url: localMother.profile_url || localMother.photo_url || localMother.user?.profile_url,
+    photo_url: localMother.photo_url || localMother.profile_url || localMother.user?.photo_url,
+    user: localMother.user ? {
+      ...localMother.user,
+      profile_url: localMother.user.profile_url || localMother.profile_url || localMother.photo_url,
+      photo_url: localMother.user.photo_url || localMother.photo_url || localMother.profile_url,
+    } : {
       first_name: localMother.first_name,
       middle_name: localMother.middle_name,
       last_name: localMother.last_name,
       phone_number: localMother.phone_number,
       email: localMother.email,
       address: localMother.address,
+      profile_url: localMother.profile_url || localMother.photo_url,
+      photo_url: localMother.photo_url || localMother.profile_url,
     },
     pregnancies: pregs.map((p) => ({
       ...p,
@@ -527,6 +541,8 @@ export async function getMaternalProfile(token: string, motherId: string): Promi
         phone_number: result.user?.phone_number,
         email: result.user?.email,
         address: result.user?.address,
+        profile_url: result.user?.profile_url || result.profile_url,
+        photo_url: result.user?.profile_url || result.photo_url || result.profile_url,
         sync_status: "synced",
         updated_at: Date.now(),
       }).catch(() => {})
@@ -1036,8 +1052,20 @@ export async function updateMaternalRecord(
     })
   }
 
-  if (!navigator.onLine && offlineContext) {
-    await enqueueMotherProfileUpdate({ motherId, motherName: offlineContext.motherName, baseRecord: offlineContext.baseRecord, changes: input })
+  if (!navigator.onLine) {
+    if (offlineContext) {
+      await enqueueMotherProfileUpdate({ motherId, motherName: offlineContext.motherName, baseRecord: offlineContext.baseRecord, changes: input })
+    }
+    const blobIds = typeof input.profile_url === "string" && input.profile_url.startsWith("blob-") ? [input.profile_url] : undefined
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "mother",
+      action: "UPDATE",
+      endpoint: `/mother/update/${encodeURIComponent(motherId)}`,
+      method: "PUT",
+      payload: input,
+      blob_ids: blobIds,
+    })
     return { queued: true as const }
   }
 
@@ -1048,9 +1076,121 @@ export async function updateMaternalRecord(
       body: JSON.stringify({ ...input, version: offlineContext?.baseRecord.version }),
     })
   } catch (error) {
-    if (offlineContext && isNetworkFailure(error)) {
-      await enqueueMotherProfileUpdate({ motherId, motherName: offlineContext.motherName, baseRecord: offlineContext.baseRecord, changes: input })
+    if (isNetworkFailure(error)) {
+      if (offlineContext) {
+        await enqueueMotherProfileUpdate({ motherId, motherName: offlineContext.motherName, baseRecord: offlineContext.baseRecord, changes: input })
+      }
+      const blobIds = typeof input.profile_url === "string" && input.profile_url.startsWith("blob-") ? [input.profile_url] : undefined
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "mother",
+        action: "UPDATE",
+        endpoint: `/mother/update/${encodeURIComponent(motherId)}`,
+        method: "PUT",
+        payload: input,
+        blob_ids: blobIds,
+      })
       return { queued: true as const }
+    }
+    throw error
+  }
+}
+
+export async function uploadMaternalAvatar(token: string, motherId: string, file: File): Promise<{ profile_url: string; offline?: boolean }> {
+  const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+  if (isOffline) {
+    const blobId = `blob-${crypto.randomUUID()}`
+    await db.blobs.put({
+      id: blobId,
+      data: file,
+      filename: file.name,
+      mime_type: file.type,
+    })
+    const existingLocal = await db.mothers.get(motherId)
+    if (existingLocal) {
+      await db.mothers.update(motherId, {
+        profile_url: blobId,
+        photo_url: blobId,
+        user: { ...(existingLocal.user || {}), profile_url: blobId },
+        sync_status: "pending_update",
+        updated_at: Date.now(),
+      })
+    }
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "mother",
+      action: "UPDATE",
+      endpoint: `/mother/update/${encodeURIComponent(motherId)}`,
+      method: "PUT",
+      payload: { profile_url: blobId, photo_url: blobId },
+      blob_ids: [blobId],
+    })
+    return { profile_url: blobId, offline: true }
+  }
+
+  try {
+    const body = new FormData()
+    body.append("file", file)
+    let uploadedUrl = ""
+    try {
+      const avatarRes = await apiRequest<{ fileUrl?: string; profile_url?: string }>("/patient/mother/avatar/upload", {
+        method: "POST",
+        token,
+        body,
+      })
+      uploadedUrl = avatarRes.profile_url || avatarRes.fileUrl || ""
+    } catch {
+      const labRes = await apiRequest<{ file_url: string }>("/lab-screening/upload", {
+        method: "POST",
+        token,
+        body,
+      })
+      uploadedUrl = labRes.file_url || ""
+    }
+
+    if (!uploadedUrl) throw new Error("Could not process avatar upload")
+
+    await updateMaternalRecord(token, motherId, { profile_url: uploadedUrl, photo_url: uploadedUrl })
+    const existingLocal = await db.mothers.get(motherId)
+    if (existingLocal) {
+      await db.mothers.update(motherId, {
+        profile_url: uploadedUrl,
+        photo_url: uploadedUrl,
+        user: { ...(existingLocal.user || {}), profile_url: uploadedUrl },
+        sync_status: "synced",
+        updated_at: Date.now(),
+      })
+    }
+    return { profile_url: uploadedUrl, offline: false }
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      const blobId = `blob-${crypto.randomUUID()}`
+      await db.blobs.put({
+        id: blobId,
+        data: file,
+        filename: file.name,
+        mime_type: file.type,
+      })
+      const existingLocal = await db.mothers.get(motherId)
+      if (existingLocal) {
+        await db.mothers.update(motherId, {
+          profile_url: blobId,
+          photo_url: blobId,
+          user: { ...(existingLocal.user || {}), profile_url: blobId },
+          sync_status: "pending_update",
+          updated_at: Date.now(),
+        })
+      }
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "mother",
+        action: "UPDATE",
+        endpoint: `/mother/update/${encodeURIComponent(motherId)}`,
+        method: "PUT",
+        payload: { profile_url: blobId, photo_url: blobId },
+        blob_ids: [blobId],
+      })
+      return { profile_url: blobId, offline: true }
     }
     throw error
   }
