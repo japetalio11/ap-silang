@@ -18,12 +18,9 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { ApiError } from "@/lib/api"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { toast } from "sonner"
-
-type Role = "admin" | "staff"
 
 type GoogleTokenResult = { access_token?: string; error?: string }
 
@@ -44,11 +41,6 @@ declare global {
   }
 }
 
-const roleOptions: { id: Role; label: string }[] = [
-  { id: "staff", label: "Health worker" },
-  { id: "admin", label: "Administrator" },
-]
-
 const loginSchema = z.object({
   identifier: z.string().trim().min(1, "Enter your email or phone number."),
   password: z.string().min(1, "Enter your password."),
@@ -57,13 +49,42 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>
 
 export function AuthForm() {
-  const [selectedRole, setSelectedRole] = useState<Role>("staff")
   const [showPassword, setShowPassword] = useState(false)
   const [rememberMe, setRememberMe] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isGoogleReady, setIsGoogleReady] = useState(false)
+  const [offlinePin, setOfflinePin] = useState("")
+  const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine)
   const navigate = useNavigate()
-  const { login, loginWithGoogle, isAuthenticated } = useAuthSession()
+  const { login, loginWithGoogle, unlockOffline, isAuthenticated } = useAuthSession()
+  const savedOfflineUserStr = typeof window !== "undefined" ? window.localStorage.getItem("silang.auth.offline-user") : null
+  const savedOfflineUser = savedOfflineUserStr ? JSON.parse(savedOfflineUserStr) : null
+
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
+
+  const handleOfflineUnlock = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!offlinePin) {
+      toast.error("Enter your 4-digit PIN")
+      return
+    }
+    const success = unlockOffline(offlinePin)
+    if (success) {
+      toast.success("Offline workspace unlocked")
+      navigate("/dashboard", { replace: true })
+    } else {
+      toast.error("Invalid PIN for this device")
+    }
+  }
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: { identifier: "", password: "" },
@@ -94,7 +115,7 @@ export function AuthForm() {
   async function handleSubmit(values: LoginFormValues) {
     setIsSubmitting(true)
     try {
-      await login({ ...values, rememberMe, workspace: selectedRole })
+      await login({ ...values, rememberMe })
       navigate("/dashboard", { replace: true })
     } catch (error) {
       toast.error(error instanceof ApiError || error instanceof Error
@@ -125,7 +146,7 @@ export function AuthForm() {
             return
           }
           try {
-            await loginWithGoogle(result.access_token, rememberMe, selectedRole)
+            await loginWithGoogle(result.access_token, rememberMe)
             navigate("/dashboard", { replace: true })
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Unable to sign in with Google.")
@@ -165,22 +186,30 @@ export function AuthForm() {
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Sign in to access your community health workspace.</p>
             </header>
 
-            <div className="mb-4">
-              <p className="mb-2 text-xs font-medium text-muted-foreground">Choose your workspace</p>
-              <Tabs value={selectedRole} onValueChange={(value) => setSelectedRole(value as Role)}>
-                <TabsList className="h-9 w-full justify-start gap-1">
-                  {roleOptions.map(({ id, label }) => (
-                    <TabsTrigger
-                      key={id}
-                      value={id}
-                      className="h-full flex-1 border px-2 py-1 text-xs font-medium"
-                    >
-                      {label}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              </Tabs>
-            </div>
+            {isOffline && savedOfflineUser && (
+              <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">
+                <div className="font-semibold text-amber-800 dark:text-amber-200">
+                  Offline Mode Active
+                </div>
+                <p className="mt-0.5 text-muted-foreground">
+                  Logged on as {savedOfflineUser.first_name} {savedOfflineUser.last_name}. Enter your 4-digit PIN to access local workspace:
+                </p>
+                <form onSubmit={handleOfflineUnlock} className="mt-2 flex gap-2">
+                  <Input
+                    type="password"
+                    maxLength={4}
+                    inputMode="numeric"
+                    placeholder="4-digit PIN"
+                    value={offlinePin}
+                    onChange={(e) => setOfflinePin(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                    className="h-8 bg-background text-xs"
+                  />
+                  <Button type="submit" size="sm" className="h-8 shrink-0 text-xs">
+                    Unlock
+                  </Button>
+                </form>
+              </div>
+            )}
 
             <Button type="button" variant="outline" disabled={!isGoogleReady || isSubmitting} onClick={handleGoogleSignIn} className="mb-3 h-9 w-full gap-2 border-border bg-white text-xs text-foreground dark:bg-card hover:bg-muted/40">
               <svg viewBox="0 0 24 24" aria-hidden="true" className="size-4">
@@ -203,7 +232,7 @@ export function AuthForm() {
                 <FormItem>
                   <FormLabel className="text-xs font-medium text-foreground">Email or phone number <span aria-hidden="true" className="text-destructive">*</span></FormLabel>
                   <FormControl>
-                    <Input {...field} type="text" placeholder={selectedRole === "admin" ? "admin@clinic.ph" : "you@clinic.ph"} autoComplete="username" className="h-8 rounded-md bg-muted/70 px-2.5 text-xs dark:bg-muted/60" />
+                    <Input {...field} type="text" placeholder="you@clinic.ph" autoComplete="username" className="h-8 rounded-md bg-muted/70 px-2.5 text-xs dark:bg-muted/60" />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

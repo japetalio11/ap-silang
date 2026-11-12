@@ -1,7 +1,7 @@
-import { useState, type FormEvent, type ReactNode } from "react"
+import { useState, useRef, useEffect, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import { addDays, format, parseISO } from "date-fns"
 import { z } from "zod"
-import { Baby, Check, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
+import { Baby, Camera, Check, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DateInput } from "@/components/ui/date-input"
@@ -11,7 +11,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
-import type { MaternalRecord } from "../api"
+import { useAuthSession } from "@/features/auth/auth-session"
+import { uploadMaternalAvatar, type MaternalRecord } from "../api"
+import { MaternalAvatar } from "./MaternalAvatar"
 
 export type RegistrationValues = {
   firstName: string
@@ -42,6 +44,8 @@ export type RegistrationValues = {
   bmiCategory: string
   otherComorbidities: string
   deliveryHistoryNotes: string
+  profileUrl?: string
+  photoFile?: File | null
 }
 
 const initialValues: RegistrationValues = {
@@ -73,6 +77,8 @@ const initialValues: RegistrationValues = {
   bmiCategory: "",
   otherComorbidities: "",
   deliveryHistoryNotes: "",
+  profileUrl: "",
+  photoFile: null,
 }
 
 const steps = ["Identity", "Pregnancy", "Risk History", "Conditions", "Clinical Indicators"]
@@ -498,6 +504,12 @@ export function NewPregnancyDialog({ open, onOpenChange, onSubmit }: { open: boo
 }
 
 export function EditMaternalProfileDialog({ open, onOpenChange, profile, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; profile: MaternalRecord; onSubmit: (values: RegistrationValues) => Promise<void> }) {
+  const { session } = useAuthSession()
+  const currentPhotoUrl = profile.user?.profile_url || profile.profile_url || profile.photo_url || ""
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
+
   const [values, setValues] = useState<RegistrationValues>(() => ({
     ...initialValues,
     firstName: profile.user?.first_name ?? "",
@@ -510,8 +522,49 @@ export function EditMaternalProfileDialog({ open, onOpenChange, profile, onSubmi
     familySerialNo: profile.family_serial_no ?? "",
     civilStatus: profile.civil_status ?? "",
     bloodType: profile.blood_type ?? "",
+    profileUrl: currentPhotoUrl,
   }))
   const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview)
+    }
+  }, [photoPreview])
+
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      if (photoPreview) {
+        URL.revokeObjectURL(photoPreview)
+        setPhotoPreview(null)
+      }
+      setPhotoFile(null)
+    }
+    onOpenChange(nextOpen)
+  }
+
+  const handlePhotoChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please select a valid image file.")
+      return
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Image size exceeds 10MB limit.")
+      return
+    }
+    if (photoPreview) URL.revokeObjectURL(photoPreview)
+    setPhotoFile(file)
+    setPhotoPreview(URL.createObjectURL(file))
+    event.target.value = ""
+  }
+
+  const clearPhotoSelection = () => {
+    if (photoPreview) URL.revokeObjectURL(photoPreview)
+    setPhotoPreview(null)
+    setPhotoFile(null)
+  }
 
   const update = <K extends keyof RegistrationValues>(key: K, value: RegistrationValues[K]) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -522,13 +575,21 @@ export function EditMaternalProfileDialog({ open, onOpenChange, profile, onSubmi
     const validation = z.object({ firstName: z.string().trim().min(1, "Enter a first name."), lastName: z.string().trim().min(1, "Enter a last name."), dateOfBirth: z.string().min(1, "Enter the date of birth."), contactNumber: z.string().trim().min(1, "Enter a phone number."), address: z.string().trim().min(1, "Enter an address."), civilStatus: z.string().min(1, "Select a civil status."), bloodType: z.string().min(1, "Select a blood type."), email: z.union([z.literal(""), z.email("Enter a valid email address.")]) }).safeParse(values)
     if (!validation.success) { toast.error(validation.error.issues[0]?.message ?? "Check the required profile fields"); return }
     setIsSaving(true)
-    try { await onSubmit(values); onOpenChange(false) }
+    try {
+      let finalProfileUrl = currentPhotoUrl
+      if (photoFile && profile.mother_id && session?.token) {
+        const uploadRes = await uploadMaternalAvatar(session.token, profile.mother_id, photoFile)
+        finalProfileUrl = uploadRes.profile_url
+      }
+      await onSubmit({ ...values, profileUrl: finalProfileUrl })
+      handleOpenChange(false)
+    }
     catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update the maternal profile") }
     finally { setIsSaving(false) }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-3xl gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-3xl">
         <DialogHeader className="px-5 pb-1 pt-5 sm:px-6 md:pt-6">
           <DialogTitle className="text-base font-semibold">Edit Profile</DialogTitle>
@@ -537,6 +598,68 @@ export function EditMaternalProfileDialog({ open, onOpenChange, profile, onSubmi
         <form onSubmit={save} className="flex min-h-0 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3 sm:px-6">
             <div className="flex w-full max-w-2xl flex-col gap-3">
+              <div className="flex w-full min-w-0 max-w-full items-center gap-4 overflow-hidden rounded-lg border border-sidebar-border bg-muted/40 p-3">
+                <div className="relative group shrink-0">
+                  {photoPreview ? (
+                    <img src={photoPreview} alt="Preview" className="size-16 rounded-full object-cover border border-sidebar-border" />
+                  ) : (
+                    <MaternalAvatar
+                      src={currentPhotoUrl}
+                      name={`${values.firstName} ${values.lastName}`}
+                      className="size-16 border border-sidebar-border text-lg"
+                    />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => photoInputRef.current?.click()}
+                    aria-label="Upload photo"
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                  >
+                    <Camera className="size-5" />
+                  </button>
+                </div>
+                <div className="flex flex-col gap-1.5 min-w-0 flex-1 overflow-hidden">
+                  <span className="text-xs font-semibold text-foreground">Profile Picture</span>
+                  <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full">
+                    <input
+                      ref={photoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/jpg,image/webp"
+                      className="hidden"
+                      onChange={handlePhotoChange}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => photoInputRef.current?.click()}
+                      className="h-7 shrink-0 gap-1.5 px-2.5 text-xs border-sidebar-border"
+                    >
+                      <Camera className="size-3.5" />
+                      {photoPreview ? "Change Photo" : "Upload Photo"}
+                    </Button>
+                    {photoPreview && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={clearPhotoSelection}
+                        className="h-7 shrink-0 px-2 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        Reset
+                      </Button>
+                    )}
+                  </div>
+                  {photoFile ? (
+                    <span className="min-w-0 truncate text-[11px] text-muted-foreground" title={photoFile.name}>
+                      {photoFile.name} ({(photoFile.size / 1024).toFixed(0)} KB)
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">PNG, JPG or WEBP up to 10MB</span>
+                  )}
+                </div>
+              </div>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field id="edit-first-name" label="First Name" required>
                   <Input id="edit-first-name" value={values.firstName} onChange={(event) => update("firstName", event.target.value)} placeholder="Maria" className="h-8 bg-muted/70 text-xs dark:bg-muted/60" />
@@ -572,7 +695,7 @@ export function EditMaternalProfileDialog({ open, onOpenChange, profile, onSubmi
             </div>
           </div>
           <DialogFooter className="shrink-0 flex-row justify-between gap-3 sm:justify-between px-5 pb-5 pt-3 sm:px-6 md:pb-6">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="h-9 min-w-24 text-xs">Cancel</Button>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)} className="h-9 min-w-24 text-xs">Cancel</Button>
             <Button type="submit" disabled={isSaving} className="h-9 min-w-28 text-xs">{isSaving ? "Saving…" : "Save Changes"}</Button>
           </DialogFooter>
         </form>

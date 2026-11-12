@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react"
-import { ArrowRight, Check, CheckCircle2, Clock3, Cloud, GitMerge, RefreshCw, Smartphone, Wifi, WifiOff, X } from "lucide-react"
+import { ArrowRight, Check, CheckCircle2, Clock3, Cloud, GitMerge, RefreshCw, Smartphone, Trash2, Wifi, WifiOff, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { toast } from "sonner"
+import { db, type OfflineQueueItem } from "@/lib/db/silangDatabase"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import {
   getLastSyncedAt,
   getPendingMotherUpdates,
@@ -97,6 +99,7 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
   const token = session?.token
   const [tab, setTab] = useState("queue")
   const [items, setItems] = useState<PendingMotherUpdate[]>([])
+  const [generalQueue, setGeneralQueue] = useState<OfflineQueueItem[]>([])
   const [demoConflict, setDemoConflict] = useState<PendingMotherUpdate | null>(null)
   const [activeConflict, setActiveConflict] = useState<PendingMotherUpdate | null>(null)
   const [online, setOnline] = useState(typeof navigator === "undefined" ? true : navigator.onLine)
@@ -110,6 +113,7 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
     if (!queueLoaded.current) setQueueLoading(true)
     try {
       setItems(await getPendingMotherUpdates())
+      setGeneralQueue(await db.offlineQueue.toArray().catch(() => []))
       setLastSynced(getLastSyncedAt())
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to read offline updates")
@@ -134,12 +138,15 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
     setSyncing(true)
     try {
       const summary = await syncMotherOutbox(token)
+      const generalSummary = await silangSyncEngine.processQueue(token)
       await refreshQueue()
-      if (summary.conflicts) toast.warning(`${summary.conflicts} record${summary.conflicts === 1 ? " needs" : "s need"} review`, { description: "Choose which updated information to keep." })
-      else if (notify) {
-        if (summary.synced) toast.success(`${summary.synced} offline update${summary.synced === 1 ? "" : "s"} synced`)
-        else if (!summary.pending) toast.success("Everything is up to date")
-        else toast.error("Some updates could not sync", { description: "Check your connection and try again." })
+      const totalSynced = summary.synced + generalSummary.synced
+      const totalConflicts = summary.conflicts + generalSummary.conflicts
+      if (totalConflicts) {
+        toast.warning(`${totalConflicts} record${totalConflicts === 1 ? " needs" : "s need"} review`, { description: "Choose which updated information to keep." })
+      } else if (notify) {
+        if (totalSynced) toast.success(`${totalSynced} offline update${totalSynced === 1 ? "" : "s"} synced`)
+        else toast.success("Everything is up to date")
       }
     } catch (error) {
       if (notify) toast.error(error instanceof Error ? error.message : "Unable to sync saved changes")
@@ -171,7 +178,7 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
     }
   }, [refreshQueue, syncNow])
 
-  const pendingCount = items.filter((item) => item.state === "pending").length
+  const pendingCount = items.filter((item) => item.state === "pending").length + generalQueue.length
   const conflicts = [...items.filter((item) => item.state === "conflict"), ...(demoConflict ? [demoConflict] : [])]
 
   const simulateConflict = () => {
@@ -220,6 +227,19 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
     }
   }
 
+  const discardItem = async (item: OfflineQueueItem) => {
+    if (!item.id) return
+    await silangSyncEngine.discardQueueItem(item.id)
+    await refreshQueue()
+    toast.success("Queued item discarded")
+  }
+
+  const clearFailedItems = async () => {
+    await silangSyncEngine.clearFailedQueueItems()
+    await refreshQueue()
+    toast.success("Failed queue items cleared")
+  }
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -253,15 +273,82 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
 
             <div className="min-h-0 flex-1 overflow-y-auto">
               <TabsContent value="queue" className="m-0 px-4 pb-4">
-                {queueLoading ? <div className="flex flex-col gap-2" aria-label="Loading offline changes" aria-busy="true">{Array.from({ length: 3 }, (_, index) => <div key={index} className="space-y-2 rounded-md border border-sidebar-border p-3"><div className="flex justify-between gap-3"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-16" /></div><Skeleton className="h-3 w-3/4" /></div>)}</div> : items.filter((item) => item.state === "pending").length ? <div className="flex flex-col gap-2">
-                  {items.filter((item) => item.state === "pending").map((item) => (
-                    <article key={item.id} className="rounded-md border border-sidebar-border p-3">
-                      <div className="flex items-start justify-between gap-2"><p className="truncate text-xs font-semibold">Mother: {item.motherName}</p><span className="shrink-0 text-xs text-muted-foreground">{formatTimestamp(item.queuedAt)}</span></div>
-                      <p className="mt-1 text-xs text-muted-foreground">Profile changes saved on this device</p>
-                      {item.lastError && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Waiting for a stable connection to sync.</p>}
-                    </article>
-                  ))}
-                </div> : <div className="flex flex-col items-center gap-2 py-10 text-center"><CheckCircle2 className="size-6 text-emerald-600" /><p className="text-xs font-medium">No changes waiting to sync</p><p className="text-xs text-muted-foreground">Offline profile edits will appear here until they are synced.</p></div>}
+                {queueLoading ? (
+                  <div className="flex flex-col gap-2" aria-label="Loading offline changes" aria-busy="true">
+                    {Array.from({ length: 3 }, (_, index) => (
+                      <div key={index} className="space-y-2 rounded-md border border-sidebar-border p-3">
+                        <div className="flex justify-between gap-3">
+                          <Skeleton className="h-3.5 w-40" />
+                          <Skeleton className="h-3 w-16" />
+                        </div>
+                        <Skeleton className="h-3 w-3/4" />
+                      </div>
+                    ))}
+                  </div>
+                ) : (items.filter((item) => item.state === "pending").length > 0 || generalQueue.length > 0) ? (
+                  <div className="flex flex-col gap-2">
+                    {generalQueue.some((item) => Boolean(item.last_error || item.status === "error")) && (
+                      <div className="flex items-center justify-between pb-1">
+                        <span className="text-xs text-muted-foreground">{generalQueue.length} operations in queue</span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void clearFailedItems()}
+                          className="h-7 px-2 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="mr-1 size-3" />
+                          Clear Failed Items
+                        </Button>
+                      </div>
+                    )}
+                    {generalQueue.map((item) => (
+                      <article key={item.id} className="rounded-md border border-sidebar-border p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate text-xs font-semibold capitalize">
+                            {item.action === "CREATE" ? "New" : item.action} {item.entity_type.replace(/_/g, " ")}
+                          </p>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-xs text-muted-foreground">{formatTimestamp(String(item.created_at))}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => void discardItem(item)}
+                              aria-label="Discard this queued item"
+                              className="size-6 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                            >
+                              <Trash2 className="size-3" />
+                            </Button>
+                          </div>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground truncate">
+                          {item.temp_id ? `Local ID: ${item.temp_id}` : item.endpoint}
+                        </p>
+                        {item.last_error && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">{item.last_error}</p>}
+                        {!item.last_error && silangSyncEngine.isItemBlocked(item, generalQueue) && (
+                          <p className="mt-1 text-xs text-muted-foreground italic">Waiting for parent entity to sync</p>
+                        )}
+                      </article>
+                    ))}
+                    {items.filter((item) => item.state === "pending").map((item) => (
+                      <article key={item.id} className="rounded-md border border-sidebar-border p-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="truncate text-xs font-semibold">Mother: {item.motherName}</p>
+                          <span className="shrink-0 text-xs text-muted-foreground">{formatTimestamp(item.queuedAt)}</span>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">Profile changes saved on this device</p>
+                        {item.lastError && <p className="mt-1 text-xs text-amber-700 dark:text-amber-400">Waiting for a stable connection to sync.</p>}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 py-10 text-center">
+                    <CheckCircle2 className="size-6 text-emerald-600" />
+                    <p className="text-xs font-medium">No changes waiting to sync</p>
+                    <p className="text-xs text-muted-foreground">Offline records and profile edits will appear here until synced.</p>
+                  </div>
+                )}
               </TabsContent>
 
               <TabsContent value="conflicts" className="m-0 px-4 pb-4">

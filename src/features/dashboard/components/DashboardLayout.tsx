@@ -52,6 +52,7 @@ export function DashboardLayout() {
       toast.error("PINs don't match", { description: "Re-enter the PIN you created to continue." })
       return
     }
+    if (session?.user.user_id) window.localStorage.setItem(`silang.offline-pin:${session.user.user_id}`, pin)
     if (pinPromptKey) window.localStorage.setItem(pinPromptKey, "done")
     setIsPinSetupOpen(false)
   }
@@ -150,13 +151,10 @@ export function DashboardLayout() {
       <AppSidebar />
       <SidebarInset className="bg-white dark:bg-black flex flex-col h-screen overflow-hidden">
         <AppHeader />
-        {/* Main Content Area */}
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {/* Outlet renders the nested dashboard routes */}
           <Outlet />
         </div>
 
-        {/* Mobile Floating Action Button */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button

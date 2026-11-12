@@ -1,5 +1,5 @@
-import { useState, type FormEvent, type ReactNode } from "react"
-import { Check, HeartPulse, MapPin, UserRound } from "lucide-react"
+import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from "react"
+import { Check, HeartPulse, MapPin, Search, UserRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -55,6 +55,7 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
   const [step, setStep] = useState(0)
   const [destinationType, setDestinationType] = useState("in-system")
   const [patientId, setPatientId] = useState(initialMotherId ?? "")
+  const [motherSearchQuery, setMotherSearchQuery] = useState("")
   const [destinationFacilityId, setDestinationFacilityId] = useState("")
   const [externalFacilityName, setExternalFacilityName] = useState("")
   const [errors, setErrors] = useState<Record<string, string>>({})
@@ -70,10 +71,38 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
   })[0]
   const destinationFacilities = facilities.filter((facility) => facility.facility_id !== originFacilityId)
 
+  useEffect(() => {
+    if (open) {
+      setPatientId(initialMotherId ?? "")
+      setMotherSearchQuery("")
+    }
+  }, [open, initialMotherId])
+
+  const getMotherFullName = (mother?: MaternalRecord | null) => {
+    if (!mother) return ""
+    return [mother.user?.first_name, mother.user?.middle_name, mother.user?.last_name].filter(Boolean).join(" ") || "Unnamed patient"
+  }
+
+  const getMotherInitials = (mother?: MaternalRecord | null) => {
+    const name = getMotherFullName(mother)
+    return name.split(" ").map((part) => part[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "M"
+  }
+
+  const matchingMothers = useMemo(() => {
+    const query = motherSearchQuery.trim().toLowerCase()
+    if (!query) return []
+    return mothers.filter((mother) => {
+      const name = getMotherFullName(mother).toLowerCase()
+      const serial = (mother.family_serial_no || "").toLowerCase()
+      return name.includes(query) || serial.includes(query)
+    })
+  }, [mothers, motherSearchQuery])
+
   const close = () => {
     onOpenChange(false)
     setStep(0)
     setPatientId(initialMotherId ?? "")
+    setMotherSearchQuery("")
     setDestinationFacilityId("")
     setExternalFacilityName("")
     setErrors({})
@@ -146,7 +175,11 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
 
   return (
     <Dialog open={open} onOpenChange={(nextOpen) => nextOpen ? onOpenChange(true) : close()}>
-      <DialogContent className="grid max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-4xl grid-cols-1 gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-4xl md:grid-cols-[240px_minmax(0,1fr)]">
+      <DialogContent
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+        className="grid max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-4xl grid-cols-1 gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-4xl md:grid-cols-[240px_minmax(0,1fr)]"
+      >
         <aside className="flex min-h-0 flex-col border-b border-border bg-muted/30 px-5 py-4 md:border-b-0 md:border-r md:px-6 md:py-6">
           <DialogHeader className="gap-1.5 text-left">
             <DialogTitle className="text-base font-semibold">Initiate Online Referral</DialogTitle>
@@ -175,13 +208,88 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
               <div className="flex w-full max-w-2xl flex-col gap-3">
                 {step === 0 && <>
                   <Field id="referral-patient" label="Select Patient / Mother" required>
-                    {initialMotherId && selectedMother ? <Input id="referral-patient" readOnly value={[selectedMother.user?.first_name, selectedMother.user?.middle_name, selectedMother.user?.last_name].filter(Boolean).join(" ") || "Unnamed patient"} /> : <Select value={patientId} onValueChange={(value) => { setPatientId(value); setErrors((current) => ({ ...current, patientId: "", pregnancyId: "" })) }}>
-                      <SelectTrigger id="referral-patient" className="w-full"><SelectValue placeholder="Select a patient" /></SelectTrigger>
-                      <SelectContent>{mothers.map((mother) => {
-                        const name = [mother.user?.first_name, mother.user?.middle_name, mother.user?.last_name].filter(Boolean).join(" ") || "Unnamed patient"
-                        return <SelectItem key={mother.mother_id} value={mother.mother_id}>{name} · {mother.family_serial_no || "No serial no."}</SelectItem>
-                      })}</SelectContent>
-                    </Select>}
+                    {initialMotherId && selectedMother ? (
+                      <Input id="referral-patient" readOnly value={getMotherFullName(selectedMother)} />
+                    ) : (
+                      <div className="flex flex-col gap-1.5">
+                        <div className="relative">
+                          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            id="referral-patient"
+                            autoComplete="off"
+                            value={selectedMother ? getMotherFullName(selectedMother) : motherSearchQuery}
+                            onChange={(event) => {
+                              setMotherSearchQuery(event.target.value)
+                              if (patientId) setPatientId("")
+                              setErrors((current) => ({ ...current, patientId: "", pregnancyId: "" }))
+                            }}
+                            placeholder="Search by mother's name or family serial no."
+                            className="h-9 pl-8 pr-8 text-xs"
+                            role="combobox"
+                            aria-expanded={Boolean(motherSearchQuery.trim() && !selectedMother)}
+                            aria-controls="referral-mother-results"
+                          />
+                          {(motherSearchQuery || selectedMother) && (
+                            <button
+                              type="button"
+                              aria-label="Clear patient selection"
+                              onClick={() => {
+                                setMotherSearchQuery("")
+                                setPatientId("")
+                                setErrors((current) => ({ ...current, patientId: "", pregnancyId: "" }))
+                              }}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            >
+                              <X className="size-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        {motherSearchQuery.trim() && !selectedMother && (
+                          <div
+                            id="referral-mother-results"
+                            role="listbox"
+                            aria-label="Available mothers"
+                            className="max-h-52 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-sm"
+                          >
+                            {matchingMothers.length > 0 ? (
+                              matchingMothers.map((mother) => {
+                                const name = getMotherFullName(mother)
+                                const initials = getMotherInitials(mother)
+                                return (
+                                  <button
+                                    key={mother.mother_id}
+                                    type="button"
+                                    role="option"
+                                    aria-selected={false}
+                                    onClick={() => {
+                                      setPatientId(mother.mother_id)
+                                      setMotherSearchQuery("")
+                                      setErrors((current) => ({ ...current, patientId: "", pregnancyId: "" }))
+                                    }}
+                                    className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-left text-xs transition-colors hover:bg-muted/70 focus-visible:bg-muted/70 focus-visible:outline-none"
+                                  >
+                                    <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[11px] font-semibold text-primary">
+                                      {initials}
+                                    </span>
+                                    <span className="flex min-w-0 flex-1 flex-col">
+                                      <span className="truncate font-medium text-foreground">{name}</span>
+                                      <span className="truncate text-[11px] text-muted-foreground">
+                                        {mother.family_serial_no || "No serial no."} · {mother.age != null ? `${mother.age} yrs` : "Age not recorded"}
+                                      </span>
+                                    </span>
+                                    <Check className="size-3.5 shrink-0 text-muted-foreground/50" />
+                                  </button>
+                                )
+                              })
+                            ) : (
+                              <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                                No mothers found matching "{motherSearchQuery}"
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                     {errors.patientId && <p role="alert" className="text-xs text-destructive">{errors.patientId}</p>}
                     {errors.pregnancyId && <p role="alert" className="text-xs text-destructive">{errors.pregnancyId}</p>}
                   </Field>
@@ -192,7 +300,18 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
                       <TabsTrigger value="external" className="h-full min-w-0 px-2 text-xs font-medium">External</TabsTrigger>
                     </TabsList>
                   </Tabs>
-                  {destinationType === "in-system" && <Field id="network-facility" label="Receiving Facility" required error={errors.destinationFacilityId}><Select value={destinationFacilityId} onValueChange={(value) => { setDestinationFacilityId(value); setErrors((current) => ({ ...current, destinationFacilityId: "" })) }}><SelectTrigger id="network-facility" className="w-full"><SelectValue placeholder="Select facility" /></SelectTrigger><SelectContent>{destinationFacilities.map((facility) => <SelectItem key={facility.facility_id} value={facility.facility_id}>{facility.facility_name}</SelectItem>)}</SelectContent></Select></Field>}
+                  {destinationType === "in-system" && (
+                    <Field id="network-facility" label="Receiving Facility" required error={errors.destinationFacilityId}>
+                      <Select value={destinationFacilityId} onValueChange={(value) => { setDestinationFacilityId(value); setErrors((current) => ({ ...current, destinationFacilityId: "" })) }}>
+                        <SelectTrigger id="network-facility" className="w-full">
+                          <SelectValue placeholder="Select facility" />
+                        </SelectTrigger>
+                        <SelectContent position="popper" align="start" side="bottom" sideOffset={4} className="w-[var(--radix-select-trigger-width)]">
+                          {destinationFacilities.map((facility) => <SelectItem key={facility.facility_id} value={facility.facility_id}>{facility.facility_name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  )}
                   {destinationType === "external" && <Field id="external-facility" label="External Facility Name" required error={errors.externalFacilityName}><Input id="external-facility" value={externalFacilityName} onChange={(event) => { setExternalFacilityName(event.target.value); setErrors((current) => ({ ...current, externalFacilityName: "" })) }} placeholder="Enter facility name" /></Field>}
                   {selectedMother && <p className="text-xs text-muted-foreground">{selectedMother.family_serial_no || "No family serial number"} · {selectedMother.age ?? "Age not recorded"} years</p>}
                 </>}
@@ -226,8 +345,12 @@ export function CreateReferralModal({ open, onOpenChange, mothers, facilities, o
               </div>
             </div>
             <DialogFooter className="shrink-0 flex-row justify-between gap-2 px-5 pb-5 pt-3 sm:justify-between sm:px-6 md:pb-6">
-              <div className={`ml-auto flex w-full max-w-2xl items-center gap-3 ${step > 0 ? "justify-between" : "justify-end"}`}>
-                {step > 0 && <Button type="button" variant="outline" onClick={() => setStep((current) => Math.max(0, current - 1))} className="h-9 min-w-24 rounded-md px-4 text-xs font-medium">Back</Button>}
+              <div className="ml-auto flex w-full max-w-2xl items-center justify-between gap-3">
+                {step > 0 ? (
+                  <Button type="button" variant="outline" onClick={() => setStep((current) => Math.max(0, current - 1))} className="h-9 min-w-24 rounded-md px-4 text-xs font-medium">Back</Button>
+                ) : (
+                  <Button type="button" variant="outline" onClick={close} className="h-9 min-w-24 rounded-md px-4 text-xs font-medium">Cancel</Button>
+                )}
                 <Button type="submit" disabled={isSaving} className="h-9 min-w-28 rounded-md px-4 text-xs font-medium">{isSaving ? "Creating…" : step === steps.length - 1 ? <>Create Referral <Check className="size-3.5" /></> : "Continue"}</Button>
               </div>
             </DialogFooter>

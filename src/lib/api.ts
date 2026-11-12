@@ -21,7 +21,7 @@ const apiRoot = configuredOrigin
   : "/api/v1"
 
 export function backendAssetUrl(path: string) {
-  if (/^https?:\/\//i.test(path)) return path
+  if (/^(https?|data|blob):/i.test(path)) return path
   const origin = configuredOrigin?.replace(/\/api\/v1$/, "")
   if (!origin) return path
   return `${origin}${path.startsWith("/") ? path : `/${path}`}`

@@ -25,6 +25,7 @@ import { OfflineSyncDrawer } from "./OfflineSyncDrawer"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { getMaternalProfile } from "@/features/maternal-records/api"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 
 export function AppHeader() {
   const { theme, setTheme } = useTheme()
@@ -32,6 +33,12 @@ export function AppHeader() {
   const { session } = useAuthSession()
   const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
+  const [syncState, setSyncState] = useState<{ isOnline: boolean; isSyncing: boolean; pendingCount: number; conflictCount: number }>({
+    isOnline: typeof navigator === "undefined" || navigator.onLine,
+    isSyncing: false,
+    pendingCount: 0,
+    conflictCount: 0,
+  })
   const [profileBreadcrumbResult, setProfileBreadcrumbResult] = useState<{ motherId: string; name: string } | null>(null)
   const isMaternalArea = location.pathname.startsWith('/dashboard/maternal-records')
   const isMaternalProfile = location.pathname.startsWith('/dashboard/maternal-records/')
@@ -46,13 +53,15 @@ export function AppHeader() {
     : 'Dashboard'
 
   useEffect(() => {
-    const updateConnection = () => setIsOnline(navigator.onLine)
-    window.addEventListener("online", updateConnection)
-    window.addEventListener("offline", updateConnection)
-    return () => {
-      window.removeEventListener("online", updateConnection)
-      window.removeEventListener("offline", updateConnection)
-    }
+    return silangSyncEngine.subscribe((status) => {
+      setSyncState({
+        isOnline: status.isOnline,
+        isSyncing: status.isSyncing,
+        pendingCount: status.pendingCount,
+        conflictCount: status.conflictCount,
+      })
+      setIsOnline(status.isOnline)
+    })
   }, [])
 
   useEffect(() => {
@@ -71,7 +80,6 @@ export function AppHeader() {
   return (
     <TooltipProvider delayDuration={500}>
     <header className="bg-white dark:bg-black flex h-14 shrink-0 items-center justify-between border-b border-sidebar-border px-4">
-      {/* --- DESKTOP LAYOUT --- */}
       <div className="hidden md:flex flex-1 items-center gap-2">
         <Tooltip><TooltipTrigger asChild><SidebarTrigger aria-label="Toggle sidebar" className="-ml-1" /></TooltipTrigger><TooltipContent>Toggle sidebar</TooltipContent></Tooltip>
         <div className="h-4 w-px bg-border" />
@@ -105,10 +113,14 @@ export function AppHeader() {
       <div className="hidden md:flex items-center gap-2">
         <Button type="button" variant="outline" onClick={() => setIsSyncDrawerOpen(true)} className="h-8 px-2.5 text-xs font-medium gap-2 border-sidebar-border bg-background dark:bg-black">
           <span className="relative flex size-2" aria-hidden="true">
-            {isOnline && <span className={`absolute inline-flex size-full motion-safe:animate-ping rounded-full ${isOnline ? "bg-green-600 opacity-90" : ""}`} />}
-            <span className={`relative inline-flex size-2 rounded-full ${isOnline ? "bg-green-400" : "bg-amber-500"}`} />
+            {isOnline && <span className={`absolute inline-flex size-full motion-safe:animate-ping rounded-full ${syncState.isSyncing ? "bg-amber-400 opacity-90" : "bg-green-600 opacity-90"}`} />}
+            <span className={`relative inline-flex size-2 rounded-full ${!isOnline ? "bg-amber-500" : syncState.isSyncing ? "bg-amber-400 animate-spin" : "bg-green-400"}`} />
           </span>
-          {isOnline ? "You're Online" : "You're Offline"}
+          {syncState.isSyncing
+            ? "Syncing…"
+            : !isOnline
+            ? (syncState.pendingCount > 0 ? `Offline (${syncState.pendingCount} queued)` : "You're Offline")
+            : (syncState.pendingCount > 0 ? `Online (${syncState.pendingCount} pending)` : "You're Online")}
         </Button>
         <Popover>
           <Tooltip><TooltipTrigger asChild>
@@ -198,7 +210,6 @@ export function AppHeader() {
         </DropdownMenu>
       </div>
 
-      {/* --- MOBILE LAYOUT --- */}
       <div className="flex md:hidden w-full items-center justify-between">
         <Breadcrumb>
           <BreadcrumbList className="text-xs">
@@ -212,10 +223,14 @@ export function AppHeader() {
         <div className="flex items-center gap-1">
           <Button type="button" variant="outline" onClick={() => setIsSyncDrawerOpen(true)} className="h-8 px-2 text-xs font-medium gap-1.5 border-sidebar-border bg-background dark:bg-black">
             <span className="relative flex size-2" aria-hidden="true">
-              {isOnline && <span className="absolute inline-flex size-full motion-safe:animate-ping rounded-full bg-green-600 opacity-90" />}
-              <span className={`relative inline-flex size-2 rounded-full ${isOnline ? "bg-green-400" : "bg-amber-500"}`} />
+              {isOnline && <span className={`absolute inline-flex size-full motion-safe:animate-ping rounded-full ${syncState.isSyncing ? "bg-amber-400 opacity-90" : "bg-green-600 opacity-90"}`} />}
+              <span className={`relative inline-flex size-2 rounded-full ${!isOnline ? "bg-amber-500" : syncState.isSyncing ? "bg-amber-400 animate-spin" : "bg-green-400"}`} />
             </span>
-            {isOnline ? "You're Online" : "You're Offline"}
+            {syncState.isSyncing
+              ? "Syncing…"
+              : !isOnline
+              ? (syncState.pendingCount > 0 ? `Offline (${syncState.pendingCount})` : "Offline")
+              : (syncState.pendingCount > 0 ? `Online (${syncState.pendingCount})` : "Online")}
           </Button>
           <Popover>
             <Tooltip><TooltipTrigger asChild>

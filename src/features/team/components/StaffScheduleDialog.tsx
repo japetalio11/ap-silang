@@ -35,7 +35,6 @@ function readSchedule(staffId: string): StaffSchedule {
       return { days: parsed.days ?? weekdays, intervals: parsed.intervals?.length ? parsed.intervals : [{ start: "08:00", end: "17:00" }] }
     }
   } catch {
-    // Use the standard weekday schedule when local storage is unavailable or invalid.
   }
   return { days: weekdays, intervals: [{ start: "08:00", end: "17:00" }] }
 }
@@ -79,7 +78,7 @@ export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boole
         <div className="grid gap-5 py-1">
           <fieldset className="grid gap-2.5">
             <legend className="text-xs font-medium">Available days <span className="text-destructive">*</span></legend>
-            <div className="grid grid-cols-2 gap-x-4 gap-y-2 sm:grid-cols-5">
+            <div className="grid grid-cols-2 gap-x-5 gap-y-2 mt-3 sm:grid-cols-5">
               {weekdays.map((day) => <label key={day} className="flex cursor-pointer items-center gap-2 text-xs">
                 <Checkbox checked={days.includes(day)} onCheckedChange={() => toggleDay(day)} aria-label={day} />
                 {day.slice(0, 3)}

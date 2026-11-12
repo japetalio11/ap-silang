@@ -22,6 +22,7 @@ import { verifyCurrentUserPassword } from "@/features/auth/password-verification
 import { getMaternalRecords } from "@/features/maternal-records/api"
 import { toast } from "sonner"
 import { appointmentToEvent, cancelAppointment, createAppointment, getAppointments, maternalRecordToAppointmentOption } from "../api"
+import { getClosedDates, type ClosedDateRecord } from "../closed-dates"
 import type { AppointmentFormValues, AppointmentMotherOption } from "./CreateAppointmentModal"
 
 import "react-big-calendar/lib/css/react-big-calendar.css"
@@ -47,6 +48,14 @@ export function CalendarPage() {
   const [mothers, setMothers] = useState<AppointmentMotherOption[]>([])
   const [filters, setFilters] = useState<Record<string, string[]>>({})
   const [isLoading, setIsLoading] = useState(Boolean(session?.token))
+  const [closedDates, setClosedDates] = useState<ClosedDateRecord[]>([])
+
+  React.useEffect(() => {
+    const syncClosedDates = () => setClosedDates(getClosedDates(session?.user?.facility_id))
+    syncClosedDates()
+    window.addEventListener("silang:closed-dates-updated", syncClosedDates)
+    return () => window.removeEventListener("silang:closed-dates-updated", syncClosedDates)
+  }, [session?.user?.facility_id])
 
   // Swipe gesture handling
   const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number} | null>(null)
@@ -68,12 +77,11 @@ export function CalendarPage() {
     const distanceX = touchStartPos.x - touchEndPos.x
     const distanceY = Math.abs(touchStartPos.y - touchEndPos.y)
     
-    // Check if it's a horizontal swipe (X distance > Y distance) and meets the minimum threshold
     if (Math.abs(distanceX) > distanceY && Math.abs(distanceX) > minSwipeDistance) {
       const isLeftSwipe = distanceX > minSwipeDistance
       const isRightSwipe = distanceX < -minSwipeDistance
 
-      const views = ["month", "week"]
+      const views = ["month", "week"] as const
       const currentIndex = views.indexOf(view)
 
       if (isLeftSwipe && currentIndex < views.length - 1) {
@@ -85,7 +93,6 @@ export function CalendarPage() {
     }
   }
 
-  // Set default date to current date so it highlights today (e.g. Tue 30)
   const [viewDate, setViewDate] = useState(new Date())
   const [selectedDate, setSelectedDate] = useState(new Date())
 
@@ -125,7 +132,7 @@ export function CalendarPage() {
     return matches("Appointment Type", event.appointmentType) && matches("Status", event.status) && matches("Provider", event.provider)
   }), [events, filters])
 
-  const handleCreateAppointment = async (_event: AppEvent, values: AppointmentFormValues) => {
+  const handleCreateAppointment = async (event: AppEvent, values: AppointmentFormValues) => {
     if (!session?.token) throw new Error("Your session has expired. Sign in again to schedule an appointment.")
     const response = await createAppointment(session.token, {
       mother_id: values.motherId,
@@ -133,11 +140,13 @@ export function CalendarPage() {
       appointment_time: values.time,
       appointment_type: values.appointmentType,
     })
-    const createdEvent = {
+    const createdFromApi = response.data ? appointmentToEvent(response.data) : null
+    const createdEvent: AppEvent = {
       ...event,
-      ...appointmentToEvent(response.data),
-      patient: event.patient,
-      title: event.title,
+      ...(createdFromApi ?? {}),
+      id: createdFromApi?.id ?? event.id,
+      patient: event.patient ?? createdFromApi?.patient,
+      title: event.title ?? createdFromApi?.title,
       motherId: values.motherId,
     }
     setEvents((current) => [...current.filter((item) => item.id !== createdEvent.id), createdEvent])
@@ -240,7 +249,7 @@ export function CalendarPage() {
         <CustomToolbar
           date={viewDate}
           view={view}
-          onViewChange={setView}
+          onViewChange={(v) => setView(v as "month" | "week")}
           onNavigate={handleNavigate}
           onCreateAppointment={() => setIsCreateModalOpen(true)}
           filters={filters}
@@ -269,15 +278,27 @@ export function CalendarPage() {
                 const dayEvents = visibleEvents.filter((event) => event.start && isSameDay(event.start, day))
                 const isSelected = isSameDay(day, selectedDate)
                 const isCurrentMonth = isSameMonth(day, viewDate)
+                const dayDateStr = format(day, "yyyy-MM-dd")
+                const closedInfo = closedDates.find((item) => item.date === dayDateStr)
                 return (
                   <div
                     key={`${weekIndex}-${day.toISOString()}`}
                     onClick={() => handleSelectMonthDate(day)}
-                    className={`group flex min-h-0 min-w-0 cursor-pointer flex-col p-1.5 transition-colors sm:p-2 ${dayIndex < 4 ? 'border-r border-sidebar-border' : ''} ${weekIndex < monthWeeks.length - 1 ? 'border-b border-sidebar-border' : ''} ${isSelected ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-muted/30 dark:hover:bg-white/5'} ${!isCurrentMonth ? 'text-muted-foreground/50' : ''}`}
+                    className={`group flex min-h-0 min-w-0 cursor-pointer flex-col p-1.5 transition-colors sm:p-2 ${dayIndex < 4 ? 'border-r border-sidebar-border' : ''} ${weekIndex < monthWeeks.length - 1 ? 'border-b border-sidebar-border' : ''} ${isSelected ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-muted/30 dark:hover:bg-white/5'} ${!isCurrentMonth ? 'text-muted-foreground/50' : ''} ${closedInfo ? 'bg-destructive/5' : ''}`}
                   >
-                    <span className={`mb-1 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${isSelected ? 'bg-foreground text-background' : isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/50'}`}>
-                      {format(day, 'd')}
-                    </span>
+                    <div className="flex items-center justify-between">
+                      <span className={`mb-1 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${isSelected ? 'bg-foreground text-background' : isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/50'}`}>
+                        {format(day, 'd')}
+                      </span>
+                      {closedInfo && (
+                        <span className="rounded bg-destructive/15 px-1 py-0.2 text-[9px] font-semibold text-destructive">
+                          Closed
+                        </span>
+                      )}
+                    </div>
+                    {closedInfo && (
+                      <p className="line-clamp-1 text-[10px] text-destructive/80 font-medium">{closedInfo.reason}</p>
+                    )}
                     <div className="flex min-h-0 flex-col gap-1 overflow-y-auto">
                       {dayEvents.slice(0, isMobile ? 1 : 3).map((event) => (
                         <CustomEvent key={event.id} event={event} onClick={handleSelectEvent} compact />
@@ -366,6 +387,7 @@ export function CalendarPage() {
         onCreate={handleCreateAppointment}
         mothers={mothers}
         loadingMothers={isLoading}
+        facilityId={session?.user?.facility_id}
       />
     </div>
   )

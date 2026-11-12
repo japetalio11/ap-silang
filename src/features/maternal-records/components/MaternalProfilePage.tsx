@@ -1,21 +1,26 @@
 import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { format } from "date-fns"
 import {
+  Activity,
+  AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
   Baby,
   CalendarDays,
   CalendarPlus,
+  Camera,
   Download,
   FileText,
+  HeartPulse,
   MoreHorizontal,
   Pencil,
   PlusCircle,
   RefreshCw,
   RotateCcw,
+  Scale,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -44,6 +49,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { toast } from "sonner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
+import { db } from "@/lib/db/silangDatabase"
 import { CreateAppointmentModal, type AppointmentMotherOption } from "@/features/calendar/components/CreateAppointmentModal"
 import type { AppointmentFormValues } from "@/features/calendar/components/CreateAppointmentModal"
 import { createAppointment } from "@/features/calendar/api"
@@ -70,6 +76,7 @@ import {
   type MaternalDelivery,
   type MaternalLabRecord,
   type MaternalPregnancy,
+  type MaternalPrenatalVisit,
   type MaternalStaff,
   type RegisterDeliveryOutcomeInput,
 } from "../api"
@@ -79,6 +86,9 @@ import { DeliveryOutcomeDialog } from "./DeliveryOutcomeDialog"
 import { CreatePrescriptionDialog } from "./CreatePrescriptionDialog"
 import { ChangeStaffDialog, ConfirmRiskOverridePasswordDialog, EhrExportDialog, LaboratoryRecordDialog, PrenatalVitalsDialog, RiskOverrideDialog, type EncounterValues, type LaboratoryFormValues } from "./MaternalProfileActionModals"
 import { EditMaternalProfileDialog, NewPregnancyDialog, type RegistrationValues } from "./MaternalRegistrationModal"
+import { MaternalAvatar } from "./MaternalAvatar"
+import { UploadAvatarDialog } from "./UploadAvatarDialog"
+import { VitalDetailsDrawer } from "./VitalDetailsDrawer"
 
 const riskStyles = {
   "Low Risk": {
@@ -123,12 +133,21 @@ function formatStatusLabel(value?: string | null) {
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
+function classifyBp(systolic?: number | null, diastolic?: number | null) {
+  if (systolic == null || diastolic == null) return { label: "Not recorded", className: "text-muted-foreground" }
+  if (systolic >= 140 || diastolic >= 90) return { label: "Hypertensive", className: "text-rose-600 dark:text-rose-400 font-semibold" }
+  if (systolic >= 120 && diastolic < 80) return { label: "Elevated", className: "text-amber-600 dark:text-amber-400" }
+  return { label: "Normal", className: "text-emerald-600 dark:text-emerald-400" }
+}
+
 function getAttachmentName(fileUrl?: string | null, fallback = "EHR record") {
   if (!fileUrl) return fallback
+  if (fileUrl.startsWith("blob-")) return fallback
   try {
     const pathname = new URL(fileUrl, window.location.origin).pathname
     const name = decodeURIComponent(pathname.split("/").filter(Boolean).at(-1) ?? "")
-    return name || fallback
+    if (!name || name.startsWith("blob-")) return fallback
+    return name
   } catch {
     return fallback
   }
@@ -145,12 +164,33 @@ function resolveAttachmentUrl(fileUrl?: string | null) {
 
 function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | null; onClose: () => void }) {
   const [zoom, setZoom] = useState(100)
+  const [blobUrl, setBlobUrl] = useState<string | null>(null)
+  const [blobInfo, setBlobInfo] = useState<{ mimeType?: string; filename?: string } | null>(null)
   const fileUrl = record?.file_url
-  const fileName = getAttachmentName(fileUrl, record?.screening_type || "EHR record")
-  const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
-  const isImage = ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
-  const isPdf = extension === "pdf"
-  const previewUrl = resolveAttachmentUrl(fileUrl)
+
+  useEffect(() => {
+    let active = true
+    let createdUrl: string | null = null
+
+    if (fileUrl && fileUrl.startsWith("blob-")) {
+      db.blobs.get(fileUrl).then((localBlob) => {
+        if (!active || !localBlob) return
+        createdUrl = URL.createObjectURL(localBlob.data)
+        setBlobUrl(createdUrl)
+        setBlobInfo({ mimeType: localBlob.mime_type, filename: localBlob.filename })
+      }).catch(() => {})
+    } else {
+      setBlobUrl(null)
+      setBlobInfo(null)
+    }
+
+    return () => {
+      active = false
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl)
+      }
+    }
+  }, [fileUrl])
 
   useEffect(() => {
     if (!record) return
@@ -162,6 +202,14 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
   }, [record, onClose])
 
   if (!record || !fileUrl) return null
+
+  const rawFileName = blobInfo?.filename || (record as any)?.file_name || getAttachmentName(fileUrl, record?.screening_type || "EHR record")
+  const fileName = rawFileName.startsWith("blob-") ? (record?.screening_type || "EHR Record") : rawFileName
+  const mime = blobInfo?.mimeType?.toLowerCase() || ""
+  const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
+  const isImage = mime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
+  const isPdf = mime.includes("pdf") || extension === "pdf"
+  const previewUrl = blobUrl || resolveAttachmentUrl(fileUrl)
 
   return (
     <div className="fixed inset-0 z-[100] bg-background/95 text-foreground" role="presentation" onClick={onClose}>
@@ -326,6 +374,12 @@ export function MaternalProfilePage() {
   const [appointmentSearch, setAppointmentSearch] = useState("")
   const [appointmentStatusFilters, setAppointmentStatusFilters] = useState<string[]>([])
   const [appointmentTypeFilters, setAppointmentTypeFilters] = useState<string[]>([])
+  const [selectedVitalVisit, setSelectedVitalVisit] = useState<{ visit: MaternalPrenatalVisit; pregnancy?: MaternalPregnancy } | null>(null)
+  const [isVitalDrawerOpen, setIsVitalDrawerOpen] = useState(false)
+  const [vitalSearch, setVitalSearch] = useState("")
+  const [vitalTrimesterFilters, setVitalTrimesterFilters] = useState<string[]>([])
+  const [vitalRiskFilters, setVitalRiskFilters] = useState<string[]>([])
+  const [vitalSignsFilters, setVitalSignsFilters] = useState<string[]>([])
   const [pregnancySearch, setPregnancySearch] = useState("")
   const [pregnancyStatusFilters, setPregnancyStatusFilters] = useState<string[]>([])
   const [laboratorySearch, setLaboratorySearch] = useState("")
@@ -346,6 +400,7 @@ export function MaternalProfilePage() {
   const [isNewPregnancyOpen, setIsNewPregnancyOpen] = useState(false)
   const [isChangeStaffOpen, setIsChangeStaffOpen] = useState(false)
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
+  const [isUploadAvatarOpen, setIsUploadAvatarOpen] = useState(false)
   const [isReferralOpen, setIsReferralOpen] = useState(false)
   useEffect(() => {
     if (!session?.token || !motherId) return
@@ -415,8 +470,12 @@ export function MaternalProfilePage() {
       email: values.email.trim(),
       address: values.address.trim(),
       family_serial_no: values.familySerialNo.trim(),
+      civilStatus: values.civilStatus,
+      bloodType: values.bloodType,
       civil_status: values.civilStatus,
       blood_type: values.bloodType,
+      profile_url: values.profileUrl,
+      photo_url: values.profileUrl,
     }
     const motherName = [changes.first_name, changes.middle_name, changes.last_name].filter(Boolean).join(" ")
     const result = await updateMaternalRecord(session.token, motherId, changes, { baseRecord: maternalRecord, motherName })
@@ -427,11 +486,35 @@ export function MaternalProfilePage() {
         family_serial_no: changes.family_serial_no,
         civil_status: changes.civil_status,
         blood_type: changes.blood_type,
-        user: { ...current.user, first_name: changes.first_name, middle_name: changes.middle_name, last_name: changes.last_name, phone_number: changes.phone_number, email: changes.email, address: changes.address },
+        profile_url: changes.profile_url || current.profile_url,
+        photo_url: changes.photo_url || current.photo_url,
+        user: {
+          ...current.user,
+          first_name: changes.first_name,
+          middle_name: changes.middle_name,
+          last_name: changes.last_name,
+          phone_number: changes.phone_number,
+          email: changes.email,
+          address: changes.address,
+          profile_url: changes.profile_url || current.user?.profile_url,
+          photo_url: changes.photo_url || current.user?.photo_url,
+        },
       } : current)
       setIsEditProfileOpen(false)
       toast.info("Profile changes saved on this device", { description: "They will sync when the connection returns." })
       return
+    }
+    if (changes.profile_url) {
+      setMaternalRecord((current) => current ? {
+        ...current,
+        profile_url: changes.profile_url || current.profile_url,
+        photo_url: changes.photo_url || current.photo_url,
+        user: {
+          ...current.user,
+          profile_url: changes.profile_url || current.user?.profile_url,
+          photo_url: changes.photo_url || current.user?.photo_url,
+        },
+      } : current)
     }
     toast.success("Maternal profile updated")
     refreshProfile()
@@ -555,20 +638,21 @@ export function MaternalProfilePage() {
   }
 
   const handleSaveLabRecord = async (values: LaboratoryFormValues) => {
-    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
-    const fileUrls = values.files.length
-      ? await Promise.all(values.files.map(async (file) => (await uploadMaternalLabFile(session.token, file)).file_url))
-      : [undefined]
-    for (const fileUrl of fileUrls) {
+    if (!session?.token || !maternalRecord) throw new Error("Your session has expired or patient record is missing.")
+    const uploadedFiles = values.files.length
+      ? await Promise.all(values.files.map(async (file) => uploadMaternalLabFile(session.token, file)))
+      : [{ file_url: undefined, file_name: undefined }]
+    for (const uploaded of uploadedFiles) {
       await registerMaternalLabScreening(session.token, {
         mother_id: maternalRecord.mother_id,
         pregnancy_id: values.pregnancyId,
         visit_id: values.visitId || undefined,
         screening_type: values.screeningType,
-        date_of_screening: values.screeningDate,
+        date_of_screening: values.screeningDate ? new Date(values.screeningDate).toISOString() : new Date().toISOString(),
         result: values.result || undefined,
         remarks: values.remarks || undefined,
-        file_url: fileUrl,
+        file_url: uploaded.file_url,
+        file_name: (uploaded as any).file_name,
       })
     }
     toast.success("Laboratory record saved")
@@ -627,9 +711,22 @@ export function MaternalProfilePage() {
       return true
     }
     if (formatType === "csv") {
-      const visits = record.prenatalVisits ?? []
-      const columns = ["Visit number", "Visit date", "AOG weeks", "Trimester", "Blood pressure", "Pulse rate", "Temperature", "Risk", "Clinical notes"]
-      const rows = visits.map((visit) => [visit.visit_number, visit.visit_date, visit.age_of_gestation_weeks, visit.trimester, `${visit.bp_systolic ?? ""}/${visit.bp_diastolic ?? ""}`, visit.pulse_rate_bpm, visit.temperature_celsius, visit.risk_level_assessed, visit.chief_complaint])
+      const visits = allVitals
+      const columns = ["Visit number", "Visit date", "AOG weeks", "Trimester", "Blood pressure", "Pulse rate", "Temperature", "Weight", "Fundic height", "Fetal heart tone", "Risk", "Clinical notes"]
+      const rows = visits.map((visit) => [
+        visit.visit_number,
+        visit.visit_date,
+        visit.age_of_gestation_weeks,
+        visit.trimester,
+        `${visit.bp_systolic ?? ""}/${visit.bp_diastolic ?? ""}`,
+        visit.pulse_rate_bpm,
+        visit.temperature_celsius,
+        visit.weight_kg,
+        visit.fundic_height_cm,
+        visit.fetal_heart_tone_bpm,
+        visit.risk_level_assessed,
+        visit.chief_complaint,
+      ])
       const csv = [columns, ...rows].map((row) => row.map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`).join(",")).join("\r\n")
       const blob = new Blob(["\uFEFF", csv], { type: "text/csv;charset=utf-8" })
       const url = URL.createObjectURL(blob)
@@ -653,6 +750,145 @@ export function MaternalProfilePage() {
     toast.success("Printable clinical record opened")
     return true
   }
+
+  const allVitals = useMemo(() => {
+    const directVisits = maternalRecord?.prenatalVisits ?? []
+    const pregnancyVisits = (maternalRecord?.pregnancies ?? []).flatMap((pregnancy) =>
+      (pregnancy.prenatalVisits ?? []).map((visit) => ({ ...visit, pregnancy }))
+    )
+    const combined = directVisits.length > 0
+      ? directVisits.map((visit) => {
+          const pregnancy = maternalRecord?.pregnancies?.find((p) => p.pregnancy_id === visit.pregnancy_id)
+          return { ...visit, pregnancy }
+        })
+      : pregnancyVisits
+
+    const seenIds = new Set<string>()
+    const unique = combined.filter((item) => {
+      const id = item.visit_id || `${item.visit_date}-${item.visit_number}`
+      if (seenIds.has(id)) return false
+      seenIds.add(id)
+      return true
+    })
+
+    return unique.sort((a, b) => {
+      const dateA = new Date(a.visit_date ?? 0).getTime()
+      const dateB = new Date(b.visit_date ?? 0).getTime()
+      if (dateA !== dateB) return dateB - dateA
+      return (Number(b.visit_number) || 0) - (Number(a.visit_number) || 0)
+    })
+  }, [maternalRecord])
+
+  const filteredVitals = allVitals.filter((visit) => {
+    const provider = visit.healthWorker ? `${visit.healthWorker.first_name ?? ""} ${visit.healthWorker.last_name ?? ""}` : ""
+    const bpText = visit.bp_systolic != null && visit.bp_diastolic != null ? `${visit.bp_systolic}/${visit.bp_diastolic}` : ""
+    const text = [
+      formatRecordDate(visit.visit_date),
+      `visit ${visit.visit_number ?? ""}`,
+      `trimester ${visit.trimester ?? ""}`,
+      bpText,
+      visit.risk_level_assessed ?? "",
+      visit.chief_complaint ?? "",
+      visit.danger_signs_observed ?? "",
+      provider,
+    ].join(" ").toLowerCase()
+
+    const matchesSearch = !vitalSearch || text.includes(vitalSearch.toLowerCase())
+
+    const matchesTrimester = vitalTrimesterFilters.length === 0 || vitalTrimesterFilters.some((filter) => {
+      if (filter === "1st Trimester") return visit.trimester === 1
+      if (filter === "2nd Trimester") return visit.trimester === 2
+      if (filter === "3rd Trimester") return visit.trimester === 3
+      return false
+    })
+
+    const matchesRisk = vitalRiskFilters.length === 0 || vitalRiskFilters.some((risk) => {
+      const visitRisk = normalizeMaternalRisk(visit.risk_level_assessed)
+      return visitRisk.toLowerCase() === risk.toLowerCase()
+    })
+
+    const hasDanger = Boolean(
+      visit.has_vaginal_bleeding ||
+      visit.has_fever ||
+      visit.has_edema ||
+      visit.has_pallor ||
+      (visit.danger_signs_observed && visit.danger_signs_observed.trim())
+    )
+
+    const matchesSigns = vitalSignsFilters.length === 0 || vitalSignsFilters.some((sign) => {
+      if (sign === "Danger Signs Observed") return hasDanger
+      if (sign === "Normal / No Signs") return !hasDanger
+      return true
+    })
+
+    return matchesSearch && matchesTrimester && matchesRisk && matchesSigns
+  })
+
+  const resetVitalFilters = () => {
+    setVitalSearch("")
+    setVitalTrimesterFilters([])
+    setVitalRiskFilters([])
+    setVitalSignsFilters([])
+  }
+
+  const hasVitalFilters = Boolean(vitalSearch.trim() || vitalTrimesterFilters.length || vitalRiskFilters.length || vitalSignsFilters.length)
+
+  const filteredVitalRows = filteredVitals.map((visit) => {
+    const bpClassification = classifyBp(visit.bp_systolic, visit.bp_diastolic)
+    const providerName = visit.healthWorker ? `${visit.healthWorker.first_name ?? ""} ${visit.healthWorker.last_name ?? ""}`.trim() : ""
+    const hasDanger = Boolean(
+      visit.has_vaginal_bleeding ||
+      visit.has_fever ||
+      visit.has_edema ||
+      visit.has_pallor ||
+      (visit.danger_signs_observed && visit.danger_signs_observed.trim())
+    )
+
+    return [
+      <div key="date-visit" className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">{formatRecordDate(visit.visit_date)}</span>
+        <span className="text-[11px] text-muted-foreground">Visit #{visit.visit_number ?? "—"}</span>
+      </div>,
+      <div key="aog-trimester" className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">{visit.age_of_gestation_weeks != null ? `${visit.age_of_gestation_weeks} weeks` : "—"}</span>
+        <span className="text-[11px] text-muted-foreground">{visit.trimester ? `${visit.trimester}${visit.trimester === 1 ? "st" : visit.trimester === 2 ? "nd" : "rd"} Trimester` : "—"}</span>
+      </div>,
+      <div key="blood-pressure" className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">
+          {visit.bp_systolic != null && visit.bp_diastolic != null ? `${visit.bp_systolic}/${visit.bp_diastolic} mmHg` : "—"}
+        </span>
+        <span className={`text-[10px] ${bpClassification.className}`}>
+          {bpClassification.label}
+        </span>
+      </div>,
+      <div key="heart-rate" className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">{visit.pulse_rate_bpm != null ? `${visit.pulse_rate_bpm} bpm` : "—"}</span>
+        <span className="text-[11px] text-muted-foreground">Pulse rate</span>
+      </div>,
+      <div key="temp-weight" className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">{visit.temperature_celsius != null ? `${visit.temperature_celsius} °C` : "—"}</span>
+        <span className="text-[11px] text-muted-foreground">{visit.weight_kg != null ? `${visit.weight_kg} kg` : "—"}</span>
+      </div>,
+      <div key="fundic-fht" className="flex flex-col gap-0.5">
+        <span className="font-medium text-foreground">{visit.fundic_height_cm != null ? `${visit.fundic_height_cm} cm` : "—"}</span>
+        <span className="text-[11px] text-muted-foreground">{visit.fetal_heart_tone_bpm != null ? `${visit.fetal_heart_tone_bpm} bpm` : "—"}</span>
+      </div>,
+      <div key="danger-risk" className="flex flex-col items-start gap-1">
+        <StatusBadge status={visit.risk_level_assessed || "Low Risk"} />
+        {hasDanger ? (
+          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 dark:text-rose-400">
+            <AlertTriangle className="size-3 shrink-0" />
+            <span>Signs reported</span>
+          </span>
+        ) : (
+          <span className="text-[10px] text-muted-foreground">No signs reported</span>
+        )}
+      </div>,
+      <div key="provider" className="truncate text-xs font-medium text-foreground" title={providerName || "Provider not set"}>
+        {providerName || "—"}
+      </div>,
+    ]
+  })
 
   const filteredDeliveryEntries = deliveryEntries.filter(({ delivery, pregnancy }) => {
     const text = [formatRecordDate(delivery.delivery_date), delivery.mode_of_delivery, delivery.place_of_delivery, delivery.maternal_outcome, delivery.birth_attendant, pregnancy.gravida, pregnancy.parity, ...(delivery.newbornRecords ?? []).flatMap((newborn) => [newborn.sex, newborn.status_at_birth, newborn.birth_weight_kg, newborn.apgar_score])].join(" ").toLowerCase()
@@ -790,6 +1026,7 @@ export function MaternalProfilePage() {
               <DropdownMenuItem onClick={() => setIsEhrExportOpen(true)}><Download />Export Clinical Record</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setIsChangeStaffOpen(true)}><UserCog />Change Staff</DropdownMenuItem>
               <DropdownMenuItem onClick={() => setIsEditProfileOpen(true)}><Pencil />Edit Profile</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsUploadAvatarOpen(true)}><Camera />Change Profile Photo</DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -799,7 +1036,22 @@ export function MaternalProfilePage() {
         <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1 pb-8">
           <Card className={`min-w-0 shrink-0 gap-4 rounded-md border py-4 shadow-none ring-0 ${riskStyle.card}`}>
             <CardHeader className="flex flex-row items-center gap-4 px-4 pb-1">
-              <div aria-hidden="true" className="flex size-11 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground">{patientName.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase()}</div>
+              <div className="relative group shrink-0">
+                <MaternalAvatar
+                  src={maternalRecord?.user?.profile_url || maternalRecord?.profile_url || maternalRecord?.photo_url}
+                  name={patientName}
+                  className="size-12 border-2 border-sidebar-border text-sm"
+                />
+                <button
+                  type="button"
+                  onClick={() => setIsUploadAvatarOpen(true)}
+                  aria-label="Change profile photo"
+                  title="Change profile photo"
+                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <Camera className="size-4" />
+                </button>
+              </div>
               <div className="min-w-0 flex-1">
                 <CardTitle className={`truncate text-base font-semibold ${riskStyle.value}`}>{profile.fullName}</CardTitle>
                 <p className={`mt-0.5 text-xs ${riskStyle.label}`}>Maternal record · {profile.serialNo}</p>
@@ -845,20 +1097,22 @@ export function MaternalProfilePage() {
           <section className="flex w-full min-w-0 shrink-0 flex-col gap-3" aria-labelledby="clinical-history-heading">
             <div>
               <h2 id="clinical-history-heading" className="text-sm font-semibold text-foreground">Clinical History</h2>
-              <p className="mt-1 text-xs font-normal text-muted-foreground">Review appointments, deliveries, pregnancies, and EHR records.</p>
+              <p className="mt-1 text-xs font-normal text-muted-foreground">Review appointments, past vitals logs, deliveries, pregnancies, and EHR records.</p>
             </div>
             <Tabs value={historyTab} onValueChange={setHistoryTab} className="w-full min-w-0">
               <div className="flex w-full min-w-0 items-center justify-between gap-2">
                 <TabsList className="h-9 w-max max-w-full justify-start gap-1 overflow-x-auto">
                   <TabsTrigger value="appointments" className="h-full flex-initial px-3 text-xs">Appointments</TabsTrigger>
+                  <TabsTrigger value="vitals" className="h-full flex-initial px-3 text-xs">Past Vitals</TabsTrigger>
                   <TabsTrigger value="deliveries" className="h-full flex-initial px-3 text-xs">Deliveries</TabsTrigger>
                   <TabsTrigger value="pregnancies" className="h-full flex-initial px-3 text-xs">Pregnancies</TabsTrigger>
-                  <TabsTrigger value="ehr" className="h-full flex-initial px-3 text-xs">EHR Records</TabsTrigger>
+                  <TabsTrigger value="ehr" className="h-full flex-initial px-3 text-xs">Health Records</TabsTrigger>
                 </TabsList>
                 <TooltipProvider>
                   <div className="ml-auto flex shrink-0 items-center gap-2">
                     <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Export clinical history" onClick={() => setIsEhrExportOpen(true)} className="size-8 border-sidebar-border"><Download className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Export</TooltipContent></Tooltip>
                     <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh clinical history" onClick={refreshProfile} className="size-8 border-sidebar-border"><RefreshCw className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Refresh</TooltipContent></Tooltip>
+                    {historyTab === "vitals" && <Button onClick={() => setIsVitalsOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Stethoscope className="size-3.5" />Log Consultation</Button>}
                     {historyTab === "deliveries" && <Button onClick={() => setIsDeliveryDialogOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />Record Delivery</Button>}
                     {historyTab === "appointments" && <Button onClick={() => setIsScheduleAppointmentOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><CalendarPlus className="size-3.5" />Schedule Appointment</Button>}
                     {historyTab === "pregnancies" && <Button onClick={() => setIsNewPregnancyOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />New Pregnancy</Button>}
@@ -905,6 +1159,100 @@ export function MaternalProfilePage() {
                       <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(filteredAppointmentEntries[rowIndex]?.index ?? null)}>Cancel Appointment</DropdownMenuItem>
                     </TableRowActions>
                   )}
+                />
+              </TabsContent>
+              <TabsContent value="vitals" className="mt-3 flex w-full min-w-0 flex-col gap-3">
+                {allVitals.length > 0 && (
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Activity className="size-3.5" />
+                        <span>Latest Blood Pressure</span>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">
+                        {allVitals[0].bp_systolic != null && allVitals[0].bp_diastolic != null ? `${allVitals[0].bp_systolic}/${allVitals[0].bp_diastolic} mmHg` : "—"}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {allVitals[0].visit_date ? formatRecordDate(allVitals[0].visit_date) : "Recorded"}
+                      </div>
+                    </div>
+                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <HeartPulse className="size-3.5" />
+                        <span>Latest Pulse &amp; Temp</span>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">
+                        {allVitals[0].pulse_rate_bpm != null ? `${allVitals[0].pulse_rate_bpm} bpm` : "—"} · {allVitals[0].temperature_celsius != null ? `${allVitals[0].temperature_celsius} °C` : "—"}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Resting vitals</div>
+                    </div>
+                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Scale className="size-3.5" />
+                        <span>Latest Weight &amp; AOG</span>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">
+                        {allVitals[0].weight_kg != null ? `${allVitals[0].weight_kg} kg` : "—"} {allVitals[0].age_of_gestation_weeks != null ? `· ${allVitals[0].age_of_gestation_weeks}w` : ""}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Gestation progress</div>
+                    </div>
+                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <Stethoscope className="size-3.5" />
+                        <span>Total Vitals Logged</span>
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-foreground">
+                        {allVitals.length} {allVitals.length === 1 ? "consultation" : "consultations"}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Recorded visits</div>
+                    </div>
+                  </div>
+                )}
+                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                  <ToolbarSearch placeholder="Search vitals by date, notes, danger signs, provider..." value={vitalSearch} onChange={setVitalSearch} />
+                  <ToolbarFilter label="Trimester" options={["1st Trimester", "2nd Trimester", "3rd Trimester"]} selected={vitalTrimesterFilters} onChange={setVitalTrimesterFilters} />
+                  <ToolbarFilter label="Risk Level" options={["Low Risk", "Moderate Risk", "High Risk"]} selected={vitalRiskFilters} onChange={setVitalRiskFilters} />
+                  <ToolbarFilter label="Clinical Signs" options={["Danger Signs Observed", "Normal / No Signs"]} selected={vitalSignsFilters} onChange={setVitalSignsFilters} />
+                  {hasVitalFilters && <ResetFilterButton onClick={resetVitalFilters} />}
+                </div>
+                <ProfileTable
+                  headers={["Date & Visit", "AOG / Trimester", "Blood Pressure", "Heart Rate", "Temp & Weight", "Fundic / FHT", "Danger Signs & Risk", "Attending Provider"]}
+                  rows={filteredVitalRows}
+                  emptyState={{ icon: HeartPulse, title: "No vitals logs recorded", description: "Consultation vitals, physiological readings, and clinical evaluations will appear here." }}
+                  onRowClick={(rowIndex) => {
+                    const item = filteredVitals[rowIndex]
+                    if (item) {
+                      setSelectedVitalVisit({ visit: item, pregnancy: item.pregnancy })
+                      setIsVitalDrawerOpen(true)
+                    }
+                  }}
+                  renderRowAction={(rowIndex) => {
+                    const item = filteredVitals[rowIndex]
+                    return (
+                      <TableRowActions label="Vital log actions">
+                        <DropdownMenuItem onSelect={() => {
+                          if (item) {
+                            setSelectedVitalVisit({ visit: item, pregnancy: item.pregnancy })
+                            setIsVitalDrawerOpen(true)
+                          }
+                        }}>
+                          View Vital Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>
+                          Log New Consultation
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => {
+                          if (item && navigator.clipboard?.writeText) {
+                            const summary = `Visit #${item.visit_number ?? "—"} (${formatRecordDate(item.visit_date)}): BP ${item.bp_systolic ?? "—"}/${item.bp_diastolic ?? "—"} mmHg, PR ${item.pulse_rate_bpm ?? "—"} bpm, Temp ${item.temperature_celsius ?? "—"}°C, Weight ${item.weight_kg ?? "—"}kg, AOG ${item.age_of_gestation_weeks ?? "—"}w`
+                            void navigator.clipboard.writeText(summary)
+                            toast.success("Vital summary copied")
+                          }
+                        }}>
+                          Copy Vital Summary
+                        </DropdownMenuItem>
+                      </TableRowActions>
+                    )
+                  }}
                 />
               </TabsContent>
               <TabsContent value="pregnancies" className="mt-3 flex w-full min-w-0 flex-col gap-3">
@@ -982,6 +1330,7 @@ export function MaternalProfilePage() {
       <PrenatalVitalsDialog open={isVitalsOpen} onOpenChange={setIsVitalsOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveEncounter} />
       <DeliveryOutcomeDialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveDelivery} />
       <DeliveryDetailsDrawer open={isDeliveryDrawerOpen} onOpenChange={setIsDeliveryDrawerOpen} patientName={patientName} delivery={selectedDelivery?.delivery ?? null} pregnancy={selectedDelivery?.pregnancy} />
+      <VitalDetailsDrawer open={isVitalDrawerOpen} onOpenChange={setIsVitalDrawerOpen} patientName={patientName} visit={selectedVitalVisit?.visit ?? null} pregnancy={selectedVitalVisit?.pregnancy} />
       <AppointmentDetailsDialog open={isAppointmentDetailsOpen} onOpenChange={setIsAppointmentDetailsOpen} patientName={patientName} appointment={selectedAppointment} pregnancy={appointmentPregnancy} consultation={appointmentVisit} supplements={appointmentSupplements} />
       <CreateAppointmentModal open={isScheduleAppointmentOpen} onOpenChange={setIsScheduleAppointmentOpen} initialMother={appointmentMother} onCreate={handleScheduleAppointment} />
       {maternalRecord && <CreatePrescriptionDialog
@@ -996,7 +1345,22 @@ export function MaternalProfilePage() {
       <EhrRecordPreview key={previewEhrRecord?.screening_id ?? "closed"} record={previewEhrRecord} onClose={() => setPreviewEhrRecord(null)} />
       <NewPregnancyDialog open={isNewPregnancyOpen} onOpenChange={setIsNewPregnancyOpen} onSubmit={handleCreatePregnancy} />
       <ChangeStaffDialog open={isChangeStaffOpen} onOpenChange={setIsChangeStaffOpen} patientName={patientName} staff={staffOptions} currentStaff={maternalRecord.assignedWorker} isLoading={isStaffLoading} onAssign={handleAssignStaff} />
-      <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
+      <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type, maternalRecord.user?.profile_url, maternalRecord.profile_url])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
+      <UploadAvatarDialog
+        open={isUploadAvatarOpen}
+        onOpenChange={setIsUploadAvatarOpen}
+        motherId={maternalRecord.mother_id}
+        patientName={patientName}
+        currentPhotoUrl={maternalRecord.user?.profile_url || maternalRecord.profile_url || maternalRecord.photo_url}
+        onSuccess={(newPhotoUrl) => {
+          setMaternalRecord((current) => current ? {
+            ...current,
+            profile_url: newPhotoUrl,
+            photo_url: newPhotoUrl,
+            user: { ...(current.user || {}), profile_url: newPhotoUrl, photo_url: newPhotoUrl },
+          } : current)
+        }}
+      />
       <CreateReferralModal open={isReferralOpen} onOpenChange={setIsReferralOpen} mothers={[maternalRecord]} facilities={referralFacilities} originFacilityId={session?.user.facility_id} initialMotherId={maternalRecord.mother_id} isSaving={isCreatingReferral} onSubmit={handleCreateReferral} />
       <ConfirmSensitiveActionDialog
         open={appointmentToCancel !== null}

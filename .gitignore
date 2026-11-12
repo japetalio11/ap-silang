@@ -13,6 +13,8 @@ dist-ssr
 dev-dist
 *.local
 
+.env
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -23,3 +25,6 @@ dev-dist
 *.njsproj
 *.sln
 *.sw?
+
+AGENTS.md
+.agents

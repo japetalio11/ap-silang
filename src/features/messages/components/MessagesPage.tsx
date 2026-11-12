@@ -9,9 +9,11 @@ import {
 import {
   CheckCheck,
   ChevronDown,
+  CloudOff,
   FileText,
   Image,
   Link2,
+  Loader2,
   MessageSquare,
   Paperclip,
   PanelRight,
@@ -72,6 +74,7 @@ type ChatMessage = {
   time: string
   isRead?: boolean
   kind?: string
+  status?: "sending" | "sent" | "failed" | "offline"
 }
 
 type MessagePayload = MessageRecord & {
@@ -94,12 +97,14 @@ function toChatMessage(
   message: MessagePayload,
   currentUserId: string
 ): ChatMessage {
+  const isOffline = message.message_id.startsWith("temp-") || (message as any).sync_status === "pending_create"
   return {
     id: message.message_id,
     from: message.sender_id === currentUserId ? "staff" : "mother",
     text: message.message_content ?? "",
     time: formatMessageTime(message.message_date),
     kind: message.message_type?.toLowerCase() ?? "text",
+    status: isOffline ? "offline" : undefined,
   }
 }
 
@@ -107,9 +112,18 @@ function messagePreview(message?: MessagePayload) {
   if (!message) return "No messages yet"
   const kind = message.message_type?.toLowerCase()
   if (kind === "image") return "Photo"
-  if (kind === "file")
-    return `File · ${message.message_content?.split("/").pop() ?? "Attachment"}`
-  return message.message_content || "No messages yet"
+  if (kind === "file") {
+    const rawName = decodeURIComponent(
+      message.message_content?.split("/").pop()?.split("?")[0] ?? "Attachment"
+    )
+    const cleanName =
+      rawName.length > 25 ? `${rawName.slice(0, 22)}...` : rawName
+    return `File · ${cleanName}`
+  }
+  const text = (message.message_content || "").trim()
+  if (!text) return "No messages yet"
+  const maxLen = 42
+  return text.length > maxLen ? `${text.slice(0, maxLen)}...` : text
 }
 
 function toConversation(
@@ -196,6 +210,7 @@ export function MessagesPage() {
   const inboxErrorShownRef = useRef(false)
   const inboxRequestRef = useRef(false)
   const readRequestsRef = useRef<Set<string>>(new Set())
+  const inFlightMessagesRef = useRef<Set<string>>(new Set())
 
   const loadInbox = useCallback(async () => {
     if (!sessionToken || !currentUserId) {
@@ -283,7 +298,24 @@ export function MessagesPage() {
       hasLoadedInboxRef.current = true
       inboxErrorShownRef.current = false
       setConversations(nextConversations)
-      setThreads(nextThreads)
+      setThreads((current) => {
+        const merged: Record<string, ChatMessage[]> = { ...nextThreads }
+        for (const [id, msgs] of Object.entries(current)) {
+          const pending = msgs.filter(
+            (msg) =>
+              (msg.status === "sending" && inFlightMessagesRef.current.has(msg.id)) ||
+              msg.status === "offline"
+          )
+          if (pending.length > 0) {
+            const existingIds = new Set((merged[id] ?? []).map((m) => m.id))
+            const uniquePending = pending.filter((m) => !existingIds.has(m.id))
+            if (uniquePending.length > 0) {
+              merged[id] = [...(merged[id] ?? []), ...uniquePending]
+            }
+          }
+        }
+        return merged
+      })
       setSelectedId((current) =>
         nextConversations.some((conversation) => conversation.id === current)
           ? current
@@ -395,37 +427,150 @@ export function MessagesPage() {
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const text = draft.trim()
-    if ((!text && !attachment) || !selected.id || !sessionToken || isSending)
+    const fileToUpload = attachment
+    if ((!text && !fileToUpload) || !selected.id || !sessionToken)
       return
+
+    const targetId = selected.id
+    const nowTime = formatMessageTime(new Date().toISOString())
+    const tempTextId = text ? `temp-text-${Date.now()}` : null
+    const tempAttachmentId = fileToUpload ? `temp-file-${Date.now()}` : null
+
+    const optimisticMessages: ChatMessage[] = []
+    if (text && tempTextId) {
+      optimisticMessages.push({
+        id: tempTextId,
+        from: "staff",
+        text,
+        time: nowTime,
+        kind: "text",
+        status: "sending",
+      })
+    }
+    if (fileToUpload && tempAttachmentId) {
+      const isImg = fileToUpload.type.startsWith("image/")
+      const objectUrl = URL.createObjectURL(fileToUpload)
+      optimisticMessages.push({
+        id: tempAttachmentId,
+        from: "staff",
+        text: objectUrl,
+        time: nowTime,
+        kind: isImg ? "image" : "file",
+        status: "sending",
+      })
+    }
+
+    setDraft("")
+    setAttachment(null)
+    if (attachmentInputRef.current) attachmentInputRef.current.value = ""
+
+    setThreads((current) => ({
+      ...current,
+      [targetId]: [...(current[targetId] ?? []), ...optimisticMessages],
+    }))
+
+    const previewText = fileToUpload
+      ? `File · ${fileToUpload.name.length > 25 ? `${fileToUpload.name.slice(0, 22)}...` : fileToUpload.name}`
+      : text.length > 42
+        ? `${text.slice(0, 42)}...`
+        : text
+
+    setConversations((current) =>
+      current.map((c) =>
+        c.id === targetId
+          ? {
+              ...c,
+              preview: previewText,
+              time: nowTime,
+              activity: Date.now(),
+            }
+          : c
+      )
+    )
+
+    setTimeout(() => {
+      threadEndRef.current?.scrollIntoView({ behavior: "smooth" })
+    }, 50)
+
+    if (tempTextId) inFlightMessagesRef.current.add(tempTextId)
+    if (tempAttachmentId) inFlightMessagesRef.current.add(tempAttachmentId)
+
     setIsSending(true)
-    let textWasSent = false
     try {
-      if (text) {
-        await createMessage(sessionToken, {
-          receiver_id: selected.id,
+      if (text && tempTextId) {
+        const res = await createMessage(sessionToken, {
+          receiver_id: targetId,
           message_content: text,
+          message_type: "text",
         })
-        textWasSent = true
-        setDraft("")
+        inFlightMessagesRef.current.delete(tempTextId)
+        const serverMsg = res.data
+        if (serverMsg?.message_id) {
+          const isOfflineMsg = res.offline || serverMsg.message_id.startsWith("temp-")
+          setThreads((current) => ({
+            ...current,
+            [targetId]: (current[targetId] ?? []).map((msg) =>
+              msg.id === tempTextId
+                ? {
+                    ...msg,
+                    id: serverMsg.message_id,
+                    status: isOfflineMsg ? "offline" : "sent",
+                    time: formatMessageTime(
+                      serverMsg.message_date || new Date().toISOString()
+                    ),
+                  }
+                : msg
+            ),
+          }))
+        }
       }
-      if (attachment) {
-        const uploaded = await uploadMessageAttachment(sessionToken, attachment)
+      if (fileToUpload && tempAttachmentId) {
+        const uploaded = await uploadMessageAttachment(
+          sessionToken,
+          fileToUpload
+        )
         const fileUrl = uploaded.fileUrl ?? uploaded.file_url
         if (!fileUrl)
           throw new Error("The attachment upload did not return a file link.")
-        await createMessage(sessionToken, {
-          receiver_id: selected.id,
+        const res = await createMessage(sessionToken, {
+          receiver_id: targetId,
           message_content: fileUrl,
           message_type: uploaded.fileType === "image" ? "image" : "file",
         })
+        inFlightMessagesRef.current.delete(tempAttachmentId)
+        const serverMsg = res.data
+        if (serverMsg?.message_id) {
+          const isOfflineMsg = res.offline || serverMsg.message_id.startsWith("temp-")
+          setThreads((current) => ({
+            ...current,
+            [targetId]: (current[targetId] ?? []).map((msg) =>
+              msg.id === tempAttachmentId
+                ? {
+                    ...msg,
+                    id: serverMsg.message_id,
+                    text: fileUrl,
+                    status: isOfflineMsg ? "offline" : "sent",
+                    time: formatMessageTime(
+                      serverMsg.message_date || new Date().toISOString()
+                    ),
+                  }
+                : msg
+            ),
+          }))
+        }
       }
-      setDraft("")
-      setAttachment(null)
-      if (attachmentInputRef.current) attachmentInputRef.current.value = ""
       await loadInbox()
-      toast.success(attachment ? "Attachment sent" : "Message sent")
     } catch (error) {
-      if (textWasSent && attachment) toast.success("Message sent")
+      if (tempTextId) inFlightMessagesRef.current.delete(tempTextId)
+      if (tempAttachmentId) inFlightMessagesRef.current.delete(tempAttachmentId)
+      setThreads((current) => ({
+        ...current,
+        [targetId]: (current[targetId] ?? []).map((msg) =>
+          optimisticMessages.some((opt) => opt.id === msg.id)
+            ? { ...msg, status: "failed" }
+            : msg
+        ),
+      }))
       toast.error(
         error instanceof Error ? error.message : "Unable to send message"
       )
@@ -556,7 +701,7 @@ export function MessagesPage() {
                     aria-current={
                       selectedId === conversation.id ? "true" : undefined
                     }
-                    className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${selectedId === conversation.id ? "bg-accent" : ""}`}
+                    className={`flex w-full items-center gap-3 overflow-hidden rounded-lg px-3 py-3 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${selectedId === conversation.id ? "bg-accent" : ""}`}
                   >
                     <span className="relative shrink-0">
                       <PatientAvatar
@@ -564,8 +709,8 @@ export function MessagesPage() {
                         className="size-10"
                       />
                     </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-baseline justify-between gap-2">
+                    <span className="min-w-0 flex-1 overflow-hidden">
+                      <span className="flex items-baseline justify-between gap-2 min-w-0">
                         <span className="truncate text-xs font-semibold text-foreground">
                           {conversation.name}
                         </span>
@@ -573,8 +718,8 @@ export function MessagesPage() {
                           {conversation.time}
                         </span>
                       </span>
-                      <span className="mt-1 flex items-center justify-between gap-2">
-                        <span className="truncate text-xs text-muted-foreground">
+                      <span className="mt-1 flex items-center justify-between gap-2 min-w-0 overflow-hidden">
+                        <span className="truncate block min-w-0 flex-1 text-xs text-muted-foreground">
                           {conversation.preview}
                         </span>
                         {conversation.unread > 0 && (
@@ -696,10 +841,10 @@ export function MessagesPage() {
                             className={`flex max-w-[min(75%,34rem)] min-w-0 flex-col gap-1 ${message.from === "staff" ? "items-end" : "items-start"}`}
                           >
                             <div
-                              className={`w-fit max-w-full rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed break-words whitespace-pre-wrap ${message.from === "staff" ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md border border-border bg-card text-card-foreground"}`}
+                              className={`w-fit max-w-full rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed break-words whitespace-pre-wrap transition-opacity ${message.from === "staff" ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md border border-border bg-card text-card-foreground"} ${message.status === "sending" ? "opacity-80" : ""}`}
                             >
                               {message.kind === "image" &&
-                              /^https?:\/\//i.test(message.text) ? (
+                              /^(https?:\/\/|blob:|data:)/i.test(message.text) ? (
                                 <a
                                   href={message.text}
                                   target="_blank"
@@ -713,7 +858,7 @@ export function MessagesPage() {
                                   />
                                 </a>
                               ) : message.kind === "file" &&
-                                /^https?:\/\//i.test(message.text) ? (
+                                /^(https?:\/\/|blob:|data:)/i.test(message.text) ? (
                                 <a
                                   href={message.text}
                                   target="_blank"
@@ -734,9 +879,26 @@ export function MessagesPage() {
                                 message.text
                               )}
                             </div>
-                            <span className="px-1 text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
                               {message.from === "staff" ? "You · " : ""}
                               {message.time}
+                              {message.status === "sending" && (
+                                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                  <Loader2 className="size-3 animate-spin" />
+                                  <span>Sending...</span>
+                                </span>
+                              )}
+                              {message.status === "offline" && (
+                                <span className="flex items-center gap-1 text-[11px] font-medium text-amber-500">
+                                  <CloudOff className="size-3" />
+                                  <span>Offline (Queued)</span>
+                                </span>
+                              )}
+                              {message.status === "failed" && (
+                                <span className="text-[11px] text-destructive">
+                                  Failed to send
+                                </span>
+                              )}
                             </span>
                           </div>
                         </div>
@@ -791,7 +953,7 @@ export function MessagesPage() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      disabled={!selected.id || isSending}
+                      disabled={!selected.id}
                       onClick={() => attachmentInputRef.current?.click()}
                       aria-label="Attach a file"
                       className="size-10 shrink-0"
@@ -811,7 +973,7 @@ export function MessagesPage() {
                   }
                   aria-label="Write your message"
                   className="h-10 min-w-0 flex-1 text-xs"
-                  disabled={!selected.id || isSending}
+                  disabled={!selected.id}
                 />
                 {attachment && (
                   <Button
@@ -834,11 +996,7 @@ export function MessagesPage() {
                     <Button
                       type="submit"
                       size="icon"
-                      disabled={
-                        (!draft.trim() && !attachment) ||
-                        !selected.id ||
-                        isSending
-                      }
+                      disabled={(!draft.trim() && !attachment) || !selected.id || isSending}
                       aria-label="Send message"
                       className="size-10 shrink-0"
                     >

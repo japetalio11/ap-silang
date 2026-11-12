@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react"
-import { Bell, Building2, UserRound, WifiOff, Upload, X } from "lucide-react"
+import { Bell, Building2, UserRound, WifiOff, Upload, X, Calendar as CalendarIcon, Trash2, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -13,9 +13,14 @@ import { Tabs, TabsContent } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuthSession } from "@/features/auth/auth-session"
-import { apiRequest } from "@/lib/api"
+import { apiRequest, backendAssetUrl } from "@/lib/api"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { db } from "@/lib/db/silangDatabase"
 import { toast } from "sonner"
 import { z } from "zod"
+import { getClosedDates, removeClosedDate, type ClosedDateRecord } from "@/features/calendar/closed-dates"
+
+import { AddDate } from "./add-date"
 
 function SettingToggle({ title, description, defaultChecked = false }: { title: string; description: string; defaultChecked?: boolean }) {
   const key = `silang.settings.${title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
@@ -45,30 +50,154 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
   const [accountTab, setAccountTab] = useState("profile")
   const [offlineTab, setOfflineTab] = useState("storage")
   const [notificationTab, setNotificationTab] = useState("channels")
-  const [account, setAccount] = useState({ first_name: "", last_name: "", phone_number: "", email: "" })
-  const [facility, setFacility] = useState({ facility_name: "", type: "Rural Health Unit", contact_number: "", email: "", address: "" })
+  const [account, setAccount] = useState(() => ({
+    first_name: session?.user?.first_name ?? "",
+    last_name: session?.user?.last_name ?? "",
+    phone_number: (session?.user as any)?.phone_number ?? "",
+    email: (session?.user as any)?.email ?? "",
+  }))
+  const [facility, setFacility] = useState(() => {
+    try {
+      const cached = localStorage.getItem("silang.facility.profile")
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        return {
+          facility_name: parsed.facility_name ?? "",
+          type: parsed.type ?? "Rural Health Unit",
+          contact_number: parsed.contact_number ?? "",
+          email: parsed.email ?? "",
+          address: parsed.address ?? "",
+        }
+      }
+    } catch {}
+    return {
+      facility_name: session?.facility?.facility_name ?? "",
+      type: session?.facility?.type ?? "Rural Health Unit",
+      contact_number: session?.facility?.contact_number ?? "",
+      email: session?.facility?.email ?? "",
+      address: session?.facility?.address ?? "",
+    }
+  })
   const [accountErrors, setAccountErrors] = useState<Record<string, string>>({})
   const [facilityErrors, setFacilityErrors] = useState<Record<string, string>>({})
+  const [facilityLogo, setFacilityLogo] = useState<string>(() => {
+    try {
+      const cached = localStorage.getItem("silang.facility.profile")
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (parsed.facility_profile_url) return parsed.facility_profile_url
+      }
+    } catch {}
+    return session?.facility?.facility_profile_url ?? ""
+  })
+  const [uploadingLogo, setUploadingLogo] = useState(false)
   const [passwordFields, setPasswordFields] = useState({ current: "", next: "", confirm: "" })
   const [passwordError, setPasswordError] = useState("")
   const [saving, setSaving] = useState(false)
   const [storageUsage, setStorageUsage] = useState({ used: 0, quota: 0 })
+  const [openAddDate, setOpenAddDate] = useState(false)
+  const [closedDates, setClosedDates] = useState<ClosedDateRecord[]>([])
+
+  const refreshClosedDates = useCallback(() => {
+    setClosedDates(getClosedDates(facilityId))
+  }, [facilityId])
+
+  useEffect(() => {
+    refreshClosedDates()
+    const handleUpdate = () => refreshClosedDates()
+    window.addEventListener("silang:closed-dates-updated", handleUpdate)
+    return () => window.removeEventListener("silang:closed-dates-updated", handleUpdate)
+  }, [refreshClosedDates])
+
+  useEffect(() => {
+    const handleFacilityUpdated = (event: Event) => {
+      const detail = (event as CustomEvent)?.detail
+      if (detail && detail.facility_profile_url !== undefined) {
+        setFacilityLogo(detail.facility_profile_url || "")
+      }
+    }
+    window.addEventListener("silang:facility-updated", handleFacilityUpdated)
+    return () => window.removeEventListener("silang:facility-updated", handleFacilityUpdated)
+  }, [])
 
   const loadSettings = useCallback(async () => {
     if (!token || !userId) return
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    if (isOffline) {
+      if (session?.user) {
+        setAccount({
+          first_name: session.user.first_name ?? "",
+          last_name: session.user.last_name ?? "",
+          phone_number: (session.user as any).phone_number ?? "",
+          email: session.user.email ?? "",
+        })
+      }
+      const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+      let current: any = null
+      if (cachedFacilityStr) {
+        try { current = JSON.parse(cachedFacilityStr) } catch {}
+      }
+      if (!current && session?.facility) {
+        current = session.facility
+      }
+      if (current) {
+        setFacility({
+          facility_name: current.facility_name ?? "",
+          type: current.type ?? "Rural Health Unit",
+          contact_number: current.contact_number ?? "",
+          email: current.email ?? "",
+          address: current.address ?? "",
+        })
+        if (current.facility_profile_url !== undefined) {
+          setFacilityLogo(current.facility_profile_url || "")
+        }
+      }
+      return
+    }
+
     try {
       const userResponse = await apiRequest<{ result: { first_name?: string; last_name?: string; phone_number?: string; email?: string } }>(`/user/${encodeURIComponent(userId)}`, { token })
       const user = userResponse.result
       setAccount({ first_name: user.first_name ?? "", last_name: user.last_name ?? "", phone_number: user.phone_number ?? "", email: user.email ?? "" })
       if (facilityId) {
-        const facilityResponse = await apiRequest<{ result: { facility_name?: string; type?: string; contact_number?: string; email?: string; address?: string } }>(`/facility/${encodeURIComponent(facilityId)}`, { token })
+        const facilityResponse = await apiRequest<{ result: { facility_name?: string; type?: string; contact_number?: string; email?: string; address?: string; facility_profile_url?: string } }>(`/facility/${encodeURIComponent(facilityId)}`, { token })
         const current = facilityResponse.result
+        localStorage.setItem("silang.facility.profile", JSON.stringify(current))
         setFacility({ facility_name: current.facility_name ?? "", type: current.type ?? "Rural Health Unit", contact_number: current.contact_number ?? "", email: current.email ?? "", address: current.address ?? "" })
+        if (current.facility_profile_url !== undefined) {
+          setFacilityLogo(current.facility_profile_url || "")
+        }
       }
     } catch (error) {
+      if (session?.user) {
+        setAccount({
+          first_name: session.user.first_name ?? "",
+          last_name: session.user.last_name ?? "",
+          phone_number: (session.user as any).phone_number ?? "",
+          email: session.user.email ?? "",
+        })
+      }
+      const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+      let current: any = null
+      if (cachedFacilityStr) {
+        try { current = JSON.parse(cachedFacilityStr) } catch {}
+      }
+      if (!current && session?.facility) {
+        current = session.facility
+      }
+      if (current) {
+        setFacility({
+          facility_name: current.facility_name ?? "",
+          type: current.type ?? "Rural Health Unit",
+          contact_number: current.contact_number ?? "",
+          email: current.email ?? "",
+          address: current.address ?? "",
+        })
+        return
+      }
       toast.error(error instanceof Error ? error.message : "Unable to load settings")
     }
-  }, [token, userId, facilityId])
+  }, [token, userId, facilityId, session?.user, session?.facility])
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void loadSettings() }, 0)
@@ -91,13 +220,65 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
     }
     if (!token) return toast.error("Your session has expired. Sign in again.")
     setSaving(true)
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      const sessionStr = localStorage.getItem("silang.auth.session")
+      if (sessionStr) {
+        try {
+          const s = JSON.parse(sessionStr)
+          s.user = { ...s.user, ...parsed.data }
+          localStorage.setItem("silang.auth.session", JSON.stringify(s))
+        } catch {}
+      }
+      window.dispatchEvent(new CustomEvent("silang:profile-updated", { detail: parsed.data }))
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "user_profile",
+        action: "UPDATE",
+        endpoint: "/user/profile",
+        method: "PUT",
+        payload: parsed.data,
+      })
+      toast.success("Profile saved (offline, queued for sync)")
+      setAccountErrors({})
+      setSaving(false)
+      return
+    }
+
     try {
       const response = await apiRequest<{ result: { first_name: string; last_name: string } }>("/user/profile", { method: "PUT", token, body: JSON.stringify(parsed.data) })
       window.dispatchEvent(new CustomEvent("silang:profile-updated", { detail: response.result }))
       toast.success("Profile saved")
       setAccountErrors({})
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save profile") }
-    finally { setSaving(false) }
+    } catch (error: any) {
+      if (error instanceof TypeError || !navigator.onLine) {
+        const sessionStr = localStorage.getItem("silang.auth.session")
+        if (sessionStr) {
+          try {
+            const s = JSON.parse(sessionStr)
+            s.user = { ...s.user, ...parsed.data }
+            localStorage.setItem("silang.auth.session", JSON.stringify(s))
+          } catch {}
+        }
+        window.dispatchEvent(new CustomEvent("silang:profile-updated", { detail: parsed.data }))
+        await silangSyncEngine.enqueue({
+          client_mutation_id: crypto.randomUUID(),
+          entity_type: "user_profile",
+          action: "UPDATE",
+          endpoint: "/user/profile",
+          method: "PUT",
+          payload: parsed.data,
+        })
+        toast.success("Profile saved (offline, queued for sync)")
+        setAccountErrors({})
+      } else {
+        toast.error(error instanceof Error ? error.message : "Unable to save profile")
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
   const saveFacility = async () => {
@@ -114,14 +295,304 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
     }
     if (!token || !facilityId) return toast.error("No facility is associated with this account.")
     setSaving(true)
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      const updatedFacility = { ...facility, ...parsed.data, facility_id: facilityId, facility_profile_url: facilityLogo || null }
+      localStorage.setItem("silang.facility.profile", JSON.stringify(updatedFacility))
+      window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updatedFacility }))
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "UPDATE",
+        endpoint: "/facility/update",
+        method: "PUT",
+        payload: updatedFacility,
+      })
+      toast.success("Facility profile saved (offline, queued for sync)")
+      setFacilityErrors({})
+      setSaving(false)
+      return
+    }
+
     try {
-      const response = await apiRequest<{ result: { facility_id: string; facility_name: string; type: string; facility_profile_url?: string | null } }>("/facility/update", { method: "PUT", token, body: JSON.stringify({ ...parsed.data, facility_id: facilityId }) })
+      const response = await apiRequest<{ result: { facility_id: string; facility_name: string; type: string; facility_profile_url?: string | null } }>("/facility/update", { method: "PUT", token, body: JSON.stringify({ ...parsed.data, facility_id: facilityId, facility_profile_url: facilityLogo || null }) })
+      localStorage.setItem("silang.facility.profile", JSON.stringify(response.result))
       window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: response.result }))
       toast.success("Facility profile saved")
       setFacilityErrors({})
       await loadSettings()
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save facility profile") }
-    finally { setSaving(false) }
+    } catch (error: any) {
+      if (error instanceof TypeError || !navigator.onLine) {
+        const updatedFacility = { ...facility, ...parsed.data, facility_id: facilityId, facility_profile_url: facilityLogo || null }
+        localStorage.setItem("silang.facility.profile", JSON.stringify(updatedFacility))
+        window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updatedFacility }))
+        await silangSyncEngine.enqueue({
+          client_mutation_id: crypto.randomUUID(),
+          entity_type: "facility",
+          action: "UPDATE",
+          endpoint: "/facility/update",
+          method: "PUT",
+          payload: updatedFacility,
+        })
+        toast.success("Facility profile saved (offline, queued for sync)")
+        setFacilityErrors({})
+      } else {
+        toast.error(error instanceof Error ? error.message : "Unable to save facility profile")
+      }
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+    event.target.value = ""
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose a valid image file (PNG, JPG, WEBP).")
+      return
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(`Image size (${(file.size / (1024 * 1024)).toFixed(1)} MB) exceeds the 10 MB limit.`)
+      return
+    }
+
+    if (!facilityId) {
+      toast.error("No facility is associated with this account.")
+      return
+    }
+
+    setUploadingLogo(true)
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      try {
+        const blobId = `blob-${crypto.randomUUID()}`
+        await db.blobs.put({
+          id: blobId,
+          data: file,
+          filename: file.name,
+          mime_type: file.type,
+        })
+
+        const reader = new FileReader()
+        reader.onload = async () => {
+          const localDataUrl = reader.result as string
+          setFacilityLogo(localDataUrl)
+
+          const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+          const currentCached = cachedFacilityStr ? JSON.parse(cachedFacilityStr) : {}
+          const updated = { ...currentCached, facility_id: facilityId, facility_profile_url: localDataUrl }
+          localStorage.setItem("silang.facility.profile", JSON.stringify(updated))
+
+          const sessionStr = localStorage.getItem("silang.auth.session")
+          if (sessionStr) {
+            try {
+              const s = JSON.parse(sessionStr)
+              if (s.facility) s.facility.facility_profile_url = localDataUrl
+              localStorage.setItem("silang.auth.session", JSON.stringify(s))
+            } catch {}
+          }
+
+          window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updated }))
+
+          await silangSyncEngine.enqueue({
+            client_mutation_id: crypto.randomUUID(),
+            entity_type: "facility",
+            action: "UPDATE",
+            endpoint: "/facility/update",
+            method: "PUT",
+            payload: {
+              ...facility,
+              facility_id: facilityId,
+              facility_profile_url: blobId,
+            },
+            blob_ids: [blobId],
+          })
+
+          toast.success("Facility logo saved offline (queued for sync)")
+          setUploadingLogo(false)
+        }
+        reader.onerror = () => {
+          toast.error("Failed to read image file locally.")
+          setUploadingLogo(false)
+        }
+        reader.readAsDataURL(file)
+      } catch {
+        toast.error("Unable to store logo locally.")
+        setUploadingLogo(false)
+      }
+      return
+    }
+
+    try {
+      const formData = new FormData()
+      formData.append("file", file)
+      let remoteUrl = ""
+
+      try {
+        const uploadRes = await apiRequest<{ file_url?: string; fileUrl?: string; profile_url?: string }>("/lab-screening/upload", {
+          method: "POST",
+          token,
+          body: formData,
+        })
+        remoteUrl = uploadRes?.file_url || uploadRes?.fileUrl || uploadRes?.profile_url || ""
+      } catch {
+        const avatarRes = await apiRequest<{ fileUrl?: string; profile_url?: string }>("/patient/mother/avatar/upload", {
+          method: "POST",
+          token,
+          body: formData,
+        })
+        remoteUrl = avatarRes?.profile_url || avatarRes?.fileUrl || ""
+      }
+
+      if (!remoteUrl) throw new Error("Could not process logo upload")
+
+      const updateRes = await apiRequest<{ result: { facility_id: string; facility_profile_url?: string | null } }>("/facility/update", {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          ...facility,
+          facility_id: facilityId,
+          facility_profile_url: remoteUrl,
+        }),
+      })
+
+      const finalUrl = updateRes?.result?.facility_profile_url || remoteUrl
+      setFacilityLogo(finalUrl)
+
+      const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+      const currentCached = cachedFacilityStr ? JSON.parse(cachedFacilityStr) : {}
+      const updated = { ...currentCached, facility_id: facilityId, facility_profile_url: finalUrl }
+      localStorage.setItem("silang.facility.profile", JSON.stringify(updated))
+
+      const sessionStr = localStorage.getItem("silang.auth.session")
+      if (sessionStr) {
+        try {
+          const s = JSON.parse(sessionStr)
+          if (s.facility) s.facility.facility_profile_url = finalUrl
+          localStorage.setItem("silang.auth.session", JSON.stringify(s))
+        } catch {}
+      }
+
+      window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updated }))
+      toast.success("Facility logo updated")
+    } catch (error: any) {
+      if (error instanceof TypeError || !navigator.onLine) {
+        try {
+          const blobId = `blob-${crypto.randomUUID()}`
+          await db.blobs.put({
+            id: blobId,
+            data: file,
+            filename: file.name,
+            mime_type: file.type,
+          })
+
+          const reader = new FileReader()
+          reader.onload = async () => {
+            const localDataUrl = reader.result as string
+            setFacilityLogo(localDataUrl)
+
+            const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+            const currentCached = cachedFacilityStr ? JSON.parse(cachedFacilityStr) : {}
+            const updated = { ...currentCached, facility_id: facilityId, facility_profile_url: localDataUrl }
+            localStorage.setItem("silang.facility.profile", JSON.stringify(updated))
+
+            const sessionStr = localStorage.getItem("silang.auth.session")
+            if (sessionStr) {
+              try {
+                const s = JSON.parse(sessionStr)
+                if (s.facility) s.facility.facility_profile_url = localDataUrl
+                localStorage.setItem("silang.auth.session", JSON.stringify(s))
+              } catch {}
+            }
+
+            window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updated }))
+
+            await silangSyncEngine.enqueue({
+              client_mutation_id: crypto.randomUUID(),
+              entity_type: "facility",
+              action: "UPDATE",
+              endpoint: "/facility/update",
+              method: "PUT",
+              payload: {
+                ...facility,
+                facility_id: facilityId,
+                facility_profile_url: blobId,
+              },
+              blob_ids: [blobId],
+            })
+
+            toast.success("Facility logo saved offline (queued for sync)")
+          }
+          reader.readAsDataURL(file)
+        } catch {
+          toast.error("Failed to store logo offline.")
+        }
+      } else {
+        toast.error(error instanceof Error ? error.message : "Unable to upload logo")
+      }
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  const handleRemoveLogo = async () => {
+    if (!facilityId) return
+    setFacilityLogo("")
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+    const currentCached = cachedFacilityStr ? JSON.parse(cachedFacilityStr) : {}
+    const updated = { ...currentCached, facility_id: facilityId, facility_profile_url: null }
+    localStorage.setItem("silang.facility.profile", JSON.stringify(updated))
+
+    const sessionStr = localStorage.getItem("silang.auth.session")
+    if (sessionStr) {
+      try {
+        const s = JSON.parse(sessionStr)
+        if (s.facility) s.facility.facility_profile_url = null
+        localStorage.setItem("silang.auth.session", JSON.stringify(s))
+      } catch {}
+    }
+
+    window.dispatchEvent(new CustomEvent("silang:facility-updated", { detail: updated }))
+
+    if (isOffline) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "UPDATE",
+        endpoint: "/facility/update",
+        method: "PUT",
+        payload: {
+          ...facility,
+          facility_id: facilityId,
+          facility_profile_url: null,
+        },
+      })
+      toast.info("Facility logo removed offline (queued for sync)")
+      return
+    }
+
+    try {
+      await apiRequest("/facility/update", {
+        method: "PUT",
+        token,
+        body: JSON.stringify({
+          ...facility,
+          facility_id: facilityId,
+          facility_profile_url: null,
+        }),
+      })
+      toast.success("Facility logo removed")
+    } catch {
+      toast.info("Logo removed locally")
+    }
   }
 
   const updatePassword = async () => {
@@ -153,6 +624,7 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
             { value: "facility", label: "Facility Profile", Icon: Building2 },
             { value: "offline", label: "Offline & Sync", Icon: WifiOff },
             { value: "notifications", label: "Notifications", Icon: Bell },
+            { value: "Calendar", label: "Calendar", Icon: CalendarIcon},
           ].map(({ value, label, Icon }) => (
             <button
               key={value}
@@ -214,8 +686,50 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
           <CardHeader><CardTitle>Clinic Identification</CardTitle><p className="text-xs text-muted-foreground">Manage official facility details and contact information.</p></CardHeader>
           <CardContent className="space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-sidebar-border bg-muted/30 p-3">
-              <div className="flex items-center gap-3"><span className="flex size-10 items-center justify-center rounded-md bg-muted"><Building2 className="size-5 text-muted-foreground" /></span><div><p className="text-xs font-medium">Facility Logo / Branding</p><p className="text-xs text-muted-foreground">Used in the sidebar, transfer slips, and reports.</p></div></div>
-              <Button variant="outline" disabled title="Facility logo upload is not available from the connected API." className="h-8 gap-1.5 px-3 text-xs"><Upload className="size-3.5" />Upload Logo</Button>
+              <div className="flex items-center gap-3">
+                <span className="flex size-12 items-center justify-center overflow-hidden rounded-md border border-sidebar-border bg-muted">
+                  {facilityLogo ? (
+                    <img src={backendAssetUrl(facilityLogo)} alt="Facility Logo" className="size-full object-contain p-1" />
+                  ) : (
+                    <Building2 className="size-6 text-muted-foreground" />
+                  )}
+                </span>
+                <div>
+                  <p className="text-xs font-medium">Facility Logo / Branding</p>
+                  <p className="text-xs text-muted-foreground">Used in the sidebar, transfer slips, and reports.</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="facility-logo-input"
+                  className={`inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-md border border-sidebar-border bg-background px-3 text-xs font-medium text-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground ${uploadingLogo || saving ? "pointer-events-none opacity-50" : ""}`}
+                >
+                  {uploadingLogo ? <Loader2 className="size-3.5 animate-spin" /> : <Upload className="size-3.5" />}
+                  {uploadingLogo ? "Uploading…" : "Upload Logo"}
+                  <input
+                    id="facility-logo-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/jpg"
+                    className="hidden"
+                    onChange={(e) => void handleLogoUpload(e)}
+                    disabled={uploadingLogo || saving}
+                  />
+                </label>
+                {facilityLogo && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => void handleRemoveLogo()}
+                    disabled={uploadingLogo || saving}
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    title="Remove custom logo"
+                    aria-label="Remove facility logo"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+              </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Facility Name" required><Input value={facility.facility_name} onChange={(event) => { setFacility({ ...facility, facility_name: event.target.value }); setFacilityErrors({ ...facilityErrors, facility_name: "" }) }} placeholder="Facility name" aria-invalid={Boolean(facilityErrors.facility_name)} />{facilityErrors.facility_name && <p className="text-xs text-destructive">{facilityErrors.facility_name}</p>}</Field>
@@ -278,8 +792,73 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
         </div>
       </TabsContent>
 
+      <TabsContent value="Calendar" className="mt-0 w-full space-y-4">
+        <Card className="rounded-md border-sidebar-border shadow-none ring-0">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <div>
+              <CardTitle>Facility Calendar</CardTitle>
+              <p className="text-xs text-muted-foreground">Manage clinic closed dates and scheduling exceptions.</p>
+            </div>
+            <Button size="sm" className="h-8 text-xs" onClick={() => setOpenAddDate(true)}>
+              Add Closed Date
+            </Button>
+          </CardHeader>
+
+          <CardContent className="space-y-3">
+            <div className="flex items-center justify-between text-xs font-medium">
+              <span>Closed Dates & Exemptions</span>
+              <span className="text-muted-foreground font-normal">{closedDates.length} date{closedDates.length === 1 ? "" : "s"}</span>
+            </div>
+
+            {closedDates.length === 0 ? (
+              <div className="rounded-md border border-sidebar-border bg-muted/20 p-4 text-xs text-muted-foreground">
+                No closed dates configured.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {closedDates.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 rounded-md border border-sidebar-border bg-card p-3 transition-colors hover:bg-muted/10"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex size-8 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+                        <CalendarIcon className="size-4" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-medium text-foreground">{item.date}</p>
+                        <p className="text-[11px] text-muted-foreground">{item.reason}</p>
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        removeClosedDate(item.id, facilityId)
+                        toast.success(`Removed closed date ${item.date}`)
+                      }}
+                      aria-label={`Remove closed date ${item.date}`}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
       </div>
     </Tabs>
+    <AddDate
+      open={openAddDate}
+      onClose={() => setOpenAddDate(false)}
+      facilityId={facilityId}
+      onDateAdded={refreshClosedDates}
+    />
     </DialogContent>
   </Dialog>
 }

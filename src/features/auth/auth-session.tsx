@@ -4,6 +4,8 @@ import { requestPersistentStorage, warmOfflineData } from "@/lib/offline-prefetc
 import { toast } from "sonner"
 
 const SESSION_KEY = "silang.auth.session"
+const OFFLINE_SESSION_KEY = "silang.auth.offline-session"
+const OFFLINE_USER_KEY = "silang.auth.offline-user"
 
 export type AuthUser = {
   user_id: string
@@ -12,6 +14,8 @@ export type AuthUser = {
   last_name: string
   role: string
   facility_id: string | null
+  email?: string | null
+  phone_number?: string | null
 }
 
 export type AuthFacility = {
@@ -19,17 +23,21 @@ export type AuthFacility = {
   facility_name: string
   type: string
   facility_profile_url?: string | null
+  contact_number?: string | null
+  email?: string | null
+  address?: string | null
 }
 
 type AuthSession = { token: string; user: AuthUser; facility?: AuthFacility }
 type LoginWorkspace = "admin" | "staff"
-type LoginCredentials = { identifier: string; password: string; rememberMe: boolean; workspace: LoginWorkspace }
+type LoginCredentials = { identifier: string; password: string; rememberMe: boolean; workspace?: LoginWorkspace }
 
 type AuthSessionContextValue = {
   session: AuthSession | null
   isAuthenticated: boolean
   login: (credentials: LoginCredentials) => Promise<void>
-  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace: LoginWorkspace) => Promise<void>
+  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<void>
+  unlockOffline: (pin: string) => boolean
   logout: () => void
 }
 
@@ -54,16 +62,22 @@ function getStoredSession(): AuthSession | null {
     try {
       const session = JSON.parse(value) as AuthSession
       if (session.token && session.user?.user_id) {
-        // A previously authenticated staff member can reopen cached records
-        // while disconnected, even if the server token expired in the meantime.
-        // The expired token is never accepted for online requests; reconnecting
-        // asks the staff member to authenticate again before syncing.
-        if (!isTokenExpired(session.token) || !navigator.onLine) return session
+        if (!isTokenExpired(session.token) || !navigator.onLine) {
+          window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(session))
+          return session
+        }
       }
       storage.removeItem(SESSION_KEY)
     } catch {
       storage.removeItem(SESSION_KEY)
     }
+  }
+  const offlineSaved = window.localStorage.getItem(OFFLINE_SESSION_KEY)
+  if (offlineSaved && (!navigator.onLine || typeof navigator === "undefined")) {
+    try {
+      const session = JSON.parse(offlineSaved) as AuthSession
+      if (session.token && session.user?.user_id) return session
+    } catch {}
   }
   return null
 }
@@ -74,6 +88,7 @@ function clearStoredSession() {
 }
 
 function persistStoredSession(session: AuthSession) {
+  window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(session))
   for (const storage of [window.localStorage, window.sessionStorage]) {
     const saved = storage.getItem(SESSION_KEY)
     if (!saved) continue
@@ -153,6 +168,9 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         if (!isCurrent || !result?.facility_id) return
         const nextSession = { ...session, facility: result }
         persistStoredSession(nextSession)
+        try {
+          window.localStorage.setItem("silang.facility.profile", JSON.stringify(result))
+        } catch {}
         setSession((current) => current?.token === session.token ? nextSession : current)
       })
       .catch(() => {
@@ -176,27 +194,46 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("online", warm)
   }, [session?.token, session?.user.user_id, session?.user.facility_id])
 
-  const completeLogin = useCallback((response: { token: string; user: AuthUser }, rememberMe: boolean, workspace: LoginWorkspace) => {
+  const completeLogin = useCallback((response: { token: string; user: AuthUser }, rememberMe: boolean, workspace?: LoginWorkspace) => {
     if (!response?.token || !response.user?.user_id) {
       throw new Error("The server returned an incomplete sign-in response.")
     }
 
-    const adminRoles = new Set(["Admin", "SystemAdmin"])
-    const isAdmin = adminRoles.has(response.user.role)
     if (response.user.role === "Mother") {
       throw new Error("This account uses the patient portal and cannot open the staff workspace.")
     }
-    if ((workspace === "admin") !== isAdmin) {
-      throw new Error(isAdmin
-        ? "This account belongs to the Administrator workspace. Select Administrator and try again."
-        : "This account belongs to the Health worker workspace. Select Health worker and try again.")
+    if (workspace) {
+      const adminRoles = new Set(["Admin", "SystemAdmin", "SuperAdmin"])
+      const isAdmin = adminRoles.has(response.user.role)
+      if ((workspace === "admin") !== isAdmin) {
+        throw new Error(isAdmin
+          ? "This account belongs to the Administrator workspace. Select Administrator and try again."
+          : "This account belongs to the Health worker workspace. Select Health worker and try again.")
+      }
     }
 
     const nextSession = { token: response.token, user: response.user }
     clearStoredSession()
+    window.localStorage.setItem(OFFLINE_SESSION_KEY, JSON.stringify(nextSession))
+    window.localStorage.setItem(OFFLINE_USER_KEY, JSON.stringify(response.user))
     const storage = rememberMe ? window.localStorage : window.sessionStorage
     storage.setItem(SESSION_KEY, JSON.stringify(nextSession))
     setSession(nextSession)
+  }, [])
+
+  const unlockOffline = useCallback((pin: string): boolean => {
+    const offlineSaved = window.localStorage.getItem(OFFLINE_SESSION_KEY)
+    if (!offlineSaved) return false
+    try {
+      const parsed = JSON.parse(offlineSaved) as AuthSession
+      const savedPin = window.localStorage.getItem(`silang.offline-pin:${parsed.user.user_id}`)
+      if (savedPin && savedPin !== pin) return false
+      window.localStorage.setItem(SESSION_KEY, offlineSaved)
+      setSession(parsed)
+      return true
+    } catch {
+      return false
+    }
   }, [])
 
   const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials) => {
@@ -207,7 +244,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     completeLogin(response, rememberMe, workspace)
   }, [completeLogin])
 
-  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace: LoginWorkspace) => {
+  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/google", {
       method: "POST",
       body: JSON.stringify({ accessToken }),
@@ -215,12 +252,11 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     completeLogin(response, rememberMe, workspace)
   }, [completeLogin])
 
-  const value = useMemo(() => ({ session, isAuthenticated: Boolean(session), login, loginWithGoogle, logout }), [session, login, loginWithGoogle, logout])
+  const value = useMemo(() => ({ session, isAuthenticated: Boolean(session), login, loginWithGoogle, unlockOffline, logout }), [session, login, loginWithGoogle, unlockOffline, logout])
 
   return <AuthSessionContext.Provider value={value}>{children}</AuthSessionContext.Provider>
 }
 
-// This hook intentionally shares the auth context module with its provider.
 // eslint-disable-next-line react-refresh/only-export-components
 export function useAuthSession() {
   const context = useContext(AuthSessionContext)

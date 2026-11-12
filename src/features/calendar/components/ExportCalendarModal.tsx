@@ -72,7 +72,7 @@ export function ExportCalendarModal({ children, events = [], viewDate = new Date
     URL.revokeObjectURL(url)
   }
 
-  const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character)
+  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character)
 
   return (
     <ResponsiveModal 
@@ -82,7 +82,6 @@ export function ExportCalendarModal({ children, events = [], viewDate = new Date
     >
         
         <div className="flex flex-col gap-5 py-2">
-          {/* File Format */}
           <div className="flex flex-col gap-3">
             <h4 className="text-xs font-medium text-foreground dark:text-white">File Format</h4>
             <RadioGroup value={fileFormat} onValueChange={setFileFormat} className="gap-2.5">
@@ -101,7 +100,6 @@ export function ExportCalendarModal({ children, events = [], viewDate = new Date
             </RadioGroup>
           </div>
 
-          {/* Date Range */}
           <div className="flex flex-col gap-3">
             <h4 className="text-xs font-medium text-foreground dark:text-white">Date Range</h4>
             <RadioGroup value={rangeType} onValueChange={setRangeType} className="gap-2.5">
@@ -159,7 +157,6 @@ export function ExportCalendarModal({ children, events = [], viewDate = new Date
             </RadioGroup>
           </div>
 
-          {/* Visual Layout */}
           <div className="flex flex-col gap-3">
             <h4 className="text-xs font-medium text-foreground dark:text-white">Visual Layout</h4>
             <RadioGroup defaultValue="weekly" className="gap-2.5">
@@ -178,7 +175,6 @@ export function ExportCalendarModal({ children, events = [], viewDate = new Date
             </RadioGroup>
           </div>
 
-          {/* Event Details to Show */}
           <div className="flex flex-col gap-3">
             <h4 className="text-xs font-medium text-foreground dark:text-white">Event Details to Show</h4>
             <div className="flex flex-col gap-2.5">
