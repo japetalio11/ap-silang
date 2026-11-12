@@ -51,14 +51,6 @@ const filters = [
     ],
   },
   {
-    name: "Barangay",
-    options: [
-      { label: "San Isidro" },
-      { label: "Carolina" },
-      { label: "Pili" },
-    ],
-  },
-  {
     name: "Trimester",
     options: [
       { label: "1st Trimester" },

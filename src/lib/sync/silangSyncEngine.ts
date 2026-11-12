@@ -381,6 +381,7 @@ export class SilangSyncEngine {
               if (resolvedPayload.file_url === blobId) resolvedPayload.file_url = url
               if (resolvedPayload.profile_url === blobId) resolvedPayload.profile_url = url
               if (resolvedPayload.photo_url === blobId) resolvedPayload.photo_url = url
+              if (resolvedPayload.facility_profile_url === blobId) resolvedPayload.facility_profile_url = url
             }
           }
 
@@ -621,6 +622,30 @@ export class SilangSyncEngine {
                   updated_at: Date.now(),
                 })
               }
+            }
+          } else if (item.entity_type === "facility") {
+            const resFac = (resAny?.result ?? resAny?.facility ?? resAny?.data) as Record<string, any> | undefined
+            const finalLogo = (resolvedPayload.facility_profile_url as string) || resFac?.facility_profile_url
+            if (finalLogo) {
+              const cachedFacilityStr = localStorage.getItem("silang.facility.profile")
+              if (cachedFacilityStr) {
+                try {
+                  const fac = JSON.parse(cachedFacilityStr)
+                  fac.facility_profile_url = finalLogo
+                  localStorage.setItem("silang.facility.profile", JSON.stringify(fac))
+                } catch {}
+              }
+              const sessionStr = localStorage.getItem("silang.auth.session")
+              if (sessionStr) {
+                try {
+                  const s = JSON.parse(sessionStr)
+                  if (s.facility) s.facility.facility_profile_url = finalLogo
+                  localStorage.setItem("silang.auth.session", JSON.stringify(s))
+                } catch {}
+              }
+              window.dispatchEvent(new CustomEvent("silang:facility-updated", {
+                detail: { ...(resFac || {}), facility_profile_url: finalLogo }
+              }))
             }
           }
 

@@ -11,6 +11,7 @@ import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthForm } from "@/features/auth/components/AuthForm"
 import { SuperAdminLoginPage } from "@/features/auth/components/SuperAdminLoginPage"
+import { RequireSuperAdminAuth } from "@/features/auth/components/RequireSuperAdminAuth"
 import { DashboardLayout } from "@/features/dashboard/components/DashboardLayout"
 import { DashboardPage } from "@/features/dashboard/components/DashboardPage"
 import { CalendarPage } from "@/features/calendar/components/CalendarPage"
@@ -24,6 +25,8 @@ import { ReferralGatewayPage } from "@/features/referrals/components/ReferralGat
 import { MessagesPage } from "@/features/messages/components/MessagesPage"
 import { SettingsPage } from "@/features/dashboard/components/SettingsPage"
 import { SuperAdminLayout } from "@/features/dashboard/components/SuperAdminLayout"
+import { SuperAdminOverviewPage } from "@/features/dashboard/components/SuperAdminOverviewPage"
+import { SuperAdminAuditPage } from "@/features/dashboard/components/SuperAdminAuditPage"
 import { SuperAdminBhsManagementPage, SuperAdminRhuManagementPage, SuperAdminSettingsDialog } from "@/features/dashboard/components/SuperAdminManagementPages"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthSessionProvider, useAuthSession } from "@/features/auth/auth-session"
@@ -56,8 +59,10 @@ function AppRoutes() {
     else if (pathname === "/dashboard/feedback") pageTitle = "Feedback"
     else if (/^\/referral\/[^/]+$/.test(pathname)) pageTitle = "Secure Referral"
     else if (pathname === "/superadmin") pageTitle = "Superadmin Sign In"
+    else if (pathname.endsWith("/overview")) pageTitle = "Municipal Overview"
     else if (pathname.endsWith("/rhu-management")) pageTitle = "RHU Management"
     else if (pathname.endsWith("/bhs-management")) pageTitle = "BHS Management"
+    else if (pathname.endsWith("/audit-logs")) pageTitle = "Audit Trail"
     else if (pathname.endsWith("/settings")) pageTitle = "Settings"
 
     document.title = `${pageTitle} - Silang`
@@ -68,9 +73,11 @@ function AppRoutes() {
       <Route path="/" element={<AuthForm />} />
       <Route path="/superadmin" element={<Outlet />}>
         <Route index element={<SuperAdminLoginPage />} />
-        <Route element={<SuperAdminLayout />}>
+        <Route element={<RequireSuperAdminAuth><SuperAdminLayout /></RequireSuperAdminAuth>}>
+          <Route path="overview" element={<SuperAdminOverviewPage />} />
           <Route path="rhu-management" element={<SuperAdminRhuManagementPage />} />
           <Route path="bhs-management" element={<SuperAdminBhsManagementPage />} />
+          <Route path="audit-logs" element={<SuperAdminAuditPage />} />
           <Route path="settings" element={<SuperAdminSettingsDialog />} />
         </Route>
       </Route>

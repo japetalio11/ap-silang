@@ -1106,7 +1106,7 @@ export function MaternalProfilePage() {
                   <TabsTrigger value="vitals" className="h-full flex-initial px-3 text-xs">Past Vitals</TabsTrigger>
                   <TabsTrigger value="deliveries" className="h-full flex-initial px-3 text-xs">Deliveries</TabsTrigger>
                   <TabsTrigger value="pregnancies" className="h-full flex-initial px-3 text-xs">Pregnancies</TabsTrigger>
-                  <TabsTrigger value="ehr" className="h-full flex-initial px-3 text-xs">EHR Records</TabsTrigger>
+                  <TabsTrigger value="ehr" className="h-full flex-initial px-3 text-xs">Health Records</TabsTrigger>
                 </TabsList>
                 <TooltipProvider>
                   <div className="ml-auto flex shrink-0 items-center gap-2">

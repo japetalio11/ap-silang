@@ -203,7 +203,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       throw new Error("This account uses the patient portal and cannot open the staff workspace.")
     }
     if (workspace) {
-      const adminRoles = new Set(["Admin", "SystemAdmin"])
+      const adminRoles = new Set(["Admin", "SystemAdmin", "SuperAdmin"])
       const isAdmin = adminRoles.has(response.user.role)
       if ((workspace === "admin") !== isAdmin) {
         throw new Error(isAdmin
