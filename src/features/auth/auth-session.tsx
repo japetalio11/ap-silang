@@ -35,8 +35,8 @@ type LoginCredentials = { identifier: string; password: string; rememberMe: bool
 type AuthSessionContextValue = {
   session: AuthSession | null
   isAuthenticated: boolean
-  login: (credentials: LoginCredentials) => Promise<void>
-  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<void>
+  login: (credentials: LoginCredentials) => Promise<AuthUser>
+  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<AuthUser>
   unlockOffline: (pin: string) => boolean
   logout: () => void
 }
@@ -236,20 +236,22 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials) => {
+  const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials): Promise<AuthUser> => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ identifier: identifier.trim(), password }),
     })
     completeLogin(response, rememberMe, workspace)
+    return response.user
   }, [completeLogin])
 
-  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => {
+  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace): Promise<AuthUser> => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/google", {
       method: "POST",
       body: JSON.stringify({ accessToken }),
     })
     completeLogin(response, rememberMe, workspace)
+    return response.user
   }, [completeLogin])
 
   const value = useMemo(() => ({ session, isAuthenticated: Boolean(session), login, loginWithGoogle, unlockOffline, logout }), [session, login, loginWithGoogle, unlockOffline, logout])

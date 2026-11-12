@@ -14,10 +14,11 @@ import {
 } from "@/components/ui/sidebar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ArrowLeftRight, Building2, CalendarDays, ChevronsUpDown, FolderHeart, LayoutDashboard, MessageSquare, SlidersHorizontal, UserCog } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, ChevronsUpDown, FolderHeart, LayoutDashboard, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog } from "lucide-react"
 import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { backendAssetUrl } from "@/lib/api"
+import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 
 const navigationGroups = [
   {
@@ -133,6 +134,26 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
         ))}
+
+        {isUserSuperAdmin(session?.user.role) && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Central Governance</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    onClick={() => navigate("/superadmin/overview")}
+                    className="bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-300"
+                    tooltip="Municipal Superadmin"
+                  >
+                    <ShieldCheck className="mr-2 text-emerald-600 dark:text-emerald-400" />
+                    <span>Superadmin Portal</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
 
       <SidebarFooter>
@@ -155,7 +176,18 @@ export function AppSidebar() {
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" className="w-[--radix-dropdown-menu-trigger-width]">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                <DropdownMenuSeparator />
+                {isUserSuperAdmin(session?.user.role) && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={() => navigate("/superadmin/overview")}
+                      className="cursor-pointer text-emerald-600 dark:text-emerald-400"
+                    >
+                      <ShieldCheck className="mr-2 size-4" />
+                      Superadmin Portal
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem onClick={() => { logout(); navigate("/", { replace: true }) }} className="cursor-pointer">Log out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

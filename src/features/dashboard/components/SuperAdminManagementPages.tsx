@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { Building2, Download, Edit2, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X } from "lucide-react"
+import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -323,6 +323,12 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
               <TableRow
                 key={facility.facility_id}
                 data-state={selected.includes(facility.facility_id) ? "selected" : undefined}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest("button") || target.closest("input") || target.closest("[role='checkbox']")) return
+                  navigate(`/superadmin/facility/${facility.facility_id}`)
+                }}
               >
                 <TableCell className="px-3">
                   <Checkbox
@@ -336,7 +342,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                   />
                 </TableCell>
                 <TableCell>
-                  <div className="font-medium text-foreground">{facility.facility_name}</div>
+                  <div className="font-medium text-foreground hover:underline">{facility.facility_name}</div>
                   <div className="font-mono text-[11px] text-muted-foreground">{facility.facility_id.slice(0, 8)}...</div>
                 </TableCell>
                 <TableCell>
@@ -357,6 +363,10 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 </TableCell>
                 <TableCell>
                   <TableRowActions label={`Actions for ${facility.facility_name}`}>
+                    <DropdownMenuItem onClick={() => navigate(`/superadmin/facility/${facility.facility_id}`)}>
+                      <ExternalLink className="mr-2 size-4" />
+                      View Facility Hub
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openCreate(facility)}>
                       <Edit2 className="mr-2 size-4" />
                       Edit details

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react"
 import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
+  BarChart3,
   Building2,
+  Database,
   FileText,
   Hospital,
   LayoutDashboard,
@@ -55,6 +57,8 @@ const superAdminNavigation = [
   { label: "Municipal Overview", path: "/superadmin/overview", icon: LayoutDashboard },
   { label: "RHU Management", path: "/superadmin/rhu-management", icon: Hospital },
   { label: "BHS Management", path: "/superadmin/bhs-management", icon: Building2 },
+  { label: "Municipal Reports", path: "/superadmin/reports", icon: BarChart3 },
+  { label: "Database Maintenance", path: "/superadmin/database-maintenance", icon: Database },
   { label: "Audit Trail", path: "/superadmin/audit-logs", icon: FileText },
   { label: "Settings", path: "/superadmin/settings", icon: Settings2 },
 ]
@@ -67,8 +71,12 @@ export function SuperAdminLayout() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
 
+  const isFacilityPage = location.pathname.startsWith("/superadmin/facility/")
   const activeSection =
-    superAdminNavigation.find((item) => location.pathname === item.path) ?? superAdminNavigation[0]
+    superAdminNavigation.find((item) => location.pathname === item.path) ??
+    (isFacilityPage
+      ? { label: "Facility Info Hub", path: location.pathname, icon: Hospital }
+      : superAdminNavigation[0])
 
   const userFullName = session?.user
     ? `${session.user.first_name} ${session.user.last_name}`.trim()
@@ -95,7 +103,7 @@ export function SuperAdminLayout() {
   const handleLogout = () => {
     logout()
     toast.success("Signed out of the superadmin workspace")
-    navigate("/superadmin", { replace: true })
+    navigate("/", { replace: true })
   }
 
   return (
@@ -176,6 +184,10 @@ export function SuperAdminLayout() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="top" align="start" className="w-[--radix-dropdown-menu-trigger-width]">
                     <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => navigate("/dashboard")} className="cursor-pointer">
+                      <LayoutDashboard className="mr-2 size-4" />
+                      Clinic Dashboard
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
                       Log out
@@ -198,9 +210,26 @@ export function SuperAdminLayout() {
                     <BreadcrumbPage className="text-xs text-muted-foreground">Administration</BreadcrumbPage>
                   </BreadcrumbItem>
                   <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage className="text-xs">{activeSection.label}</BreadcrumbPage>
-                  </BreadcrumbItem>
+                  {isFacilityPage ? (
+                    <>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage
+                          className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                          onClick={() => navigate("/superadmin/rhu-management")}
+                        >
+                          Facilities
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="text-xs">Facility Info Hub</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : (
+                    <BreadcrumbItem>
+                      <BreadcrumbPage className="text-xs">{activeSection.label}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  )}
                 </BreadcrumbList>
               </Breadcrumb>
             </div>

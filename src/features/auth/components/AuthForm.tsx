@@ -20,6 +20,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 import { ApiError } from "@/lib/api"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { toast } from "sonner"
 
 type GoogleTokenResult = { access_token?: string; error?: string }
@@ -56,7 +57,7 @@ export function AuthForm() {
   const [offlinePin, setOfflinePin] = useState("")
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine)
   const navigate = useNavigate()
-  const { login, loginWithGoogle, unlockOffline, isAuthenticated } = useAuthSession()
+  const { login, loginWithGoogle, unlockOffline, isAuthenticated, session } = useAuthSession()
   const savedOfflineUserStr = typeof window !== "undefined" ? window.localStorage.getItem("silang.auth.offline-user") : null
   const savedOfflineUser = savedOfflineUserStr ? JSON.parse(savedOfflineUserStr) : null
 
@@ -109,14 +110,24 @@ export function AuthForm() {
   }, [])
 
   useEffect(() => {
-    if (isAuthenticated) navigate("/dashboard", { replace: true })
-  }, [isAuthenticated, navigate])
+    if (isAuthenticated) {
+      if (isUserSuperAdmin(session?.user?.role)) {
+        navigate("/superadmin/overview", { replace: true })
+      } else {
+        navigate("/dashboard", { replace: true })
+      }
+    }
+  }, [isAuthenticated, session?.user?.role, navigate])
 
   async function handleSubmit(values: LoginFormValues) {
     setIsSubmitting(true)
     try {
-      await login({ ...values, rememberMe })
-      navigate("/dashboard", { replace: true })
+      const loggedUser = await login({ ...values, rememberMe })
+      if (isUserSuperAdmin(loggedUser?.role)) {
+        navigate("/superadmin/overview", { replace: true })
+      } else {
+        navigate("/dashboard", { replace: true })
+      }
     } catch (error) {
       toast.error(error instanceof ApiError || error instanceof Error
         ? error.message
@@ -146,8 +157,12 @@ export function AuthForm() {
             return
           }
           try {
-            await loginWithGoogle(result.access_token, rememberMe)
-            navigate("/dashboard", { replace: true })
+            const loggedUser = await loginWithGoogle(result.access_token, rememberMe)
+            if (isUserSuperAdmin(loggedUser?.role)) {
+              navigate("/superadmin/overview", { replace: true })
+            } else {
+              navigate("/dashboard", { replace: true })
+            }
           } catch (error) {
             toast.error(error instanceof Error ? error.message : "Unable to sign in with Google.")
           } finally {

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import { Activity, ArrowRightLeft, Building2, Hospital, RefreshCw, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -9,6 +10,7 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchMunicipalOverview, type MunicipalOverview } from "../api/superadmin-api"
 
 export function SuperAdminOverviewPage() {
+  const navigate = useNavigate()
   const { session } = useAuthSession()
   const [data, setData] = useState<MunicipalOverview | null>(null)
   const [loading, setLoading] = useState(true)
@@ -119,7 +121,11 @@ export function SuperAdminOverviewPage() {
             <TableBody>
               {data?.facilitiesSummary && data.facilitiesSummary.length > 0 ? (
                 data.facilitiesSummary.map((item) => (
-                  <TableRow key={item.facility_id}>
+                  <TableRow
+                    key={item.facility_id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() => navigate(`/superadmin/facility/${item.facility_id}`)}
+                  >
                     <TableCell className="font-medium text-foreground">
                       <div className="flex items-center gap-2">
                         {item.type.toLowerCase().includes("rhu") || item.type.toLowerCase().includes("rural") ? (
@@ -127,7 +133,7 @@ export function SuperAdminOverviewPage() {
                         ) : (
                           <Building2 className="size-4 text-muted-foreground" />
                         )}
-                        {item.facility_name}
+                        <span className="hover:underline">{item.facility_name}</span>
                       </div>
                     </TableCell>
                     <TableCell>
