@@ -61,6 +61,7 @@ export function SuperAdminStaffDetailPage() {
   const [submittingPassword, setSubmittingPassword] = useState(false)
 
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [confirmTransferOpen, setConfirmTransferOpen] = useState(false)
   const [targetFacilityId, setTargetFacilityId] = useState("")
   const [facilitySearch, setFacilitySearch] = useState("")
   const [submittingTransfer, setSubmittingTransfer] = useState(false)
@@ -169,6 +170,7 @@ export function SuperAdminStaffDetailPage() {
       toast.success("Staff member reassigned", {
         description: `${staff.name} successfully transferred to destination clinic.`,
       })
+      setConfirmTransferOpen(false)
       setTransferDialogOpen(false)
       await loadStaff()
     } catch (error) {
@@ -413,10 +415,70 @@ export function SuperAdminStaffDetailPage() {
             </Button>
             <Button
               size="sm"
-              onClick={handleTransferStaff}
-              disabled={submittingTransfer || !targetFacilityId}
+              onClick={() => {
+                setTransferDialogOpen(false)
+                setConfirmTransferOpen(true)
+              }}
+              disabled={!targetFacilityId}
             >
-              {submittingTransfer ? "Transferring..." : "Confirm Reassignment"}
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmTransferOpen} onOpenChange={setConfirmTransferOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
+                <AlertTriangle className="size-4" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Confirm Staff Facility Transfer
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+              Are you sure you want to transfer <span className="font-semibold text-foreground">{staff?.name}</span> ({staff?.role}) to{" "}
+              <span className="font-semibold text-foreground">
+                {facilities.find((f) => f.facility_id === targetFacilityId)?.facility_name || "the selected facility"}
+              </span>?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
+            <p className="font-medium text-foreground">Effects of reassignment:</p>
+            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+              <li>
+                <strong className="text-foreground">Active Station Change:</strong> Staff member will be assigned to the new facility and detached from their current station.
+              </li>
+              <li>
+                <strong className="text-foreground">Access Scope:</strong> Logins, patient lists, and daily clinical duties will be scoped to the new facility.
+              </li>
+              <li>
+                <strong className="text-foreground">Historical Preservation:</strong> All previous maternal records, checkups, and audit trails logged by this staff member at {staff?.facility} remain intact.
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="gap-3 sm:gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setConfirmTransferOpen(false)
+                setTransferDialogOpen(true)
+              }}
+              disabled={submittingTransfer}
+            >
+              Back
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleTransferStaff}
+              disabled={submittingTransfer}
+            >
+              {submittingTransfer ? "Transferring..." : "Confirm Transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>

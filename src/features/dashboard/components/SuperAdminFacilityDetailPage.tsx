@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRightLeft,
   Building2,
@@ -111,6 +112,7 @@ export function SuperAdminFacilityDetailPage() {
   const [submittingPassword, setSubmittingPassword] = useState(false)
 
   const [transferStaffDialogOpen, setTransferStaffDialogOpen] = useState(false)
+  const [confirmStaffTransferOpen, setConfirmStaffTransferOpen] = useState(false)
   const [targetStaffFacilityId, setTargetStaffFacilityId] = useState("")
   const [submittingStaffTransfer, setSubmittingStaffTransfer] = useState(false)
 
@@ -120,6 +122,7 @@ export function SuperAdminFacilityDetailPage() {
   const [motherPageSize, setMotherPageSize] = useState(10)
 
   const [transferMotherDialogOpen, setTransferMotherDialogOpen] = useState(false)
+  const [confirmMotherTransferOpen, setConfirmMotherTransferOpen] = useState(false)
   const [selectedMother, setSelectedMother] = useState<FacilityHubMother | null>(null)
   const [targetMotherFacilityId, setTargetMotherFacilityId] = useState("")
   const [motherTransferNotes, setMotherTransferNotes] = useState("")
