@@ -58,7 +58,6 @@ const superAdminNavigation = [
   { label: "Municipal Overview", path: "/superadmin/overview", icon: LayoutDashboard },
   { label: "RHU Management", path: "/superadmin/rhu-management", icon: Hospital },
   { label: "BHS Management", path: "/superadmin/bhs-management", icon: Building2 },
-  { label: "Staff & Access Control", path: "/superadmin/users", icon: Users },
   { label: "Municipal Reports", path: "/superadmin/reports", icon: BarChart3 },
   { label: "Database Maintenance", path: "/superadmin/database-maintenance", icon: Database },
   { label: "Audit Trail", path: "/superadmin/audit-logs", icon: FileText },
@@ -153,7 +152,7 @@ export function SuperAdminLayout() {
                   {superAdminNavigation.map(({ label, path, icon: Icon }) => (
                     <SidebarMenuItem key={path}>
                       <SidebarMenuButton
-                        isActive={location.pathname === path || (path === "/superadmin/users" && isStaffProfilePage)}
+                        isActive={location.pathname === path}
                         onClick={() =>
                           navigate(path, path.endsWith("/settings") ? { state: { returnTo: location.pathname } } : undefined)
                         }
