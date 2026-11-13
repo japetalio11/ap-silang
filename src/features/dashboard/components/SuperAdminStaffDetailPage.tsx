@@ -340,7 +340,7 @@ export function SuperAdminStaffDetailPage() {
               />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
@@ -409,7 +409,7 @@ export function SuperAdminStaffDetailPage() {
               </div>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setTransferDialogOpen(false)}>
               Cancel
             </Button>

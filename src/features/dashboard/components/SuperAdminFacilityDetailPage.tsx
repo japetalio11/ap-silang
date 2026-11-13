@@ -1362,7 +1362,7 @@ export function SuperAdminFacilityDetailPage() {
               />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
@@ -1400,7 +1400,7 @@ export function SuperAdminFacilityDetailPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setTransferStaffDialogOpen(false)}>
               Cancel
             </Button>
@@ -1511,7 +1511,7 @@ export function SuperAdminFacilityDetailPage() {
               />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setTransferMotherDialogOpen(false)}>
               Cancel
             </Button>
