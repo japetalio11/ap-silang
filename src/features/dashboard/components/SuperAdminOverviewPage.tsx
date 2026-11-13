@@ -174,7 +174,11 @@ export function SuperAdminOverviewPage() {
                   <TableRow
                     key={item.facility_id}
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
-                    onClick={() => navigate(`/superadmin/facility/${item.facility_id}`)}
+                    onClick={() =>
+                      navigate(`/superadmin/facility/${item.facility_id}`, {
+                        state: { returnTo: "/superadmin/overview", returnLabel: "Municipal Overview" },
+                      })
+                    }
                   >
                     <TableCell className="font-medium text-foreground">
                       <div className="flex items-center gap-2">

@@ -338,7 +338,12 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 onClick={(e) => {
                   const target = e.target as HTMLElement
                   if (target.closest("button") || target.closest("input") || target.closest("[role='checkbox']")) return
-                  navigate(`/superadmin/facility/${facility.facility_id}`)
+                  navigate(`/superadmin/facility/${facility.facility_id}`, {
+                    state: {
+                      returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                      returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                    },
+                  })
                 }}
               >
                 <TableCell className="px-3">
@@ -374,7 +379,16 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 </TableCell>
                 <TableCell>
                   <TableRowActions label={`Actions for ${facility.facility_name}`}>
-                    <DropdownMenuItem onClick={() => navigate(`/superadmin/facility/${facility.facility_id}`)}>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        navigate(`/superadmin/facility/${facility.facility_id}`, {
+                          state: {
+                            returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                            returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                          },
+                        })
+                      }
+                    >
                       <ExternalLink className="mr-2 size-4" />
                       View Facility Hub
                     </DropdownMenuItem>

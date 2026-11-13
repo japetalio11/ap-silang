@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import {
   ArrowLeft,
   ArrowRightLeft,
@@ -77,6 +77,7 @@ import {
 export function SuperAdminFacilityDetailPage() {
   const { facilityId } = useParams<{ facilityId: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
   const { session } = useAuthSession()
 
   const [data, setData] = useState<FacilityHubDetails | null>(null)
@@ -419,6 +420,9 @@ export function SuperAdminFacilityDetailPage() {
 
   const isRhu = data.type === "RHU"
   const totalReferrals = data.onlineReferralsFrom.length + data.onlineReferralsTo.length
+  const navState = location.state as { returnTo?: string; returnLabel?: string } | null
+  const backTarget = navState?.returnTo || (isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management")
+  const backLabel = navState?.returnLabel || (isRhu ? "Rural Health Units" : "Barangay Health Stations")
 
   return (
     <section className="w-full space-y-3 px-4 py-3">
@@ -427,20 +431,20 @@ export function SuperAdminFacilityDetailPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => navigate(isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management")}
+            onClick={() => navigate(backTarget)}
             className="h-8 gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="size-3.5" />
-            Back to {isRhu ? "RHUs" : "BHSs"}
+            Back to {backLabel}
           </Button>
           <Breadcrumb>
             <BreadcrumbList className="text-xs">
               <BreadcrumbItem>
                 <BreadcrumbLink
                   className="cursor-pointer"
-                  onClick={() => navigate(isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management")}
+                  onClick={() => navigate(backTarget)}
                 >
-                  {isRhu ? "Rural Health Units" : "Barangay Health Stations"}
+                  {backLabel}
                 </BreadcrumbLink>
               </BreadcrumbItem>
               <BreadcrumbSeparator />
