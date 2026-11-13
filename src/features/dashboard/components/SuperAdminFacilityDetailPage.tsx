@@ -274,6 +274,7 @@ export function SuperAdminFacilityDetailPage() {
       toast.success("Staff member reassigned", {
         description: `${selectedStaff.first_name} ${selectedStaff.last_name} transferred successfully.`,
       })
+      setConfirmStaffTransferOpen(false)
       setTransferStaffDialogOpen(false)
       loadData()
     } catch (error) {
@@ -299,6 +300,7 @@ export function SuperAdminFacilityDetailPage() {
       toast.success("Mother transferred successfully", {
         description: `${motherName} has been transferred to the destination facility.`,
       })
+      setConfirmMotherTransferOpen(false)
       setTransferMotherDialogOpen(false)
       setMotherTransferNotes("")
       loadData()
@@ -1404,10 +1406,70 @@ export function SuperAdminFacilityDetailPage() {
             </Button>
             <Button
               size="sm"
-              onClick={handleTransferStaff}
+              onClick={() => {
+                setTransferStaffDialogOpen(false)
+                setConfirmStaffTransferOpen(true)
+              }}
               disabled={submittingStaffTransfer || !targetStaffFacilityId}
             >
-              {submittingStaffTransfer ? "Reassigning..." : "Confirm Transfer"}
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmStaffTransferOpen} onOpenChange={setConfirmStaffTransferOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
+                <AlertTriangle className="size-4" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Confirm Staff Facility Transfer
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+              Are you sure you want to transfer <span className="font-semibold text-foreground">{selectedStaff?.first_name} {selectedStaff?.last_name}</span> ({selectedStaff?.role}) from <span className="font-semibold text-foreground">{data.facility_name}</span> to{" "}
+              <span className="font-semibold text-foreground">
+                {allFacilities.find((f) => f.facility_id === targetStaffFacilityId)?.facility_name || "the selected facility"}
+              </span>?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
+            <p className="font-medium text-foreground">Effects of reassignment:</p>
+            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+              <li>
+                <strong className="text-foreground">Active Station Change:</strong> Staff member will be assigned to the new facility and detached from {data.facility_name}.
+              </li>
+              <li>
+                <strong className="text-foreground">Access Scope:</strong> Logins, patient lists, and daily clinical duties will be scoped to the new facility.
+              </li>
+              <li>
+                <strong className="text-foreground">Historical Preservation:</strong> All previous maternal records, checkups, and audit trails logged by this staff member at {data.facility_name} remain intact.
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="gap-3 sm:gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setConfirmStaffTransferOpen(false)
+                setTransferStaffDialogOpen(true)
+              }}
+              disabled={submittingStaffTransfer}
+            >
+              Back
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleTransferStaff}
+              disabled={submittingStaffTransfer}
+            >
+              {submittingStaffTransfer ? "Transferring..." : "Confirm Transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1455,10 +1517,73 @@ export function SuperAdminFacilityDetailPage() {
             </Button>
             <Button
               size="sm"
-              onClick={handleTransferMother}
+              onClick={() => {
+                setTransferMotherDialogOpen(false)
+                setConfirmMotherTransferOpen(true)
+              }}
               disabled={submittingMotherTransfer || !targetMotherFacilityId}
             >
-              {submittingMotherTransfer ? "Transferring..." : "Confirm Mother Transfer"}
+              Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmMotherTransferOpen} onOpenChange={setConfirmMotherTransferOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
+                <AlertTriangle className="size-4" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Confirm Patient Transfer
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+              Are you sure you want to transfer <span className="font-semibold text-foreground">{selectedMother?.mother.user ? `${selectedMother.mother.user.first_name} ${selectedMother.mother.user.last_name}` : "Patient"}</span> from <span className="font-semibold text-foreground">{data.facility_name}</span> to{" "}
+              <span className="font-semibold text-foreground">
+                {allFacilities.find((f) => f.facility_id === targetMotherFacilityId)?.facility_name || "the selected facility"}
+              </span>?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
+            <p className="font-medium text-foreground">Effects of maternal transfer:</p>
+            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+              <li>
+                <strong className="text-foreground">Primary Facility Change:</strong> Patient's primary health monitoring will be relocated to the destination facility.
+              </li>
+              <li>
+                <strong className="text-foreground">Local Registry:</strong> Patient will be removed from this facility's active maternal roster.
+              </li>
+              <li>
+                <strong className="text-foreground">Care Continuity:</strong> Prenatal logs, lab screening files, and clinical history will transfer over safely.
+              </li>
+              <li>
+                <strong className="text-foreground">Audit Tracking:</strong> An administrative transfer record will be logged with your notes for municipal auditing.
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="gap-3 sm:gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setConfirmMotherTransferOpen(false)
+                setTransferMotherDialogOpen(true)
+              }}
+              disabled={submittingMotherTransfer}
+            >
+              Back
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleTransferMother}
+              disabled={submittingMotherTransfer}
+            >
+              {submittingMotherTransfer ? "Transferring..." : "Confirm Transfer"}
             </Button>
           </DialogFooter>
         </DialogContent>
