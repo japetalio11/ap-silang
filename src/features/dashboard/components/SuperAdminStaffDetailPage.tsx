@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, ArrowRightLeft, CalendarDays, KeyRound, RefreshCw, UserCheck, UserX } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, CalendarDays, KeyRound, RefreshCw, UserCheck, UserX } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -65,6 +65,9 @@ export function SuperAdminStaffDetailPage() {
   const [targetFacilityId, setTargetFacilityId] = useState("")
   const [submittingTransfer, setSubmittingTransfer] = useState(false)
 
+  const [deactivateDialogOpen, setDeactivateDialogOpen] = useState(false)
+  const [submittingDeactivation, setSubmittingDeactivation] = useState(false)
+
   const loadStaff = useCallback(async () => {
     if (!token || !staffId) return
     setLoading(true)
@@ -107,15 +110,19 @@ export function SuperAdminStaffDetailPage() {
     return false
   }
 
-  const changeActiveStatus = async () => {
+  const changeActiveStatus = async (targetActiveState?: boolean) => {
     if (!staff || !token) return
-    const is_active = staff.status !== "Active"
+    const is_active = targetActiveState !== undefined ? targetActiveState : staff.status !== "Active"
+    setSubmittingDeactivation(true)
     try {
       await setStaffActive(token, staff.id, is_active)
       setStaff({ ...staff, status: is_active ? "Active" : "Deactivated" })
-      toast.success(is_active ? "Staff account activated" : "Staff account suspended")
+      toast.success(is_active ? "Staff account activated" : "Staff account deactivated")
+      setDeactivateDialogOpen(false)
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to update staff account")
+    } finally {
+      setSubmittingDeactivation(false)
     }
   }
 
@@ -209,13 +216,19 @@ export function SuperAdminStaffDetailPage() {
             </Button>
             <Button
               variant="outline"
-              onClick={() => void changeActiveStatus()}
+              onClick={() => {
+                if (staff.status === "Active") {
+                  setDeactivateDialogOpen(true)
+                } else {
+                  void changeActiveStatus(true)
+                }
+              }}
               className="h-8 gap-1.5 px-2.5 text-xs"
             >
               {staff.status === "Active" ? (
                 <>
                   <UserX className="size-3.5 text-rose-500" />
-                  Suspend Account
+                  Deactivate Account
                 </>
               ) : (
                 <>
@@ -361,6 +374,61 @@ export function SuperAdminStaffDetailPage() {
               disabled={submittingTransfer || !targetFacilityId}
             >
               {submittingTransfer ? "Transferring..." : "Confirm Reassignment"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deactivateDialogOpen} onOpenChange={setDeactivateDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950/60">
+                <AlertTriangle className="size-4" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Deactivate Staff Account?
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+              Are you sure you want to deactivate the account of <span className="font-semibold text-foreground">{staff?.name}</span> ({staff?.role})?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
+            <p className="font-medium text-foreground">Effects of deactivation:</p>
+            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+              <li>
+                <strong className="text-foreground">Session Termination:</strong> The user will be immediately signed out and prevented from accessing clinic portals and mobile applications.
+              </li>
+              <li>
+                <strong className="text-foreground">Access Revocation:</strong> Access to patient records, maternal health charts, and clinic appointments will be blocked.
+              </li>
+              <li>
+                <strong className="text-foreground">Data Preservation:</strong> Existing medical entries, clinical records, and audit trails created by this account remain safe and unaltered.
+              </li>
+              <li>
+                <strong className="text-foreground">Reversible:</strong> You can reactivate this account at any time.
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setDeactivateDialogOpen(false)}
+              disabled={submittingDeactivation}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void changeActiveStatus(false)}
+              disabled={submittingDeactivation}
+            >
+              {submittingDeactivation ? "Deactivating..." : "Confirm Deactivation"}
             </Button>
           </DialogFooter>
         </DialogContent>
