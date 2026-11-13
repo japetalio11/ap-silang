@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
+  ExternalLink,
   KeyRound,
   MoreVertical,
   RefreshCw,
@@ -34,6 +36,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { useAuthSession } from "@/features/auth/auth-session"
 import {
   adminResetStaffPassword,
@@ -46,6 +49,7 @@ import {
 } from "../api/superadmin-api"
 
 export function SuperAdminStaffPage() {
+  const navigate = useNavigate()
   const { session } = useAuthSession()
   const [staffList, setStaffList] = useState<StaffItem[]>([])
   const [facilities, setFacilities] = useState<FacilityItem[]>([])
@@ -54,6 +58,8 @@ export function SuperAdminStaffPage() {
   const [facilityFilter, setFacilityFilter] = useState("all")
   const [roleFilter, setRoleFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [selectedStaff, setSelectedStaff] = useState<StaffItem | null>(null)
@@ -90,6 +96,10 @@ export function SuperAdminStaffPage() {
     loadData()
   }, [session?.token, facilityFilter, roleFilter, statusFilter])
 
+  useEffect(() => {
+    setPage(1)
+  }, [query, facilityFilter, roleFilter, statusFilter])
+
   const filteredStaff = useMemo(() => {
     const term = query.trim().toLowerCase()
     if (!term) return staffList
@@ -101,6 +111,11 @@ export function SuperAdminStaffPage() {
       return fullName.includes(term) || email.includes(term) || phone.includes(term) || facName.includes(term)
     })
   }, [staffList, query])
+
+  const paginatedStaff = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredStaff.slice(start, start + pageSize)
+  }, [filteredStaff, page, pageSize])
 
   const handleRoleChange = async () => {
     if (!session?.token || !selectedStaff || !newRole) return
@@ -314,10 +329,20 @@ export function SuperAdminStaffPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              filteredStaff.map((staff) => {
+              paginatedStaff.map((staff) => {
                 const initials = `${staff.first_name?.[0] || ""}${staff.last_name?.[0] || ""}`.toUpperCase()
                 return (
-                  <TableRow key={staff.user_id}>
+                  <TableRow
+                    key={staff.user_id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement
+                      if (target.closest("button") || target.closest("[role='menuitem']")) return
+                      navigate(`/superadmin/users/${staff.user_id}`, {
+                        state: { returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" },
+                      })
+                    }}
+                  >
                     <TableCell>
                       <div className="flex items-center gap-2.5">
                         <Avatar className="size-8 rounded-full border border-border">
@@ -325,7 +350,7 @@ export function SuperAdminStaffPage() {
                           <AvatarFallback className="text-[11px] font-medium">{initials || "ST"}</AvatarFallback>
                         </Avatar>
                         <div className="flex flex-col">
-                          <span className="text-xs font-medium">
+                          <span className="text-xs font-medium hover:underline">
                             {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
                           </span>
                           <span className="text-[11px] text-muted-foreground">{staff.email || "No email"}</span>
@@ -358,6 +383,16 @@ export function SuperAdminStaffPage() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="text-xs">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              navigate(`/superadmin/users/${staff.user_id}`, {
+                                state: { returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" },
+                              })
+                            }
+                          >
+                            <ExternalLink className="mr-2 size-3.5" />
+                            View Staff Profile
+                          </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() => {
                               setSelectedStaff(staff)
@@ -405,6 +440,14 @@ export function SuperAdminStaffPage() {
           </TableBody>
         </Table>
       </div>
+
+      <TablePaginationFooter
+        rowCount={filteredStaff.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
 
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
         <DialogContent className="sm:max-w-md">

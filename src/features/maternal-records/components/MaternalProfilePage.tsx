@@ -1,7 +1,7 @@
 import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { format } from "date-fns"
 import {
   Activity,
@@ -13,6 +13,7 @@ import {
   CalendarPlus,
   Camera,
   Download,
+  Eye,
   FileText,
   HeartPulse,
   MoreHorizontal,
@@ -48,6 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
 import { db } from "@/lib/db/silangDatabase"
 import { CreateAppointmentModal, type AppointmentMotherOption } from "@/features/calendar/components/CreateAppointmentModal"
@@ -352,8 +354,10 @@ function ResetFilterButton({ onClick }: { onClick: () => void }) {
 
 export function MaternalProfilePage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const { motherId } = useParams()
   const { session } = useAuthSession()
+  const isSuperAdminView = location.pathname.startsWith("/superadmin") || isUserSuperAdmin(session?.user?.role)
   const [maternalRecord, setMaternalRecord] = useState<MaternalCompositeRecord | null>(null)
   const [isProfileLoading, setIsProfileLoading] = useState(true)
   const [profileRevision, setProfileRevision] = useState(0)
@@ -1008,27 +1012,59 @@ export function MaternalProfilePage() {
   return (
     <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-hidden px-4 pb-4 pt-4 text-foreground">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <Button variant="ghost" className="h-8 w-fit gap-1.5 px-2 text-xs text-muted-foreground" onClick={() => navigate("/dashboard/maternal-records")}>
+        <Button
+          variant="ghost"
+          className="h-8 w-fit gap-1.5 px-2 text-xs text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            const locState = location.state as { returnTo?: string; returnLabel?: string } | null
+            if (locState?.returnTo) {
+              navigate(locState.returnTo)
+            } else if (isSuperAdminView) {
+              navigate(-1)
+            } else {
+              navigate("/dashboard/maternal-records")
+            }
+          }}
+        >
           <ArrowLeft className="size-3.5" />
-          Maternal Records
+          {isSuperAdminView
+            ? (location.state as { returnLabel?: string } | null)?.returnLabel
+              ? `Back to ${(location.state as { returnLabel?: string }).returnLabel}`
+              : "Back to Facility"
+            : "Maternal Records"}
         </Button>
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Button variant="outline" onClick={() => setIsRiskOverrideOpen(true)} className="h-8 gap-1.5 border-sidebar-border px-2.5 text-xs"><ShieldAlert className="size-3.5" />Override Risk</Button>
-          <Button onClick={() => setIsVitalsOpen(true)} className="h-8 gap-1.5 px-2.5 text-xs"><Stethoscope className="size-3.5" />Log Consultation</Button>
-          <DropdownMenu>
-            <TooltipProvider delayDuration={500}>
-            <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="More profile actions" className="size-8 border-sidebar-border"><MoreHorizontal className="size-4" /></Button>
-            </DropdownMenuTrigger></TooltipTrigger><TooltipContent>More profile actions</TooltipContent></Tooltip>
-            </TooltipProvider>
-            <DropdownMenuContent align="end" className="w-56">
-              <DropdownMenuItem onClick={() => setIsReferralOpen(true)}><ArrowLeftRight />Initiate Referral</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIsEhrExportOpen(true)}><Download />Export Clinical Record</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIsChangeStaffOpen(true)}><UserCog />Change Staff</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIsEditProfileOpen(true)}><Pencil />Edit Profile</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setIsUploadAvatarOpen(true)}><Camera />Change Profile Photo</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          {isSuperAdminView ? (
+            <>
+              <div className="flex items-center gap-1.5 rounded-md border border-sidebar-border bg-muted/60 px-2.5 py-1 text-xs text-muted-foreground">
+                <Eye className="size-3.5" />
+                <span>Read-Only Oversight</span>
+              </div>
+              <Button variant="outline" onClick={() => setIsEhrExportOpen(true)} className="h-8 gap-1.5 border-sidebar-border px-2.5 text-xs">
+                <Download className="size-3.5" />
+                Export EHR Record
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" onClick={() => setIsRiskOverrideOpen(true)} className="h-8 gap-1.5 border-sidebar-border px-2.5 text-xs"><ShieldAlert className="size-3.5" />Override Risk</Button>
+              <Button onClick={() => setIsVitalsOpen(true)} className="h-8 gap-1.5 px-2.5 text-xs"><Stethoscope className="size-3.5" />Log Consultation</Button>
+              <DropdownMenu>
+                <TooltipProvider delayDuration={500}>
+                <Tooltip><TooltipTrigger asChild><DropdownMenuTrigger asChild>
+                  <Button variant="outline" size="icon" aria-label="More profile actions" className="size-8 border-sidebar-border"><MoreHorizontal className="size-4" /></Button>
+                </DropdownMenuTrigger></TooltipTrigger><TooltipContent>More profile actions</TooltipContent></Tooltip>
+                </TooltipProvider>
+                <DropdownMenuContent align="end" className="w-56">
+                  <DropdownMenuItem onClick={() => setIsReferralOpen(true)}><ArrowLeftRight />Initiate Referral</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsEhrExportOpen(true)}><Download />Export Clinical Record</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsChangeStaffOpen(true)}><UserCog />Change Staff</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsEditProfileOpen(true)}><Pencil />Edit Profile</DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setIsUploadAvatarOpen(true)}><Camera />Change Profile Photo</DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
         </div>
       </div>
 
@@ -1042,15 +1078,17 @@ export function MaternalProfilePage() {
                   name={patientName}
                   className="size-12 border-2 border-sidebar-border text-sm"
                 />
-                <button
-                  type="button"
-                  onClick={() => setIsUploadAvatarOpen(true)}
-                  aria-label="Change profile photo"
-                  title="Change profile photo"
-                  className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                >
-                  <Camera className="size-4" />
-                </button>
+                {!isSuperAdminView && (
+                  <button
+                    type="button"
+                    onClick={() => setIsUploadAvatarOpen(true)}
+                    aria-label="Change profile photo"
+                    title="Change profile photo"
+                    className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Camera className="size-4" />
+                  </button>
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <CardTitle className={`truncate text-base font-semibold ${riskStyle.value}`}>{profile.fullName}</CardTitle>
@@ -1112,11 +1150,15 @@ export function MaternalProfilePage() {
                   <div className="ml-auto flex shrink-0 items-center gap-2">
                     <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Export clinical history" onClick={() => setIsEhrExportOpen(true)} className="size-8 border-sidebar-border"><Download className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Export</TooltipContent></Tooltip>
                     <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh clinical history" onClick={refreshProfile} className="size-8 border-sidebar-border"><RefreshCw className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Refresh</TooltipContent></Tooltip>
-                    {historyTab === "vitals" && <Button onClick={() => setIsVitalsOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Stethoscope className="size-3.5" />Log Consultation</Button>}
-                    {historyTab === "deliveries" && <Button onClick={() => setIsDeliveryDialogOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />Record Delivery</Button>}
-                    {historyTab === "appointments" && <Button onClick={() => setIsScheduleAppointmentOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><CalendarPlus className="size-3.5" />Schedule Appointment</Button>}
-                    {historyTab === "pregnancies" && <Button onClick={() => setIsNewPregnancyOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />New Pregnancy</Button>}
-                    {historyTab === "ehr" && <Button onClick={() => setIsLabRecordOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Upload className="size-3.5" />Upload EHR Record</Button>}
+                    {!isSuperAdminView && (
+                      <>
+                        {historyTab === "vitals" && <Button onClick={() => setIsVitalsOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Stethoscope className="size-3.5" />Log Consultation</Button>}
+                        {historyTab === "deliveries" && <Button onClick={() => setIsDeliveryDialogOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />Record Delivery</Button>}
+                        {historyTab === "appointments" && <Button onClick={() => setIsScheduleAppointmentOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><CalendarPlus className="size-3.5" />Schedule Appointment</Button>}
+                        {historyTab === "pregnancies" && <Button onClick={() => setIsNewPregnancyOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />New Pregnancy</Button>}
+                        {historyTab === "ehr" && <Button onClick={() => setIsLabRecordOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Upload className="size-3.5" />Upload EHR Record</Button>}
+                      </>
+                    )}
                   </div>
                 </TooltipProvider>
               </div>
@@ -1153,10 +1195,14 @@ export function MaternalProfilePage() {
                   renderRowAction={(rowIndex) => (
                     <TableRowActions label="Appointment actions">
                       <DropdownMenuItem onSelect={() => { const originalIndex = filteredAppointmentEntries[rowIndex]?.index; const appointment = originalIndex === undefined ? undefined : maternalRecord.appointments?.[originalIndex]; if (appointment) { setSelectedAppointmentId(appointment.appointment_id); setIsAppointmentDetailsOpen(true) } }}>View Appointment</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>Log Consultation</DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => setIsPrescriptionOpen(true)}>Create Prescription</DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(filteredAppointmentEntries[rowIndex]?.index ?? null)}>Cancel Appointment</DropdownMenuItem>
+                      {!isSuperAdminView && (
+                        <>
+                          <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>Log Consultation</DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => setIsPrescriptionOpen(true)}>Create Prescription</DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(filteredAppointmentEntries[rowIndex]?.index ?? null)}>Cancel Appointment</DropdownMenuItem>
+                        </>
+                      )}
                     </TableRowActions>
                   )}
                 />
@@ -1238,9 +1284,11 @@ export function MaternalProfilePage() {
                         }}>
                           View Vital Details
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>
-                          Log New Consultation
-                        </DropdownMenuItem>
+                        {!isSuperAdminView && (
+                          <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>
+                            Log New Consultation
+                          </DropdownMenuItem>
+                        )}
                         <DropdownMenuItem onSelect={() => {
                           if (item && navigator.clipboard?.writeText) {
                             const summary = `Visit #${item.visit_number ?? "—"} (${formatRecordDate(item.visit_date)}): BP ${item.bp_systolic ?? "—"}/${item.bp_diastolic ?? "—"} mmHg, PR ${item.pulse_rate_bpm ?? "—"} bpm, Temp ${item.temperature_celsius ?? "—"}°C, Weight ${item.weight_kg ?? "—"}kg, AOG ${item.age_of_gestation_weeks ?? "—"}w`
@@ -1306,8 +1354,12 @@ export function MaternalProfilePage() {
                                 {hasAttachment && <DropdownMenuItem onSelect={openPreview}>Preview Attachment</DropdownMenuItem>}
                                 <DropdownMenuItem onSelect={() => { if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(test) }}>Copy Test Name</DropdownMenuItem>
                                 <DropdownMenuItem onSelect={() => { if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(fileName) }}>Copy File Name</DropdownMenuItem>
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem variant="destructive" onSelect={() => setLabFileToDelete(screeningId)}>Delete EHR Record</DropdownMenuItem>
+                                {!isSuperAdminView && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem variant="destructive" onSelect={() => setLabFileToDelete(screeningId)}>Delete EHR Record</DropdownMenuItem>
+                                  </>
+                                )}
                               </TableRowActions>
                             </TableCell>
                           </TableRow>
@@ -1324,74 +1376,79 @@ export function MaternalProfilePage() {
         </div>
       </section>
 
-      <RiskOverrideDialog open={isRiskOverrideOpen} onOpenChange={setIsRiskOverrideOpen} patientName={patientName} pregnancyLabel={currentPregnancy ? `Active Pregnancy · G${currentPregnancy.gravida ?? "—"} P${currentPregnancy.parity ?? "—"}` : "No pregnancy record"} currentRisk={riskAssessment.level} onSubmit={prepareRiskOverride} />
-      <ConfirmRiskOverridePasswordDialog open={isRiskPasswordOpen} onOpenChange={(open) => { setIsRiskPasswordOpen(open); if (!open) setPendingRiskOverride(null) }} patientName={patientName} riskLevel={pendingRiskOverride?.riskLevel ?? "the selected level"} onConfirm={confirmRiskOverride} />
       <EhrExportDialog open={isEhrExportOpen} onOpenChange={setIsEhrExportOpen} patientName={patientName} maternalRecord={maternalRecord} onExport={handleEhrExport} />
-      <PrenatalVitalsDialog open={isVitalsOpen} onOpenChange={setIsVitalsOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveEncounter} />
-      <DeliveryOutcomeDialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveDelivery} />
       <DeliveryDetailsDrawer open={isDeliveryDrawerOpen} onOpenChange={setIsDeliveryDrawerOpen} patientName={patientName} delivery={selectedDelivery?.delivery ?? null} pregnancy={selectedDelivery?.pregnancy} />
       <VitalDetailsDrawer open={isVitalDrawerOpen} onOpenChange={setIsVitalDrawerOpen} patientName={patientName} visit={selectedVitalVisit?.visit ?? null} pregnancy={selectedVitalVisit?.pregnancy} />
       <AppointmentDetailsDialog open={isAppointmentDetailsOpen} onOpenChange={setIsAppointmentDetailsOpen} patientName={patientName} appointment={selectedAppointment} pregnancy={appointmentPregnancy} consultation={appointmentVisit} supplements={appointmentSupplements} />
-      <CreateAppointmentModal open={isScheduleAppointmentOpen} onOpenChange={setIsScheduleAppointmentOpen} initialMother={appointmentMother} onCreate={handleScheduleAppointment} />
-      {maternalRecord && <CreatePrescriptionDialog
-        open={isPrescriptionOpen}
-        onOpenChange={setIsPrescriptionOpen}
-        patientName={patientName}
-        motherId={maternalRecord.mother_id}
-        pregnancies={maternalRecord.pregnancies ?? []}
-        onSuccess={refreshProfile}
-      />}
-      <LaboratoryRecordDialog open={isLabRecordOpen} onOpenChange={setIsLabRecordOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveLabRecord} />
       <EhrRecordPreview key={previewEhrRecord?.screening_id ?? "closed"} record={previewEhrRecord} onClose={() => setPreviewEhrRecord(null)} />
-      <NewPregnancyDialog open={isNewPregnancyOpen} onOpenChange={setIsNewPregnancyOpen} onSubmit={handleCreatePregnancy} />
-      <ChangeStaffDialog open={isChangeStaffOpen} onOpenChange={setIsChangeStaffOpen} patientName={patientName} staff={staffOptions} currentStaff={maternalRecord.assignedWorker} isLoading={isStaffLoading} onAssign={handleAssignStaff} />
-      <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type, maternalRecord.user?.profile_url, maternalRecord.profile_url])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
-      <UploadAvatarDialog
-        open={isUploadAvatarOpen}
-        onOpenChange={setIsUploadAvatarOpen}
-        motherId={maternalRecord.mother_id}
-        patientName={patientName}
-        currentPhotoUrl={maternalRecord.user?.profile_url || maternalRecord.profile_url || maternalRecord.photo_url}
-        onSuccess={(newPhotoUrl) => {
-          setMaternalRecord((current) => current ? {
-            ...current,
-            profile_url: newPhotoUrl,
-            photo_url: newPhotoUrl,
-            user: { ...(current.user || {}), profile_url: newPhotoUrl, photo_url: newPhotoUrl },
-          } : current)
-        }}
-      />
-      <CreateReferralModal open={isReferralOpen} onOpenChange={setIsReferralOpen} mothers={[maternalRecord]} facilities={referralFacilities} originFacilityId={session?.user.facility_id} initialMotherId={maternalRecord.mother_id} isSaving={isCreatingReferral} onSubmit={handleCreateReferral} />
-      <ConfirmSensitiveActionDialog
-        open={appointmentToCancel !== null}
-        onOpenChange={(open) => { if (!open) setAppointmentToCancel(null) }}
-        title={`Are you sure you want to cancel “${appointmentToCancel === null ? "this appointment" : String(appointmentRowsState[appointmentToCancel]?.[1] ?? "this appointment") }”?`}
-        description="The appointment will be marked as cancelled in this maternal record."
-        confirmLabel="I understand, cancel this appointment"
-        onConfirm={() => {
-          const appointment = appointmentToCancel === null ? undefined : maternalRecord.appointments?.[appointmentToCancel]
-          if (!appointment || !session?.token) { toast.error("Unable to find this appointment record"); setAppointmentToCancel(null); return }
-          void cancelMaternalAppointment(session.token, appointment.appointment_id)
-            .then(() => { toast.success("Appointment cancelled"); refreshProfile() })
-            .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to cancel this appointment"))
-            .finally(() => setAppointmentToCancel(null))
-        }}
-      />
-      <ConfirmSensitiveActionDialog
-        open={labFileToDelete !== null}
-        onOpenChange={(open) => { if (!open) setLabFileToDelete(null) }}
-        title={`Are you sure you want to delete “${maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)?.screening_type ?? "this EHR record"}”?`}
-        description="This will permanently remove the EHR record and its attachment from this profile."
-        confirmLabel="I understand, delete this EHR record"
-        onConfirm={() => {
-          const record = maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)
-          if (!record || !session?.token) { toast.error("Unable to find this EHR record"); setLabFileToDelete(null); return }
-          void deleteMaternalLabScreening(session.token, record.screening_id)
-            .then(() => { toast.success("EHR record deleted"); refreshProfile() })
-            .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to delete this EHR record"))
-            .finally(() => setLabFileToDelete(null))
-        }}
-      />
+
+      {!isSuperAdminView && (
+        <>
+          <RiskOverrideDialog open={isRiskOverrideOpen} onOpenChange={setIsRiskOverrideOpen} patientName={patientName} pregnancyLabel={currentPregnancy ? `Active Pregnancy · G${currentPregnancy.gravida ?? "—"} P${currentPregnancy.parity ?? "—"}` : "No pregnancy record"} currentRisk={riskAssessment.level} onSubmit={prepareRiskOverride} />
+          <ConfirmRiskOverridePasswordDialog open={isRiskPasswordOpen} onOpenChange={(open) => { setIsRiskPasswordOpen(open); if (!open) setPendingRiskOverride(null) }} patientName={patientName} riskLevel={pendingRiskOverride?.riskLevel ?? "the selected level"} onConfirm={confirmRiskOverride} />
+          <PrenatalVitalsDialog open={isVitalsOpen} onOpenChange={setIsVitalsOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveEncounter} />
+          <DeliveryOutcomeDialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveDelivery} />
+          <CreateAppointmentModal open={isScheduleAppointmentOpen} onOpenChange={setIsScheduleAppointmentOpen} initialMother={appointmentMother} onCreate={handleScheduleAppointment} />
+          {maternalRecord && <CreatePrescriptionDialog
+            open={isPrescriptionOpen}
+            onOpenChange={setIsPrescriptionOpen}
+            patientName={patientName}
+            motherId={maternalRecord.mother_id}
+            pregnancies={maternalRecord.pregnancies ?? []}
+            onSuccess={refreshProfile}
+          />}
+          <LaboratoryRecordDialog open={isLabRecordOpen} onOpenChange={setIsLabRecordOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveLabRecord} />
+          <NewPregnancyDialog open={isNewPregnancyOpen} onOpenChange={setIsNewPregnancyOpen} onSubmit={handleCreatePregnancy} />
+          <ChangeStaffDialog open={isChangeStaffOpen} onOpenChange={setIsChangeStaffOpen} patientName={patientName} staff={staffOptions} currentStaff={maternalRecord.assignedWorker} isLoading={isStaffLoading} onAssign={handleAssignStaff} />
+          <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type, maternalRecord.user?.profile_url, maternalRecord.profile_url])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
+          <UploadAvatarDialog
+            open={isUploadAvatarOpen}
+            onOpenChange={setIsUploadAvatarOpen}
+            motherId={maternalRecord.mother_id}
+            patientName={patientName}
+            currentPhotoUrl={maternalRecord.user?.profile_url || maternalRecord.profile_url || maternalRecord.photo_url}
+            onSuccess={(newPhotoUrl) => {
+              setMaternalRecord((current) => current ? {
+                ...current,
+                profile_url: newPhotoUrl,
+                photo_url: newPhotoUrl,
+                user: { ...(current.user || {}), profile_url: newPhotoUrl, photo_url: newPhotoUrl },
+              } : current)
+            }}
+          />
+          <CreateReferralModal open={isReferralOpen} onOpenChange={setIsReferralOpen} mothers={[maternalRecord]} facilities={referralFacilities} originFacilityId={session?.user.facility_id} initialMotherId={maternalRecord.mother_id} isSaving={isCreatingReferral} onSubmit={handleCreateReferral} />
+          <ConfirmSensitiveActionDialog
+            open={appointmentToCancel !== null}
+            onOpenChange={(open) => { if (!open) setAppointmentToCancel(null) }}
+            title={`Are you sure you want to cancel “${appointmentToCancel === null ? "this appointment" : String(appointmentRowsState[appointmentToCancel]?.[1] ?? "this appointment") }”?`}
+            description="The appointment will be marked as cancelled in this maternal record."
+            confirmLabel="I understand, cancel this appointment"
+            onConfirm={() => {
+              const appointment = appointmentToCancel === null ? undefined : maternalRecord.appointments?.[appointmentToCancel]
+              if (!appointment || !session?.token) { toast.error("Unable to find this appointment record"); setAppointmentToCancel(null); return }
+              void cancelMaternalAppointment(session.token, appointment.appointment_id)
+                .then(() => { toast.success("Appointment cancelled"); refreshProfile() })
+                .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to cancel this appointment"))
+                .finally(() => setAppointmentToCancel(null))
+            }}
+          />
+          <ConfirmSensitiveActionDialog
+            open={labFileToDelete !== null}
+            onOpenChange={(open) => { if (!open) setLabFileToDelete(null) }}
+            title={`Are you sure you want to delete “${maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)?.screening_type ?? "this EHR record"}”?`}
+            description="This will permanently remove the EHR record and its attachment from this profile."
+            confirmLabel="I understand, delete this EHR record"
+            onConfirm={() => {
+              const record = maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)
+              if (!record || !session?.token) { toast.error("Unable to find this EHR record"); setLabFileToDelete(null); return }
+              void deleteMaternalLabScreening(session.token, record.screening_id)
+                .then(() => { toast.success("EHR record deleted"); refreshProfile() })
+                .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to delete this EHR record"))
+                .finally(() => setLabFileToDelete(null))
+            }}
+          />
+        </>
+      )}
 
     </div>
   )

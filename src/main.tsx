@@ -28,6 +28,7 @@ import { SuperAdminOverviewPage } from "@/features/dashboard/components/SuperAdm
 import { SuperAdminAuditPage } from "@/features/dashboard/components/SuperAdminAuditPage"
 import { SuperAdminBhsManagementPage, SuperAdminRhuManagementPage, SuperAdminSettingsDialog } from "@/features/dashboard/components/SuperAdminManagementPages"
 import { SuperAdminStaffPage } from "@/features/dashboard/components/SuperAdminStaffPage"
+import { SuperAdminStaffDetailPage } from "@/features/dashboard/components/SuperAdminStaffDetailPage"
 import { SuperAdminFacilityDetailPage } from "@/features/dashboard/components/SuperAdminFacilityDetailPage"
 import { SuperAdminReportsPage } from "@/features/dashboard/components/SuperAdminReportsPage"
 import { SuperAdminDatabasePage } from "@/features/dashboard/components/SuperAdminDatabasePage"
@@ -67,6 +68,8 @@ function AppRoutes() {
     else if (/^\/referral\/[^/]+$/.test(pathname)) pageTitle = "Secure Referral"
     else if (pathname === "/superadmin") pageTitle = "Superadmin Sign In"
     else if (/^\/superadmin\/facility\/[^/]+$/.test(pathname)) pageTitle = "Facility Information Hub"
+    else if (/^\/superadmin\/users\/[^/]+$/.test(pathname)) pageTitle = "Staff Profile"
+    else if (/^\/superadmin\/mother\/[^/]+$/.test(pathname)) pageTitle = "Mother Profile"
     else if (pathname.endsWith("/overview")) pageTitle = "Municipal Overview"
     else if (pathname.endsWith("/rhu-management")) pageTitle = "RHU Management"
     else if (pathname.endsWith("/bhs-management")) pageTitle = "BHS Management"
@@ -89,6 +92,8 @@ function AppRoutes() {
         <Route path="bhs-management" element={<SuperAdminBhsManagementPage />} />
         <Route path="facility/:facilityId" element={<SuperAdminFacilityDetailPage />} />
         <Route path="users" element={<SuperAdminStaffPage />} />
+        <Route path="users/:staffId" element={<SuperAdminStaffDetailPage />} />
+        <Route path="mother/:motherId" element={<MaternalProfilePage />} />
         <Route path="reports" element={<SuperAdminReportsPage />} />
         <Route path="database-maintenance" element={<SuperAdminDatabasePage />} />
         <Route path="audit-logs" element={<SuperAdminAuditPage />} />

@@ -12,6 +12,7 @@ import {
   Settings2,
   ShieldCheck,
   Sun,
+  Users,
   ChevronsUpDown,
 } from "lucide-react"
 import {
@@ -57,6 +58,7 @@ const superAdminNavigation = [
   { label: "Municipal Overview", path: "/superadmin/overview", icon: LayoutDashboard },
   { label: "RHU Management", path: "/superadmin/rhu-management", icon: Hospital },
   { label: "BHS Management", path: "/superadmin/bhs-management", icon: Building2 },
+  { label: "Staff & Access Control", path: "/superadmin/users", icon: Users },
   { label: "Municipal Reports", path: "/superadmin/reports", icon: BarChart3 },
   { label: "Database Maintenance", path: "/superadmin/database-maintenance", icon: Database },
   { label: "Audit Trail", path: "/superadmin/audit-logs", icon: FileText },
@@ -72,11 +74,19 @@ export function SuperAdminLayout() {
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
 
   const isFacilityPage = location.pathname.startsWith("/superadmin/facility/")
+  const isStaffProfilePage = /^\/superadmin\/users\/[^/]+$/.test(location.pathname)
+  const isMotherPage = /^\/superadmin\/mother\/[^/]+$/.test(location.pathname)
+  const locationState = location.state as { returnTo?: string; returnLabel?: string } | null
+
   const activeSection =
     superAdminNavigation.find((item) => location.pathname === item.path) ??
     (isFacilityPage
       ? { label: "Facility Info Hub", path: location.pathname, icon: Hospital }
-      : superAdminNavigation[0])
+      : isStaffProfilePage
+        ? { label: "Staff Profile", path: location.pathname, icon: Users }
+        : isMotherPage
+          ? { label: "Mother Profile", path: location.pathname, icon: Users }
+          : superAdminNavigation[0])
 
   const userFullName = session?.user
     ? `${session.user.first_name} ${session.user.last_name}`.trim()
@@ -143,7 +153,7 @@ export function SuperAdminLayout() {
                   {superAdminNavigation.map(({ label, path, icon: Icon }) => (
                     <SidebarMenuItem key={path}>
                       <SidebarMenuButton
-                        isActive={activeSection.path === path}
+                        isActive={location.pathname === path || (path === "/superadmin/users" && isStaffProfilePage)}
                         onClick={() =>
                           navigate(path, path.endsWith("/settings") ? { state: { returnTo: location.pathname } } : undefined)
                         }
@@ -223,6 +233,48 @@ export function SuperAdminLayout() {
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
                         <BreadcrumbPage className="text-xs">Facility Info Hub</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : isStaffProfilePage ? (
+                    <>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage
+                          className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                          onClick={() => {
+                            if (locationState?.returnTo) {
+                              navigate(locationState.returnTo)
+                            } else {
+                              navigate("/superadmin/users")
+                            }
+                          }}
+                        >
+                          {locationState?.returnLabel || "Staff & Access Control"}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="text-xs">Staff Profile</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : isMotherPage ? (
+                    <>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage
+                          className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                          onClick={() => {
+                            if (locationState?.returnTo) {
+                              navigate(locationState.returnTo)
+                            } else {
+                              navigate("/superadmin/rhu-management")
+                            }
+                          }}
+                        >
+                          {locationState?.returnLabel || "Maternal Care"}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="text-xs">Mother Profile</BreadcrumbPage>
                       </BreadcrumbItem>
                     </>
                   ) : (

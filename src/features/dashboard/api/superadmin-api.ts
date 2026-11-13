@@ -318,6 +318,19 @@ export type FacilityHubReferral = {
   external_facility_name?: string | null
   toFacility?: { facility_name: string; type: string } | null
   fromFacility?: { facility_name: string; type: string } | null
+  pregnancy?: {
+    pregnancy_id: string
+    gravida: number
+    parity: number
+    mother?: {
+      mother_id: string
+      family_serial_no: string | null
+      user?: {
+        first_name: string
+        last_name: string
+      } | null
+    } | null
+  } | null
 }
 
 export type FacilityHubSchedule = {
@@ -358,6 +371,18 @@ export async function reassignStaffFacility(
   payload: { user_id: string; target_facility_id: string },
 ): Promise<void> {
   await apiRequest(`/facility/${encodeURIComponent(facilityId)}/reassign-staff`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function reassignMotherFacility(
+  token: string,
+  facilityId: string,
+  payload: { mother_id: string; target_facility_id: string; notes?: string },
+): Promise<void> {
+  await apiRequest(`/facility/${encodeURIComponent(facilityId)}/reassign-mother`, {
     method: "PUT",
     token,
     body: JSON.stringify(payload),

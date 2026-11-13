@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { Activity, ArrowRightLeft, Building2, Hospital, RefreshCw, Users } from "lucide-react"
+import { Activity, ArrowRightLeft, Building2, Hospital, RefreshCw, RotateCcw, Search, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchMunicipalOverview, type MunicipalOverview } from "../api/superadmin-api"
@@ -14,6 +16,9 @@ export function SuperAdminOverviewPage() {
   const { session } = useAuthSession()
   const [data, setData] = useState<MunicipalOverview | null>(null)
   const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const loadOverview = async () => {
     if (!session?.token) return
@@ -32,6 +37,28 @@ export function SuperAdminOverviewPage() {
   useEffect(() => {
     loadOverview()
   }, [session?.token])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query])
+
+  const filteredFacilities = useMemo(() => {
+    if (!data?.facilitiesSummary) return []
+    const term = query.trim().toLowerCase()
+    if (!term) return data.facilitiesSummary
+    return data.facilitiesSummary.filter((f) => {
+      return (
+        f.facility_name.toLowerCase().includes(term) ||
+        f.type.toLowerCase().includes(term) ||
+        f.address.toLowerCase().includes(term)
+      )
+    })
+  }, [data?.facilitiesSummary, query])
+
+  const paginatedFacilities = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredFacilities.slice(start, start + pageSize)
+  }, [filteredFacilities, page, pageSize])
 
   return (
     <section className="w-full space-y-4 px-4 py-4">
@@ -103,8 +130,31 @@ export function SuperAdminOverviewPage() {
         </Card>
       </div>
 
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold tracking-tight text-foreground">Facility Operations Breakdown</h2>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Facility Operations Breakdown</h2>
+          <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-[260px]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search facility by name, type, location..."
+                className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
+              />
+            </div>
+            {query.trim().length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs font-medium text-muted-foreground"
+                onClick={() => setQuery("")}
+              >
+                <RotateCcw className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
         <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
           <Table>
             <TableHeader>
@@ -119,8 +169,8 @@ export function SuperAdminOverviewPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.facilitiesSummary && data.facilitiesSummary.length > 0 ? (
-                data.facilitiesSummary.map((item) => (
+              {paginatedFacilities.length > 0 ? (
+                paginatedFacilities.map((item) => (
                   <TableRow
                     key={item.facility_id}
                     className="cursor-pointer hover:bg-muted/50 transition-colors"
@@ -152,13 +202,21 @@ export function SuperAdminOverviewPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-xs text-muted-foreground">
-                    {loading ? "Loading facility breakdown..." : "No facilities registered in the municipal database."}
+                    {loading ? "Loading facility breakdown..." : "No facilities registered or matching search criteria."}
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
+
+        <TablePaginationFooter
+          rowCount={filteredFacilities.length}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
     </section>
   )

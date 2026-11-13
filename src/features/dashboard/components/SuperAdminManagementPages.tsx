@@ -48,6 +48,8 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   const [tab, setTab] = useState("all")
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<string[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState<FacilityItem | null>(null)
@@ -137,6 +139,15 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       return matchesSearch
     })
   }, [kindFiltered, query])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, tab])
+
+  const paginatedFacilities = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
 
   const openCreate = (facility?: FacilityItem) => {
     if (facility) {
@@ -319,7 +330,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((facility) => (
+            {paginatedFacilities.map((facility) => (
               <TableRow
                 key={facility.facility_id}
                 data-state={selected.includes(facility.facility_id) ? "selected" : undefined}
@@ -406,7 +417,14 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         </Table>
       </div>
 
-      <TablePaginationFooter rowCount={filtered.length} selectedCount={selected.length} />
+      <TablePaginationFooter
+        rowCount={filtered.length}
+        selectedCount={selected.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-xl">

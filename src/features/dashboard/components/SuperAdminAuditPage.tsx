@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchAuditLogs, type AuditLogEntry } from "../api/superadmin-api"
 
@@ -15,6 +16,12 @@ export function SuperAdminAuditPage() {
   const [query, setQuery] = useState("")
   const [actionFilter, setActionFilter] = useState("all")
   const [tableFilter, setTableFilter] = useState("all")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, actionFilter, tableFilter])
 
   const loadLogs = async () => {
     if (!session?.token) return
@@ -64,6 +71,11 @@ export function SuperAdminAuditPage() {
       )
     })
   }, [logs, query, actionFilter, tableFilter])
+
+  const paginatedLogs = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredLogs.slice(start, start + pageSize)
+  }, [filteredLogs, page, pageSize])
 
   const exportAuditCsv = () => {
     if (!filteredLogs.length) return
@@ -204,8 +216,8 @@ export function SuperAdminAuditPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredLogs.length > 0 ? (
-              filteredLogs.map((log) => {
+            {paginatedLogs.length > 0 ? (
+              paginatedLogs.map((log) => {
                 const action = log.action_type || log.action || "LOG"
                 const isSensitive = action.includes("DELETE") || action.includes("DEACTIVATE")
                 const time = log.timestamp || log.client_timestamp
@@ -257,6 +269,14 @@ export function SuperAdminAuditPage() {
           </TableBody>
         </Table>
       </div>
+
+      <TablePaginationFooter
+        rowCount={filteredLogs.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
     </section>
   )
 }
