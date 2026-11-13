@@ -1,22 +1,26 @@
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import {
+  Activity,
   CheckCircle2,
+  ChevronRight,
   Database,
   FileCheck2,
   HardDrive,
+  Layers,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
-  Wifi,
   Users,
-  Activity,
-  Layers,
+  Wifi,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { useAuthSession } from "@/features/auth/auth-session"
 import {
   fetchDatabaseMaintenanceStats,
@@ -26,11 +30,16 @@ import {
 } from "../api/superadmin-api"
 
 export function SuperAdminDatabasePage() {
+  const navigate = useNavigate()
   const { session } = useAuthSession()
   const [stats, setStats] = useState<DatabaseMaintenanceStats | null>(null)
   const [duplicates, setDuplicates] = useState<DuplicateCheckResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [scanningDuplicates, setScanningDuplicates] = useState(false)
+
+  const [duplicateSearch, setDuplicateSearch] = useState("")
+  const [duplicatePage, setDuplicatePage] = useState(1)
+  const [duplicatePageSize, setDuplicatePageSize] = useState(10)
 
   const loadStats = async () => {
     if (!session?.token) return
@@ -52,6 +61,7 @@ export function SuperAdminDatabasePage() {
     try {
       const result = await fetchDuplicateCheck(session.token)
       setDuplicates(result)
+      setDuplicatePage(1)
       if (result.duplicateSerialCount === 0) {
         toast.success("Integrity scan complete: No duplicate family serial numbers found.")
       } else {
@@ -71,18 +81,36 @@ export function SuperAdminDatabasePage() {
     loadStats()
   }, [session?.token])
 
-  const tableCounters = stats
-    ? [
-        { label: "Facilities", count: stats.tableCounts.facilities, icon: Server },
-        { label: "Staff Accounts", count: stats.tableCounts.staffUsers, icon: Users },
-        { label: "Mothers", count: stats.tableCounts.mothers, icon: Users },
-        { label: "Pregnancies", count: stats.tableCounts.pregnancies, icon: Activity },
-        { label: "Prenatal Visits", count: stats.tableCounts.prenatalVisits, icon: Layers },
-        { label: "Deliveries", count: stats.tableCounts.deliveries, icon: CheckCircle2 },
-        { label: "Referrals", count: stats.tableCounts.referrals, icon: FileCheck2 },
-        { label: "Audit Logs", count: stats.tableCounts.auditLogs, icon: HardDrive },
-      ]
-    : []
+  const tableCounters = useMemo(() => {
+    if (!stats) return []
+    return [
+      { label: "Facilities", count: stats.tableCounts.facilities, icon: Server },
+      { label: "Staff Accounts", count: stats.tableCounts.staffUsers, icon: Users },
+      { label: "Mothers", count: stats.tableCounts.mothers, icon: Users },
+      { label: "Pregnancies", count: stats.tableCounts.pregnancies, icon: Activity },
+      { label: "Prenatal Visits", count: stats.tableCounts.prenatalVisits, icon: Layers },
+      { label: "Deliveries", count: stats.tableCounts.deliveries, icon: CheckCircle2 },
+      { label: "Referrals", count: stats.tableCounts.referrals, icon: FileCheck2 },
+      { label: "Audit Logs", count: stats.tableCounts.auditLogs, icon: HardDrive },
+    ]
+  }, [stats])
+
+  const filteredDuplicates = useMemo(() => {
+    const query = duplicateSearch.trim().toLowerCase()
+    const list = duplicates?.flaggedRecords ?? []
+    if (!query) return list
+    return list.filter((m) => {
+      const serial = (m.family_serial_no || "").toLowerCase()
+      const name = `${m.user?.first_name || ""} ${m.user?.last_name || ""}`.toLowerCase()
+      const facility = (m.facilityEnrollments?.[0]?.facility?.facility_name || "").toLowerCase()
+      return serial.includes(query) || name.includes(query) || facility.includes(query)
+    })
+  }, [duplicates?.flaggedRecords, duplicateSearch])
+
+  const pagedDuplicates = useMemo(() => {
+    const start = (duplicatePage - 1) * duplicatePageSize
+    return filteredDuplicates.slice(start, start + duplicatePageSize)
+  }, [filteredDuplicates, duplicatePage, duplicatePageSize])
 
   return (
     <section className="w-full space-y-4 px-4 py-4">
@@ -191,13 +219,27 @@ export function SuperAdminDatabasePage() {
 
       <Card className="border-sidebar-border bg-card">
         <CardHeader className="pb-2 pt-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <CardTitle className="text-sm font-semibold">Patient Record Deduplication Scanner</CardTitle>
               <p className="text-xs text-muted-foreground">
                 Detects potential duplicate mother records across Silang facilities sharing identical Family Serial Numbers.
               </p>
             </div>
+            {duplicates && duplicates.duplicateSerialCount > 0 && (
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Filter duplicate records..."
+                  value={duplicateSearch}
+                  onChange={(e) => {
+                    setDuplicateSearch(e.target.value)
+                    setDuplicatePage(1)
+                  }}
+                  className="h-8 pl-8 text-xs"
+                />
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent className="p-0">
@@ -215,40 +257,72 @@ export function SuperAdminDatabasePage() {
               </p>
             </div>
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Family Serial No.</TableHead>
-                  <TableHead>Mother Name</TableHead>
-                  <TableHead>Birth Date</TableHead>
-                  <TableHead>Blood Type</TableHead>
-                  <TableHead>Registered Facility</TableHead>
-                  <TableHead>Contact</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {duplicates.flaggedRecords.map((m) => (
-                  <TableRow key={m.mother_id}>
-                    <TableCell className="text-xs font-mono font-medium text-rose-600 dark:text-rose-400">
-                      {m.family_serial_no || "Unassigned"}
-                    </TableCell>
-                    <TableCell className="text-xs font-medium">
-                      {m.user?.first_name} {m.user?.last_name}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {new Date(m.birth_date).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-xs">{m.blood_type || "—"}</TableCell>
-                    <TableCell className="text-xs">
-                      {m.facilityEnrollments?.[0]?.facility?.facility_name || "Unassigned"}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {m.user?.phone_number || "—"}
-                    </TableCell>
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Family Serial No.</TableHead>
+                    <TableHead>Mother Name</TableHead>
+                    <TableHead>Birth Date</TableHead>
+                    <TableHead>Blood Type</TableHead>
+                    <TableHead>Registered Facility</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead className="w-10"></TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+                </TableHeader>
+                <TableBody>
+                  {!filteredDuplicates.length ? (
+                    <TableRow>
+                      <TableCell colSpan={7} className="h-24 text-center text-xs text-muted-foreground">
+                        No records match your search filter.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    pagedDuplicates.map((m) => (
+                      <TableRow
+                        key={m.mother_id}
+                        onClick={() =>
+                          navigate(`/superadmin/mother/${m.mother_id}`, {
+                            state: {
+                              returnTo: "/superadmin/database-maintenance",
+                              returnLabel: "Database Maintenance",
+                            },
+                          })
+                        }
+                        className="cursor-pointer transition-colors hover:bg-muted/50"
+                      >
+                        <TableCell className="text-xs font-mono font-medium text-rose-600 dark:text-rose-400">
+                          {m.family_serial_no || "Unassigned"}
+                        </TableCell>
+                        <TableCell className="text-xs font-medium">
+                          {m.user?.first_name} {m.user?.last_name}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Date(m.birth_date).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-xs">{m.blood_type || "—"}</TableCell>
+                        <TableCell className="text-xs">
+                          {m.facilityEnrollments?.[0]?.facility?.facility_name || "Unassigned"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {m.user?.phone_number || "—"}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <ChevronRight className="size-4 text-muted-foreground/60 inline-block" />
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+              <TablePaginationFooter
+                rowCount={filteredDuplicates.length}
+                page={duplicatePage}
+                pageSize={duplicatePageSize}
+                onPageChange={setDuplicatePage}
+                onPageSizeChange={setDuplicatePageSize}
+              />
+            </>
           )}
         </CardContent>
       </Card>
