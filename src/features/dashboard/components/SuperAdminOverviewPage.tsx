@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchMunicipalOverview, type MunicipalOverview } from "../api/superadmin-api"
 
@@ -62,6 +63,7 @@ export function SuperAdminOverviewPage() {
 
   return (
     <section className="w-full space-y-4 px-4 py-4">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">Municipal Health Network Overview</h1>

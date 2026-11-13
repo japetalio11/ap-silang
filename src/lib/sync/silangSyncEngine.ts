@@ -624,6 +624,47 @@ export class SilangSyncEngine {
               }
             }
           } else if (item.entity_type === "facility") {
+            const facId = String(resolvedPayload.facility_id || item.temp_id || "")
+            if (facId) {
+              const existing = await db.facilities.get(facId)
+              if (existing) {
+                await db.facilities.update(facId, {
+                  ...existing,
+                  ...resolvedPayload,
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
+            if (item.action === "REASSIGN_STAFF") {
+              const staffId = String(resolvedPayload.user_id || "")
+              const targetFacId = String(resolvedPayload.target_facility_id || "")
+              if (staffId && targetFacId) {
+                const existingStaff = await db.staff.get(staffId)
+                if (existingStaff) {
+                  await db.staff.update(staffId, {
+                    ...existingStaff,
+                    facility_id: targetFacId,
+                    sync_status: "synced",
+                    updated_at: Date.now(),
+                  })
+                }
+              }
+            } else if (item.action === "REASSIGN_MOTHER") {
+              const motherId = String(resolvedPayload.mother_id || "")
+              const targetFacId = String(resolvedPayload.target_facility_id || "")
+              if (motherId && targetFacId) {
+                const existingMother = await db.mothers.get(motherId)
+                if (existingMother) {
+                  await db.mothers.update(motherId, {
+                    ...existingMother,
+                    facility_id: targetFacId,
+                    sync_status: "synced",
+                    updated_at: Date.now(),
+                  })
+                }
+              }
+            }
             const resFac = (resAny?.result ?? resAny?.facility ?? resAny?.data) as Record<string, any> | undefined
             const finalLogo = (resolvedPayload.facility_profile_url as string) || resFac?.facility_profile_url
             if (finalLogo) {
@@ -643,10 +684,10 @@ export class SilangSyncEngine {
                   localStorage.setItem("silang.auth.session", JSON.stringify(s))
                 } catch {}
               }
-              window.dispatchEvent(new CustomEvent("silang:facility-updated", {
-                detail: { ...(resFac || {}), facility_profile_url: finalLogo }
-              }))
             }
+            window.dispatchEvent(new CustomEvent("silang:facility-updated", {
+              detail: { ...(resFac || {}), ...(resolvedPayload || {}), ...(finalLogo ? { facility_profile_url: finalLogo } : {}) }
+            }))
           }
 
           if (item.blob_ids && item.blob_ids.length > 0) {

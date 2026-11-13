@@ -30,6 +30,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchMunicipalReports, type MunicipalReports } from "../api/superadmin-api"
 
@@ -132,6 +133,7 @@ export function SuperAdminReportsPage() {
 
   return (
     <section className="w-full space-y-4 px-4 py-4">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">

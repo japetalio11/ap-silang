@@ -1,7 +1,9 @@
 import { apiRequest } from "@/lib/api"
 import type { MaternalRecord } from "@/features/maternal-records/api"
+import { db } from "@/lib/db/silangDatabase"
 
 type StaffCacheRecord = { user_id?: string }
+type FacilityCacheRecord = { facility_id: string; facility_name: string; type: string; address?: string; contact_number?: string; email?: string }
 
 const warmingScopes = new Set<string>()
 
@@ -16,7 +18,53 @@ async function runWithLimit<T>(items: T[], limit: number, task: (item: T) => Pro
   await Promise.all(workers)
 }
 
-/** Warm the same read endpoints used across the signed-in tabs for offline use. */
+export async function warmSuperAdminOfflineData(token: string, userId: string) {
+  if (typeof navigator === "undefined" || !navigator.onLine) return
+  const warmKey = `superadmin:${userId}`
+  if (warmingScopes.has(warmKey)) return
+  warmingScopes.add(warmKey)
+
+  try {
+    const adminReads = await Promise.allSettled([
+      apiRequest("/facility/overview", { token }),
+      apiRequest<{ result?: FacilityCacheRecord[] }>("/facility/getAll", { token }),
+      apiRequest("/facility/municipal-reports", { token }),
+      apiRequest("/facility/database-stats", { token }),
+      apiRequest("/facility/check-duplicates", { token }),
+      apiRequest("/audit-trail/getAll?page_size=150", { token }),
+      apiRequest("/user/facility?all=true", { token }),
+      apiRequest(`/user/${encodeURIComponent(userId)}`, { token }),
+    ])
+
+    const facResponse = adminReads[1]
+    const facilities = facResponse?.status === "fulfilled"
+      ? (facResponse.value as { result?: FacilityCacheRecord[] }).result ?? []
+      : []
+
+    if (facilities.length > 0) {
+      await db.facilities.bulkPut(
+        facilities.map((f) => ({
+          id: f.facility_id,
+          facility_id: f.facility_id,
+          facility_name: f.facility_name,
+          type: f.type,
+          address: f.address || "",
+          contact_number: f.contact_number || "",
+          email: f.email || "",
+          sync_status: "synced",
+          updated_at: Date.now(),
+        }))
+      ).catch(() => {})
+
+      await runWithLimit(facilities, 3, (fac) =>
+        apiRequest(`/facility/${encodeURIComponent(fac.facility_id)}/hub`, { token })
+      )
+    }
+  } finally {
+    warmingScopes.delete(warmKey)
+  }
+}
+
 export async function warmOfflineData(token: string, userId: string, facilityId?: string | null) {
   if (typeof navigator === "undefined" || !navigator.onLine) return
   const warmKey = `${userId}:${facilityId ?? ""}`
@@ -65,6 +113,5 @@ export async function requestPersistentStorage() {
       await navigator.storage.persist()
     }
   } catch {
-    // Browser policy may deny persistent storage; offline caching still works.
   }
 }

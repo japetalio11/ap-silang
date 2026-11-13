@@ -219,6 +219,20 @@ export interface LocalStaff {
   [key: string]: any
 }
 
+export interface LocalFacility {
+  id: string
+  facility_id: string
+  facility_name: string
+  type: string
+  address: string
+  contact_number: string
+  email: string
+  facility_profile_url?: string | null
+  sync_status: SyncStatus
+  updated_at: number
+  [key: string]: any
+}
+
 export interface IdMapping {
   temp_id: string
   canonical_id: string
@@ -250,7 +264,7 @@ export interface OfflineQueueItem {
     | "staff"
     | "user_profile"
     | "facility"
-  action: "CREATE" | "UPDATE" | "DELETE"
+  action: "CREATE" | "UPDATE" | "DELETE" | "REASSIGN_STAFF" | "REASSIGN_MOTHER"
   endpoint: string
   method: "POST" | "PUT" | "DELETE"
   payload: any
@@ -289,6 +303,7 @@ export class SilangDatabase extends Dexie {
   messages!: Table<LocalMessage, string>
   deliveryOutcomes!: Table<LocalDeliveryOutcome, string>
   staff!: Table<LocalStaff, string>
+  facilities!: Table<LocalFacility, string>
   idMappings!: Table<IdMapping, string>
   offlineQueue!: Table<OfflineQueueItem, number>
   blobs!: Table<LocalBlob, string>
@@ -307,10 +322,14 @@ export class SilangDatabase extends Dexie {
       messages: "id, message_id, sender_id, receiver_id, message_date, is_read, sync_status, updated_at",
       deliveryOutcomes: "id, delivery_id, pregnancy_id, mother_id, sync_status, updated_at",
       staff: "id, user_id, facility_id, role, is_active, sync_status, updated_at",
+      facilities: "id, facility_id, type, facility_name, sync_status, updated_at",
       idMappings: "temp_id, canonical_id, entity_type, created_at",
       offlineQueue: "++id, client_mutation_id, entity_type, action, status, created_at, retry_count",
       blobs: "id",
       conflicts: "++id, conflict_id, entity_type, entity_id, status, detected_at",
+    })
+    this.version(2).stores({
+      facilities: "id, facility_id, type, facility_name, sync_status, updated_at",
     })
   }
 }

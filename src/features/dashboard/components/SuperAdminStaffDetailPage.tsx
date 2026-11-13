@@ -15,6 +15,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { db } from "@/lib/db/silangDatabase"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import {
   getStaffActivities,
   getStaffById,
@@ -140,6 +142,12 @@ export function SuperAdminStaffDetailPage() {
 
   const handleResetPassword = async () => {
     if (!token || !staff) return
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("Password reset unavailable offline", {
+        description: "Password reset requires an active server connection to ensure credential security.",
+      })
+      return
+    }
     if (!newPassword || newPassword.length < 6) {
       toast.error("Password must be at least 6 characters")
       return
@@ -161,6 +169,46 @@ export function SuperAdminStaffDetailPage() {
 
   const handleTransferStaff = async () => {
     if (!token || !staff || !staff.facilityId || !targetFacilityId) return
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    if (isOffline) {
+      const existingStaff = await db.staff.get(staff.id).catch(() => undefined)
+      if (existingStaff) {
+        await db.staff.update(staff.id, {
+          facility_id: targetFacilityId,
+          sync_status: "pending_update",
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "REASSIGN_STAFF",
+        endpoint: `/facility/${encodeURIComponent(staff.facilityId)}/reassign-staff`,
+        method: "PUT",
+        payload: {
+          user_id: staff.id,
+          target_facility_id: targetFacilityId,
+        },
+      })
+      const targetFac = facilities.find((f) => f.facility_id === targetFacilityId)
+      setStaff((prev) =>
+        prev
+          ? {
+              ...prev,
+              facilityId: targetFacilityId,
+              facility: targetFac?.facility_name ?? prev.facility,
+            }
+          : prev
+      )
+      toast.success("Staff member reassigned offline", {
+        description: `${staff.name} transferred in device memory. Will sync when online.`,
+      })
+      setConfirmTransferOpen(false)
+      setTransferDialogOpen(false)
+      return
+    }
+
     setSubmittingTransfer(true)
     try {
       await reassignStaffFacility(token, staff.facilityId, {
@@ -339,12 +387,21 @@ export function SuperAdminStaffDetailPage() {
                 className="h-8 text-xs font-mono"
               />
             </div>
+            {typeof navigator !== "undefined" && !navigator.onLine && (
+              <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                Password resets require an active server connection to ensure credential security.
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleResetPassword} disabled={submittingPassword}>
+            <Button
+              size="sm"
+              onClick={handleResetPassword}
+              disabled={submittingPassword || (typeof navigator !== "undefined" && !navigator.onLine)}
+            >
               {submittingPassword ? "Resetting..." : "Confirm Password"}
             </Button>
           </DialogFooter>

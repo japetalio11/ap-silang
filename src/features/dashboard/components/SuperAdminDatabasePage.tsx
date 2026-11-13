@@ -21,6 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import {
   fetchDatabaseMaintenanceStats,
@@ -57,6 +58,12 @@ export function SuperAdminDatabasePage() {
 
   const runDuplicateScan = async () => {
     if (!session?.token) return
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("Integrity scan unavailable offline", {
+        description: "Scanning the central database for duplicate records requires an active server connection.",
+      })
+      return
+    }
     setScanningDuplicates(true)
     try {
       const result = await fetchDuplicateCheck(session.token)
@@ -114,6 +121,7 @@ export function SuperAdminDatabasePage() {
 
   return (
     <section className="w-full space-y-4 px-4 py-4">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">
@@ -129,7 +137,8 @@ export function SuperAdminDatabasePage() {
             size="sm"
             className="h-8 gap-1.5"
             onClick={runDuplicateScan}
-            disabled={scanningDuplicates}
+            disabled={scanningDuplicates || (typeof navigator !== "undefined" && !navigator.onLine)}
+            title={typeof navigator !== "undefined" && !navigator.onLine ? "Requires active internet connection" : undefined}
           >
             <Search className={`size-3.5 ${scanningDuplicates ? "animate-spin" : ""}`} />
             Scan Duplicates

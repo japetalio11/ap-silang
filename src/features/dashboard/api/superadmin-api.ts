@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api"
+import { db } from "@/lib/db/silangDatabase"
 
 export type FacilityItem = {
   facility_id: string
@@ -174,17 +175,42 @@ export type DuplicateCheckResult = {
 export async function fetchMunicipalOverview(token: string): Promise<MunicipalOverview> {
   const response = await apiRequest<{ result: MunicipalOverview }>("/facility/overview", {
     token,
-    cache: "no-store",
   })
   return response.result
 }
 
 export async function fetchAllFacilities(token: string): Promise<FacilityItem[]> {
-  const response = await apiRequest<{ result: FacilityItem[] }>("/facility/getAll", {
-    token,
-    cache: "no-store",
-  })
-  return response.result
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    const local = await db.facilities.toArray().catch(() => [])
+    if (local.length > 0) return local as FacilityItem[]
+  }
+
+  try {
+    const response = await apiRequest<{ result: FacilityItem[] }>("/facility/getAll", {
+      token,
+    })
+    if (Array.isArray(response.result)) {
+      await db.facilities.bulkPut(
+        response.result.map((f) => ({
+          id: f.facility_id,
+          facility_id: f.facility_id,
+          facility_name: f.facility_name,
+          type: f.type,
+          address: f.address,
+          contact_number: f.contact_number,
+          email: f.email,
+          facility_profile_url: f.facility_profile_url || null,
+          sync_status: "synced",
+          updated_at: Date.now(),
+        }))
+      ).catch(() => {})
+    }
+    return response.result
+  } catch (error) {
+    const local = await db.facilities.toArray().catch(() => [])
+    if (local.length > 0) return local as FacilityItem[]
+    throw error
+  }
 }
 
 export async function createFacilityRecord(token: string, payload: CreateFacilityInput): Promise<FacilityItem> {
@@ -218,7 +244,6 @@ export async function fetchAuditLogs(token: string): Promise<AuditLogEntry[]> {
     "/audit-trail/getAll?page_size=150",
     {
       token,
-      cache: "no-store",
     },
   )
   return response.data || response.result || []
@@ -238,7 +263,6 @@ export async function fetchStaffMembers(
     `/user/facility?${query.toString()}`,
     {
       token,
-      cache: "no-store",
     },
   )
   return response.result || response.data || []
@@ -271,7 +295,6 @@ export async function adminResetStaffPassword(token: string, userId: string, new
 export async function fetchMunicipalReports(token: string): Promise<MunicipalReports> {
   const response = await apiRequest<{ result: MunicipalReports }>("/facility/municipal-reports", {
     token,
-    cache: "no-store",
   })
   return response.result
 }
@@ -279,7 +302,6 @@ export async function fetchMunicipalReports(token: string): Promise<MunicipalRep
 export async function fetchDatabaseMaintenanceStats(token: string): Promise<DatabaseMaintenanceStats> {
   const response = await apiRequest<{ result: DatabaseMaintenanceStats }>("/facility/database-stats", {
     token,
-    cache: "no-store",
   })
   return response.result
 }
@@ -287,7 +309,6 @@ export async function fetchDatabaseMaintenanceStats(token: string): Promise<Data
 export async function fetchDuplicateCheck(token: string): Promise<DuplicateCheckResult> {
   const response = await apiRequest<{ result: DuplicateCheckResult }>("/facility/check-duplicates", {
     token,
-    cache: "no-store",
   })
   return response.result
 }
@@ -360,7 +381,6 @@ export type FacilityHubDetails = FacilityItem & {
 export async function fetchFacilityHubDetails(token: string, facilityId: string): Promise<FacilityHubDetails> {
   const response = await apiRequest<{ result: FacilityHubDetails }>(`/facility/${encodeURIComponent(facilityId)}/hub`, {
     token,
-    cache: "no-store",
   })
   return response.result
 }

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { apiRequest } from "@/lib/api"
-import { requestPersistentStorage, warmOfflineData } from "@/lib/offline-prefetch"
+import { requestPersistentStorage, warmOfflineData, warmSuperAdminOfflineData } from "@/lib/offline-prefetch"
 import { toast } from "sonner"
 
 const SESSION_KEY = "silang.auth.session"
@@ -185,7 +185,12 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     const facilityId = session.user.facility_id
     const warm = () => {
       if (isTokenExpired(session.token)) return
-      void warmOfflineData(session.token, session.user.user_id, facilityId)
+      const normalizedRole = session.user.role?.toLowerCase()
+      if (normalizedRole === "superadmin" || normalizedRole === "systemadmin") {
+        void warmSuperAdminOfflineData(session.token, session.user.user_id)
+      } else {
+        void warmOfflineData(session.token, session.user.user_id, facilityId)
+      }
     }
 
     void requestPersistentStorage()

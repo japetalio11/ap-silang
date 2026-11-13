@@ -9,6 +9,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
@@ -16,6 +17,8 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { db } from "@/lib/db/silangDatabase"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import {
   fetchAllFacilities,
   createFacilityRecord,
@@ -183,6 +186,54 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       return
     }
 
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      if (editing) {
+        const updatedFacility: FacilityItem = {
+          ...editing,
+          facility_name: form.facility_name.trim(),
+          type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+          address: form.address.trim(),
+          contact_number: form.contact_number.trim(),
+          email: form.email.trim(),
+        }
+        await db.facilities.put({
+          ...updatedFacility,
+          id: updatedFacility.facility_id,
+          sync_status: "pending_update",
+          updated_at: Date.now(),
+        }).catch(() => {})
+        await silangSyncEngine.enqueue({
+          client_mutation_id: crypto.randomUUID(),
+          entity_type: "facility",
+          action: "UPDATE",
+          endpoint: "/facility/update",
+          method: "PUT",
+          payload: {
+            facility_id: editing.facility_id,
+            facility_name: form.facility_name.trim(),
+            type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+            address: form.address.trim(),
+            contact_number: form.contact_number.trim(),
+            email: form.email.trim(),
+          },
+        })
+        setFacilities((prev) =>
+          prev.map((f) => (f.facility_id === editing.facility_id ? updatedFacility : f))
+        )
+        toast.success(`${singular} updated offline`, {
+          description: "Changes saved to device memory and will sync when online.",
+        })
+        setDialogOpen(false)
+        return
+      }
+      toast.error("Registration requires connectivity", {
+        description: "Registering a new health facility on the municipal registry requires an active internet connection.",
+      })
+      return
+    }
+
     setSubmitting(true)
     try {
       if (editing) {
@@ -217,6 +268,12 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
 
   const handleDelete = async () => {
     if (!deleteTarget || !session?.token) return
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("Cannot delete while offline", {
+        description: "Facility deletion requires an active internet connection to ensure clinical safety boundaries.",
+      })
+      return
+    }
     setDeleting(true)
     try {
       await deleteFacilityRecord(session.token, deleteTarget.facility_id)
@@ -233,6 +290,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
 
   return (
     <section className="w-full space-y-3 px-4 py-4">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
@@ -515,11 +573,20 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
               undone if there are no linked clinical records.
             </DialogDescription>
           </DialogHeader>
+          {typeof navigator !== "undefined" && !navigator.onLine && (
+            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              Facility deletion requires an active internet connection to ensure clinical safety boundaries.
+            </div>
+          )}
           <DialogFooter>
             <Button variant="outline" disabled={deleting} onClick={() => setDeleteTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
+            <Button
+              variant="destructive"
+              disabled={deleting || (typeof navigator !== "undefined" && !navigator.onLine)}
+              onClick={handleDelete}
+            >
               {deleting ? "Deleting..." : "Delete facility"}
             </Button>
           </DialogFooter>

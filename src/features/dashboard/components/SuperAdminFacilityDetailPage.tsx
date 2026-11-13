@@ -54,11 +54,14 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { db } from "@/lib/db/silangDatabase"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import {
   adminResetStaffPassword,
   fetchAllFacilities,
@@ -187,6 +190,42 @@ export function SuperAdminFacilityDetailPage() {
       toast.error("Facility name and address are required.")
       return
     }
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    if (isOffline) {
+      const updatedFields = {
+        facility_id: facilityId,
+        facility_name: editForm.facility_name.trim(),
+        type: editForm.type.trim(),
+        address: editForm.address.trim(),
+        contact_number: editForm.contact_number.trim(),
+        email: editForm.email.trim(),
+      }
+      const existing = await db.facilities.get(facilityId).catch(() => undefined)
+      if (existing) {
+        await db.facilities.put({
+          ...existing,
+          ...updatedFields,
+          sync_status: "pending_update",
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "UPDATE",
+        endpoint: "/facility/update",
+        method: "PUT",
+        payload: updatedFields,
+      })
+      setData((prev) => (prev ? { ...prev, ...updatedFields } : prev))
+      toast.success("Facility info updated offline", {
+        description: "Changes saved to device memory and will sync when online.",
+      })
+      setEditDialogOpen(false)
+      return
+    }
+
     setSavingFacility(true)
     try {
       await updateFacilityRecord(session.token, {
@@ -243,6 +282,12 @@ export function SuperAdminFacilityDetailPage() {
 
   const handleResetPassword = async () => {
     if (!session?.token || !selectedStaff) return
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("Password reset unavailable offline", {
+        description: "Password reset requires an active server connection to ensure credential security.",
+      })
+      return
+    }
     if (!newPassword || newPassword.length < 6) {
       toast.error("Password must be at least 6 characters")
       return
@@ -265,6 +310,48 @@ export function SuperAdminFacilityDetailPage() {
 
   const handleTransferStaff = async () => {
     if (!session?.token || !selectedStaff || !facilityId || !targetStaffFacilityId) return
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    if (isOffline) {
+      const existingStaff = await db.staff.get(selectedStaff.user_id).catch(() => undefined)
+      if (existingStaff) {
+        await db.staff.update(selectedStaff.user_id, {
+          facility_id: targetStaffFacilityId,
+          sync_status: "pending_update",
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "REASSIGN_STAFF",
+        endpoint: `/facility/${encodeURIComponent(facilityId)}/reassign-staff`,
+        method: "PUT",
+        payload: {
+          user_id: selectedStaff.user_id,
+          target_facility_id: targetStaffFacilityId,
+        },
+      })
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              users: prev.users.filter((u) => u.user_id !== selectedStaff.user_id),
+              _count: {
+                ...prev._count,
+                users: Math.max(0, prev._count.users - 1),
+              },
+            }
+          : prev
+      )
+      toast.success("Staff member reassigned offline", {
+        description: `${selectedStaff.first_name} ${selectedStaff.last_name} transferred in device memory. Will sync when online.`,
+      })
+      setConfirmStaffTransferOpen(false)
+      setTransferStaffDialogOpen(false)
+      return
+    }
+
     setSubmittingStaffTransfer(true)
     try {
       await reassignStaffFacility(session.token, facilityId, {
@@ -287,6 +374,56 @@ export function SuperAdminFacilityDetailPage() {
 
   const handleTransferMother = async () => {
     if (!session?.token || !selectedMother || !facilityId || !targetMotherFacilityId) return
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+    if (isOffline) {
+      const motherId = selectedMother.mother.mother_id
+      const existingMother = await db.mothers.get(motherId).catch(() => undefined)
+      if (existingMother) {
+        await db.mothers.update(motherId, {
+          facility_id: targetMotherFacilityId,
+          sync_status: "pending_update",
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "REASSIGN_MOTHER",
+        endpoint: `/facility/${encodeURIComponent(facilityId)}/reassign-mother`,
+        method: "PUT",
+        payload: {
+          mother_id: motherId,
+          target_facility_id: targetMotherFacilityId,
+          notes: motherTransferNotes.trim(),
+        },
+      })
+      const motherName = selectedMother.mother.user
+        ? `${selectedMother.mother.user.first_name} ${selectedMother.mother.user.last_name}`
+        : "Patient"
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              motherEnrollments: prev.motherEnrollments.filter(
+                (m) => m.mother.mother_id !== motherId
+              ),
+              _count: {
+                ...prev._count,
+                motherEnrollments: Math.max(0, prev._count.motherEnrollments - 1),
+              },
+            }
+          : prev
+      )
+      toast.success("Mother transferred offline", {
+        description: `${motherName} transfer queued. Care handover will sync when online.`,
+      })
+      setConfirmMotherTransferOpen(false)
+      setTransferMotherDialogOpen(false)
+      setMotherTransferNotes("")
+      return
+    }
+
     setSubmittingMotherTransfer(true)
     try {
       await reassignMotherFacility(session.token, facilityId, {
@@ -431,6 +568,7 @@ export function SuperAdminFacilityDetailPage() {
 
   return (
     <section className="w-full space-y-3 px-4 py-3">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Button
@@ -1361,12 +1499,21 @@ export function SuperAdminFacilityDetailPage() {
                 className="h-8 text-xs font-mono"
               />
             </div>
+            {typeof navigator !== "undefined" && !navigator.onLine && (
+              <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                Password resets require an active server connection to ensure credential security.
+              </div>
+            )}
           </div>
           <DialogFooter className="gap-3 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleResetPassword} disabled={submittingPassword}>
+            <Button
+              size="sm"
+              onClick={handleResetPassword}
+              disabled={submittingPassword || (typeof navigator !== "undefined" && !navigator.onLine)}
+            >
               {submittingPassword ? "Resetting..." : "Confirm Reset"}
             </Button>
           </DialogFooter>
