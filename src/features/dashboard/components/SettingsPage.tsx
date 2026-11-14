@@ -618,7 +618,19 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
           <DialogTitle className="text-base font-semibold text-foreground">Settings</DialogTitle>
           <DialogDescription className="text-xs">Manage your account and facility preferences.</DialogDescription>
         </DialogHeader>
-        <nav aria-label="Settings sections" className="mt-4 flex gap-1 overflow-x-auto md:mt-8 md:flex-col">
+        <div className="mt-2 md:hidden">
+          <Select value={activeSection} onValueChange={setActiveSection}>
+            <SelectTrigger aria-label="Settings section" className="h-10 w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="account">My Account</SelectItem>
+              <SelectItem value="facility">Facility Profile</SelectItem>
+              <SelectItem value="offline">Offline & Sync</SelectItem>
+              <SelectItem value="notifications">Notifications</SelectItem>
+              <SelectItem value="Calendar">Calendar</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <nav aria-label="Settings sections" className="mt-8 hidden flex-col gap-1 md:flex">
           {[
             { value: "account", label: "My Account", Icon: UserRound },
             { value: "facility", label: "Facility Profile", Icon: Building2 },
@@ -770,8 +782,8 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
         {notificationTab === "channels" && (
           <Card className="rounded-md border-sidebar-border shadow-none ring-0">
             <CardHeader><CardTitle>Channel Status</CardTitle><p className="text-xs text-muted-foreground">Channel health is not exposed by the connected backend.</p></CardHeader>
-            <CardContent className="max-w-2xl space-y-2">
-              {[["Firebase Cloud Messaging (FCM)", "Used for app push notifications."], ["Semaphore SMS Gateway", "Fallback for mothers without smartphones."], ["Resend Email", "Used for official transfers and alerts."]].map(([title, description]) => <div key={title} className="flex items-center justify-between gap-4 rounded-md border border-sidebar-border bg-muted/20 p-3"><div><p className="text-xs font-medium">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div><StatusBadge status="Unknown" /></div>)}
+            <CardContent className="max-w-2xl space-y-3">
+              {[["Firebase Cloud Messaging (FCM)", "Used for app push notifications."], ["Semaphore SMS Gateway", "Fallback for mothers without smartphones."], ["Resend Email", "Used for official transfers and alerts."]].map(([title, description]) => <div key={title} className="flex items-center justify-between gap-4 rounded-md border border-sidebar-border p-3"><div className="min-w-0"><p className="text-xs font-medium">{title}</p><p className="mt-0.5 text-xs text-muted-foreground">{description}</p></div><StatusBadge status="Unknown" className="shrink-0" /></div>)}
             </CardContent>
           </Card>
         )}

@@ -16,7 +16,7 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import { EmptyStateContent, TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
-import { Skeleton } from "@/components/ui/skeleton"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { ConfirmSensitiveActionDialog } from "@/components/ui/confirm-sensitive-action-dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { toast } from "sonner"
@@ -139,7 +139,7 @@ function copyToClipboard(value: string) {
   }
 }
 
-function ReferralTabs({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function ReferralTabs({ value, onChange, counts }: { value: string; onChange: (value: string) => void; counts: Record<string, number> }) {
   const tabs = [
     { value: "all", label: "All" },
     { value: "pending", label: "Pending" },
@@ -148,11 +148,11 @@ function ReferralTabs({ value, onChange }: { value: string; onChange: (value: st
   ]
 
   return (
-    <Tabs value={value} onValueChange={onChange} className="w-max shrink-0">
+    <Tabs value={value} onValueChange={onChange} className="w-full min-w-0 md:w-max md:shrink-0">
       <TabsList className="h-9 w-max justify-start gap-1">
         {tabs.map(({ value: tabValue, label }) => (
           <TabsTrigger key={tabValue} value={tabValue} className="h-full flex-initial px-2 py-1 text-xs font-medium">
-            {label}
+            {label} ({counts[tabValue] ?? 0})
           </TabsTrigger>
         ))}
       </TabsList>
@@ -296,6 +296,12 @@ export function ReferralsPage() {
     const matchesRisk = riskFilters.length === 0 || riskFilters.includes(referral.risk)
     return matchesTab && matchesSearch && matchesRisk
   })
+  const referralTabCounts = {
+    all: referralRows.length,
+    pending: referralRows.filter((referral) => referral.status === "Pending").length,
+    admitted: referralRows.filter((referral) => referral.status === "Admitted").length,
+    referred: referralRows.filter((referral) => ["Rejected", "Cancelled"].includes(referral.status)).length,
+  }
 
   const toggleRiskFilter = (risk: Referral["risk"]) => {
     setRiskFilters((current) => current.includes(risk) ? current.filter((item) => item !== risk) : [...current, risk])
@@ -308,11 +314,11 @@ export function ReferralsPage() {
   return (
     <div className="relative flex h-full w-full min-w-0 flex-col overflow-y-auto text-foreground">
       <div className="sticky top-0 z-10 flex flex-col gap-3 bg-background p-4 dark:bg-black">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <ReferralTabs value={activeTab} onChange={setActiveTab} />
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="w-full min-w-0 overflow-x-auto pb-1 sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <ReferralTabs value={activeTab} onChange={setActiveTab} counts={referralTabCounts} />
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             <TooltipProvider delayDuration={500}>
               <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Export referrals" onClick={exportReferrals} className="size-8 border-sidebar-border"><Download className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Export referrals</TooltipContent></Tooltip>
               <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh referrals" disabled={isRefreshing} onClick={() => void loadReferralData(true)} className="size-8 border-sidebar-border"><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button></TooltipTrigger><TooltipContent>Refresh referrals</TooltipContent></Tooltip>
@@ -322,7 +328,7 @@ export function ReferralsPage() {
         </div>
 
         <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-          <div className="relative min-w-[240px] max-w-md flex-1">
+          <div className="relative min-w-0 max-w-md flex-1 sm:min-w-[240px]">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input aria-label="Search referrals" placeholder="Search referrals..." value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full bg-muted/70 pl-8 text-xs dark:bg-muted/60" />
           </div>
@@ -409,7 +415,7 @@ export function ReferralsPage() {
         </div>
 
         <div className="flex flex-col gap-2 xl:hidden">
-          {isLoading ? Array.from({ length: 4 }, (_, index) => <article key={`referral-skeleton-${index}`} className="flex flex-col gap-3 rounded-md border border-sidebar-border p-3" aria-hidden="true"><div className="flex justify-between gap-3"><Skeleton className="h-4 w-40" /><Skeleton className="h-4 w-24" /></div><div className="flex gap-2"><Skeleton className="h-5 w-20" /><Skeleton className="h-5 w-20" /></div><Skeleton className="h-3.5 w-3/4" /><Skeleton className="h-3.5 w-1/2" /></article>) : filteredReferrals.map((referral) => (
+          {isLoading ? <MobileTableCardSkeleton /> : filteredReferrals.map((referral) => (
             <article key={referral.id} onClick={() => openReferral(referral)} className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 dark:bg-black">
               <div className="flex min-w-0 items-start justify-between gap-2">
                 <div className="flex min-w-0 items-start gap-2">

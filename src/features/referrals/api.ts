@@ -4,12 +4,7 @@ import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 
 export function getReferralGatewayLink(referralId: string) {
   const route = `/referral/${encodeURIComponent(referralId)}`
-  const configuredAppUrl = import.meta.env.VITE_APP_URL?.trim().replace(/\/+$/, "")
-  const isLocalHost = ["localhost", "127.0.0.1"].includes(window.location.hostname)
-  const appUrl = import.meta.env.DEV
-    ? isLocalHost ? window.location.origin : "http://localhost:5173"
-    : configuredAppUrl || window.location.origin
-  return `${appUrl}${route}`
+  return `${window.location.origin}${route}`
 }
 
 export type ReferralFacility = {

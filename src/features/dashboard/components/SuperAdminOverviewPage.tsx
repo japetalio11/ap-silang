@@ -4,6 +4,9 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Skeleton } from "@/components/ui/skeleton"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchMunicipalOverview, type MunicipalOverview } from "../api/superadmin-api"
@@ -62,7 +65,7 @@ export function SuperAdminOverviewPage() {
             <Hospital className="size-4 text-primary" />
           </CardHeader>
           <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{data?.totalFacilities ?? 0}</div>
+            <div className="flex h-8 items-center text-2xl font-bold">{loading ? <Skeleton className="h-6 w-12" /> : data?.totalFacilities ?? 0}</div>
             <p className="text-[11px] text-muted-foreground">RHUs & Barangay Health Stations</p>
           </CardContent>
         </Card>
@@ -73,7 +76,7 @@ export function SuperAdminOverviewPage() {
             <Users className="size-4 text-emerald-600 dark:text-emerald-400" />
           </CardHeader>
           <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{data?.totalMothers ?? 0}</div>
+            <div className="flex h-8 items-center text-2xl font-bold">{loading ? <Skeleton className="h-6 w-12" /> : data?.totalMothers ?? 0}</div>
             <p className="text-[11px] text-muted-foreground">Across municipal health registry</p>
           </CardContent>
         </Card>
@@ -84,7 +87,7 @@ export function SuperAdminOverviewPage() {
             <Activity className="size-4 text-rose-500" />
           </CardHeader>
           <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{data?.activePregnancies ?? 0}</div>
+            <div className="flex h-8 items-center text-2xl font-bold">{loading ? <Skeleton className="h-6 w-12" /> : data?.activePregnancies ?? 0}</div>
             <p className="text-[11px] text-muted-foreground">Currently monitored</p>
           </CardContent>
         </Card>
@@ -95,7 +98,7 @@ export function SuperAdminOverviewPage() {
             <ArrowRightLeft className="size-4 text-amber-500" />
           </CardHeader>
           <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{data?.totalReferrals ?? 0}</div>
+            <div className="flex h-8 items-center text-2xl font-bold">{loading ? <Skeleton className="h-6 w-12" /> : data?.totalReferrals ?? 0}</div>
             <p className="text-[11px] text-muted-foreground">Care handovers coordinated</p>
           </CardContent>
         </Card>
@@ -103,7 +106,7 @@ export function SuperAdminOverviewPage() {
 
       <div className="space-y-2">
         <h2 className="text-sm font-semibold tracking-tight text-foreground">Facility Operations Breakdown</h2>
-        <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+        <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
           <Table>
             <TableHeader>
               <TableRow>
@@ -117,7 +120,7 @@ export function SuperAdminOverviewPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data?.facilitiesSummary && data.facilitiesSummary.length > 0 ? (
+              {loading ? <TableSkeletonRows columns={7} rows={4} checkboxColumn={false} /> : data?.facilitiesSummary && data.facilitiesSummary.length > 0 ? (
                 data.facilitiesSummary.map((item) => (
                   <TableRow key={item.facility_id}>
                     <TableCell className="font-medium text-foreground">
@@ -146,12 +149,20 @@ export function SuperAdminOverviewPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-xs text-muted-foreground">
-                    {loading ? "Loading facility breakdown..." : "No facilities registered in the municipal database."}
+                    No facilities registered in the municipal database.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
+        </div>
+        <div className="grid gap-3 md:hidden">
+          {loading ? <MobileTableCardSkeleton count={3} /> : data?.facilitiesSummary?.map((item) => <article key={item.facility_id} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+            <h3 className="text-sm font-semibold text-foreground">{item.facility_name}</h3>
+            <p className="mt-1 text-muted-foreground">{item.type} · {item.address || "Address not recorded"}</p>
+            <dl className="mt-3 grid grid-cols-2 gap-2"><div><dt className="text-muted-foreground">Staff</dt><dd className="font-medium">{item._count?.users ?? 0}</dd></div><div><dt className="text-muted-foreground">Mothers</dt><dd className="font-medium">{item._count?.motherEnrollments ?? 0}</dd></div><div><dt className="text-muted-foreground">Appointments</dt><dd className="font-medium">{item._count?.appointments ?? 0}</dd></div><div><dt className="text-muted-foreground">Referrals</dt><dd className="font-medium">{item._count?.onlineReferralsFrom ?? 0} / {item._count?.onlineReferralsTo ?? 0}</dd></div></dl>
+          </article>)}
+          {!loading && !data?.facilitiesSummary?.length && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No facilities registered.</div>}
         </div>
       </div>
     </section>

@@ -1,10 +1,26 @@
 import path from "path"
 import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+import { defineConfig, loadEnv } from "vite"
 import { VitePWA } from "vite-plugin-pwa"
 
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), "")
+  const backendUrl = (env.BACKEND_API_URL || env.VITE_BACKEND_API_URL || "https://bms-backend-1-zzt5.onrender.com")
+    .replace(/\/api\/v1\/?$/, "")
+    .replace(/\/+$/, "")
+
+  return {
+  server: {
+    proxy: {
+      "/api": { target: backendUrl, changeOrigin: true, secure: true },
+    },
+  },
+  preview: {
+    proxy: {
+      "/api": { target: backendUrl, changeOrigin: true, secure: true },
+    },
+  },
   plugins: [
     react(),
     tailwindcss(),
@@ -32,6 +48,7 @@ export default defineConfig({
         runtimeCaching: [
           {
             urlPattern: ({ url, request }) =>
+              request.mode !== "navigate" &&
               !url.pathname.startsWith("/api/") &&
               ["", "script", "style", "font", "image"].includes(request.destination),
             handler: "NetworkFirst",
@@ -54,7 +71,7 @@ export default defineConfig({
         ],
       },
       devOptions: {
-        enabled: true,
+        enabled: false,
         type: "module",
         navigateFallbackAllowlist: [/^\/.*$/],
       },
@@ -65,4 +82,5 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  }
 })

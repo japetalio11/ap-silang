@@ -1,16 +1,17 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { SidebarTrigger } from "@/components/ui/sidebar"
 import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Bell, PlusCircle, Moon, Sun, UserPlus, Check, CalendarPlus, Stethoscope, Send, ShieldPlus } from "lucide-react"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Bell, PlusCircle, Moon, Sun, UserPlus, Check, CalendarPlus, Stethoscope, Send, ShieldPlus, LoaderCircle } from "lucide-react"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Switch } from "@/components/ui/switch"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,11 +27,22 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { useAuthSession } from "@/features/auth/auth-session"
 import { getMaternalProfile } from "@/features/maternal-records/api"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { getUserNotifications, markAllNotificationsRead, markNotificationRead, type NotificationRecord } from "@/features/dashboard/api/notifications"
+import { toast } from "sonner"
+import { useNavigate } from "react-router-dom"
 
 export function AppHeader() {
   const { theme, setTheme } = useTheme()
   const location = useLocation()
   const { session } = useAuthSession()
+  const sessionToken = session?.token
+  const sessionUserId = session?.user.user_id
+  const navigate = useNavigate()
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([])
+  const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [notificationFilter, setNotificationFilter] = useState("")
+  const [unreadOnly, setUnreadOnly] = useState(false)
+  const [notificationActionId, setNotificationActionId] = useState<string | null>(null)
   const [isSyncDrawerOpen, setIsSyncDrawerOpen] = useState(false)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
   const [syncState, setSyncState] = useState<{ isOnline: boolean; isSyncing: boolean; pendingCount: number; conflictCount: number }>({
@@ -51,6 +63,66 @@ export function AppHeader() {
     : location.pathname.startsWith('/dashboard/settings') ? 'Settings'
     : location.pathname.startsWith('/dashboard/user-guide') ? 'User Guide'
     : 'Dashboard'
+
+  const loadNotifications = useCallback(async (quiet = false) => {
+    if (!sessionToken || !sessionUserId) return
+    setNotificationsLoading(true)
+    try {
+      setNotifications(await getUserNotifications(sessionToken, sessionUserId))
+    } catch (error) {
+      if (!quiet) toast.error("Couldn't load notifications", { description: error instanceof Error ? error.message : "Please try again." })
+    } finally {
+      setNotificationsLoading(false)
+    }
+  }, [sessionToken, sessionUserId])
+
+  useEffect(() => {
+    if (!sessionToken || !sessionUserId) return
+    let active = true
+    void getUserNotifications(sessionToken, sessionUserId)
+      .then((items) => { if (active) setNotifications(items) })
+      .catch(() => undefined)
+    return () => { active = false }
+  }, [sessionToken, sessionUserId])
+
+  const unreadCount = notifications.filter((item) => !item.is_read).length
+  const visibleNotifications = useMemo(() => {
+    const query = notificationFilter.trim().toLocaleLowerCase()
+    return notifications.filter((item) => {
+      if (unreadOnly && item.is_read) return false
+      return !query || `${item.sender ?? ""} ${item.notification_type ?? ""} ${item.notification_message}`.toLocaleLowerCase().includes(query)
+    })
+  }, [notifications, notificationFilter, unreadOnly])
+
+  const handleMarkAllNotificationsRead = async () => {
+    if (!sessionToken || !sessionUserId || unreadCount === 0) return
+    try {
+      await markAllNotificationsRead(sessionToken, sessionUserId)
+      setNotifications((current) => current.map((item) => ({ ...item, is_read: true })))
+      toast.success("All notifications marked as read")
+    } catch (error) {
+      toast.error("Couldn't update notifications", { description: error instanceof Error ? error.message : "Please try again." })
+    }
+  }
+
+  const handleNotificationClick = async (item: NotificationRecord) => {
+    if (!sessionToken || !sessionUserId) return
+    if (!item.is_read) {
+      setNotificationActionId(item.notification_id)
+      try {
+        await markNotificationRead(sessionToken, sessionUserId, item.notification_id)
+        setNotifications((current) => current.map((notification) => notification.notification_id === item.notification_id ? { ...notification, is_read: true } : notification))
+      } catch (error) {
+        toast.error("Couldn't mark notification as read", { description: error instanceof Error ? error.message : "Please try again." })
+        setNotificationActionId(null)
+        return
+      }
+      setNotificationActionId(null)
+    }
+    const category = (item.category || item.notification_type || "").toLowerCase()
+    const route = item.link || (category.includes("referral") ? "/dashboard/referrals" : category.includes("appointment") ? "/dashboard/calendar" : category.includes("vital") || category.includes("clinical") ? "/dashboard/maternal-records" : "")
+    if (route) navigate(route)
+  }
 
   useEffect(() => {
     return silangSyncEngine.subscribe((status) => {
@@ -122,44 +194,20 @@ export function AppHeader() {
             ? (syncState.pendingCount > 0 ? `Offline (${syncState.pendingCount} queued)` : "You're Offline")
             : (syncState.pendingCount > 0 ? `Online (${syncState.pendingCount} pending)` : "You're Online")}
         </Button>
-        <Popover>
-          <Tooltip><TooltipTrigger asChild>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="icon" aria-label="Notifications" className="text-muted-foreground hover:text-foreground h-8 w-8 relative">
-                <Bell className="size-4" />
-              </Button>
-            </PopoverTrigger>
-          </TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
-          <PopoverContent align="end" className="w-[calc(100vw-2rem)] sm:w-[380px] pt-4 px-4 pb-0 flex flex-col gap-4 rounded-xl border-border shadow-lg">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold text-foreground">Notifications (3)</span>
-              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                <label htmlFor="unreads-desktop" className="cursor-pointer">Unreads (3)</label>
-                <Switch id="unreads-desktop" className="scale-75 origin-right" />
-              </div>
-            </div>
-            <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2">
-              <Input placeholder="Filter Notifications" className="h-8 text-xs bg-muted/70 dark:bg-muted/60" />
-              <Button className="h-8 px-3 text-xs shrink-0 gap-1.5 bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:text-black">
-                <Check className="h-3.5 w-3.5" />
-                Mark all as read
-              </Button>
-            </div>
-            <div className="border-t border-border py-4 flex flex-col gap-2 -mx-4 px-4 mt-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Avatar className="h-6 w-6">
-                    <AvatarImage src="https://github.com/shadcn.png" alt="Joseph" />
-                    <AvatarFallback>JP</AvatarFallback>
-                  </Avatar>
-                  <span className="text-xs font-medium text-foreground">Joseph Angelo Petalio</span>
-                </div>
-                <span className="text-xs text-muted-foreground">09:34 AM</span>
-              </div>
-              <p className="text-xs text-foreground">A referral transfer is waiting for your review.</p>
-            </div>
-          </PopoverContent>
-        </Popover>
+        <NotificationPopover
+          notifications={notifications}
+          visibleNotifications={visibleNotifications}
+          unreadCount={unreadCount}
+          loading={notificationsLoading}
+          unreadOnly={unreadOnly}
+          filter={notificationFilter}
+          actionId={notificationActionId}
+          onFilterChange={setNotificationFilter}
+          onUnreadOnlyChange={setUnreadOnly}
+          onOpen={() => void loadNotifications()}
+          onMarkAllRead={() => void handleMarkAllNotificationsRead()}
+          onNotificationClick={(item) => void handleNotificationClick(item)}
+        />
         <Tooltip><TooltipTrigger asChild>
         <Button 
           variant="ghost" 
@@ -232,44 +280,21 @@ export function AppHeader() {
               ? (syncState.pendingCount > 0 ? `Offline (${syncState.pendingCount})` : "Offline")
               : (syncState.pendingCount > 0 ? `Online (${syncState.pendingCount})` : "Online")}
           </Button>
-          <Popover>
-            <Tooltip><TooltipTrigger asChild>
-              <PopoverTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Notifications" className="text-muted-foreground hover:text-foreground h-8 w-8 relative">
-                  <Bell className="size-4" />
-                </Button>
-              </PopoverTrigger>
-            </TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
-            <PopoverContent align="center" collisionPadding={0} className="w-screen sm:w-[380px] pt-4 px-4 pb-0 flex flex-col gap-4 rounded-xl border-border shadow-lg">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-foreground">Notifications (3)</span>
-                <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
-                  <label htmlFor="unreads-mobile" className="cursor-pointer">Unreads (3)</label>
-                  <Switch id="unreads-mobile" className="scale-75 origin-right" />
-                </div>
-              </div>
-              <div className="flex flex-col xl:flex-row items-stretch xl:items-center gap-2">
-                <Input placeholder="Filter Notifications" className="h-8 text-xs bg-muted/70 dark:bg-muted/60" />
-                <Button className="h-8 px-3 text-xs shrink-0 gap-1.5 bg-foreground text-background hover:bg-foreground/90 dark:bg-white dark:text-black">
-                  <Check className="h-3.5 w-3.5" />
-                  Mark all as read
-                </Button>
-              </div>
-              <div className="border-t border-border py-4 flex flex-col gap-2 -mx-4 px-4 mt-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Avatar className="h-6 w-6">
-                      <AvatarImage src="https://github.com/shadcn.png" alt="Joseph" />
-                      <AvatarFallback>JP</AvatarFallback>
-                    </Avatar>
-                    <span className="text-xs font-medium text-foreground">Joseph Angelo Petalio</span>
-                  </div>
-                  <span className="text-xs text-muted-foreground">09:34 AM</span>
-                </div>
-                <p className="text-xs text-foreground">A referral transfer is waiting for your review.</p>
-              </div>
-            </PopoverContent>
-          </Popover>
+          <NotificationPopover
+            notifications={notifications}
+            visibleNotifications={visibleNotifications}
+            unreadCount={unreadCount}
+            loading={notificationsLoading}
+            unreadOnly={unreadOnly}
+            filter={notificationFilter}
+            actionId={notificationActionId}
+            mobile
+            onFilterChange={setNotificationFilter}
+            onUnreadOnlyChange={setUnreadOnly}
+            onOpen={() => void loadNotifications()}
+            onMarkAllRead={() => void handleMarkAllNotificationsRead()}
+            onNotificationClick={(item) => void handleNotificationClick(item)}
+          />
           <Tooltip><TooltipTrigger asChild>
           <Button 
             variant="ghost" 
@@ -289,5 +314,108 @@ export function AppHeader() {
     </header>
     <OfflineSyncDrawer open={isSyncDrawerOpen} onOpenChange={setIsSyncDrawerOpen} />
     </TooltipProvider>
+  )
+}
+
+function notificationTime(value?: string | null) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  const today = new Date()
+  if (date.toDateString() === today.toDateString()) {
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+  }
+  return date.toLocaleDateString([], { month: "short", day: "numeric" })
+}
+
+function NotificationPopover({
+  notifications,
+  visibleNotifications,
+  unreadCount,
+  loading,
+  unreadOnly,
+  filter,
+  actionId,
+  mobile = false,
+  onFilterChange,
+  onUnreadOnlyChange,
+  onOpen,
+  onMarkAllRead,
+  onNotificationClick,
+}: {
+  notifications: NotificationRecord[]
+  visibleNotifications: NotificationRecord[]
+  unreadCount: number
+  loading: boolean
+  unreadOnly: boolean
+  filter: string
+  actionId: string | null
+  mobile?: boolean
+  onFilterChange: (value: string) => void
+  onUnreadOnlyChange: (value: boolean) => void
+  onOpen: () => void
+  onMarkAllRead: () => void
+  onNotificationClick: (item: NotificationRecord) => void
+}) {
+  const totalCount = notifications.length
+  return (
+    <Popover onOpenChange={(open) => open && onOpen()}>
+      <Tooltip><TooltipTrigger asChild>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`} className="relative h-8 w-8 text-muted-foreground hover:text-foreground">
+            <Bell className="size-4" />
+            {unreadCount > 0 && <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-primary ring-2 ring-background" aria-hidden="true" />}
+          </Button>
+        </PopoverTrigger>
+      </TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
+      <PopoverContent align={mobile ? "center" : "end"} collisionPadding={mobile ? 0 : 8} className={`flex max-h-[min(78dvh,560px)] flex-col gap-3 overflow-hidden rounded-xl border-border p-4 shadow-lg ${mobile ? "w-screen" : "w-[calc(100vw-2rem)] sm:w-[380px]"}`}>
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-sm font-semibold text-foreground">Notifications ({totalCount})</span>
+          <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+            <label htmlFor={mobile ? "notifications-unread-mobile" : "notifications-unread-desktop"} className="cursor-pointer">Unreads ({unreadCount})</label>
+            <Switch id={mobile ? "notifications-unread-mobile" : "notifications-unread-desktop"} checked={unreadOnly} onCheckedChange={onUnreadOnlyChange} className="scale-75 origin-right" />
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input value={filter} onChange={(event) => onFilterChange(event.target.value)} placeholder="Filter Notifications" aria-label="Filter notifications" className="h-8 min-w-0 flex-1 text-xs" />
+          <Button type="button" variant="outline" disabled={unreadCount === 0 || loading} onClick={onMarkAllRead} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs">
+            <Check className="size-3.5" />Mark all as read
+          </Button>
+        </div>
+        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto border-t border-border px-4 pt-2">
+          {loading && notifications.length === 0 ? (
+            <div className="space-y-4 py-2" aria-label="Loading notifications">
+              {[0, 1, 2].map((item) => <div key={item} className="space-y-2"><div className="flex items-center justify-between"><Skeleton className="h-6 w-36" /><Skeleton className="h-3 w-14" /></div><Skeleton className="h-4 w-full" /></div>)}
+            </div>
+          ) : visibleNotifications.length ? (
+            <div className="divide-y divide-border">
+              {visibleNotifications.map((item) => {
+                const sender = item.sender || `${(item.category || item.notification_type || "System").replace(/[-_]/g, " ")} Service`
+                const initials = sender.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "N"
+                return (
+                  <button key={item.notification_id} type="button" disabled={actionId === item.notification_id} onClick={() => onNotificationClick(item)} className={`group flex w-full flex-col gap-2 py-3 text-left transition-colors hover:bg-muted/40 disabled:opacity-60 ${!item.is_read ? "bg-muted/20" : ""}`}>
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Avatar className="size-6 shrink-0"><AvatarFallback className="text-[10px]">{initials}</AvatarFallback></Avatar>
+                        <span className="truncate text-xs font-medium text-foreground">{sender}</span>
+                        {!item.is_read && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                      </span>
+                      <span className="shrink-0 text-[11px] text-muted-foreground">{actionId === item.notification_id ? <LoaderCircle className="size-3 animate-spin" /> : notificationTime(item.notification_date)}</span>
+                    </span>
+                    <span className={`pl-8 text-xs leading-relaxed ${item.is_read ? "text-muted-foreground" : "text-foreground"}`}>{item.notification_message}</span>
+                  </button>
+                )
+              })}
+            </div>
+          ) : (
+            <div className="flex min-h-32 flex-col items-center justify-center gap-1.5 py-6 text-center">
+              <Bell className="mb-1 size-5 text-muted-foreground/70" />
+              <p className="text-xs font-medium text-foreground">{filter || unreadOnly ? "No matching notifications" : "You're all caught up"}</p>
+              <p className="text-xs text-muted-foreground">{filter || unreadOnly ? "Try changing your filter." : "New updates will appear here."}</p>
+            </div>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
   )
 }

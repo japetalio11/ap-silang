@@ -37,6 +37,8 @@ export function CustomEvent({ event, onClick, compact = false }: {
   const appointmentTime = event.start && !Number.isNaN(start.getTime())
     ? `${format(start, "MMMM dd, yyyy h:mm a")}${end && !Number.isNaN(end.getTime()) ? ` – ${format(end, "h:mm a")}` : ""}`
     : "Not scheduled"
+  const status = String(event.status || "scheduled").toLowerCase()
+  const accent = status.includes("cancel") ? "bg-red-500" : status.includes("complet") ? "bg-emerald-500" : "bg-sky-500"
 
   return (
     <HoverCard openDelay={300} closeDelay={100}>
@@ -44,15 +46,15 @@ export function CustomEvent({ event, onClick, compact = false }: {
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onClick?.(event) }}
-          className={`flex w-full min-w-0 cursor-pointer items-center gap-1.5 overflow-hidden rounded-md border border-sidebar-border bg-card/80 text-left text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:text-white dark:hover:bg-white/5 ${compact ? "h-9 min-h-9 px-1.5 py-0.5" : `h-full ${isMobile ? "p-2.5" : "p-1.5"}`}`}
+          className={`group/event flex w-full min-w-0 cursor-pointer items-center gap-2 overflow-hidden rounded-md border border-border/70 bg-card text-left text-foreground transition-[background-color,border-color,transform] hover:-translate-y-px hover:border-foreground/25 hover:bg-accent/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${compact ? "min-h-11 px-2 py-1.5" : `h-full ${isMobile ? "p-2.5" : "p-2"}`}`}
         >
-          <span aria-hidden="true" className="w-1 shrink-0 self-stretch rounded-full bg-[#57c766]" />
-          <span className={`flex min-w-0 flex-1 flex-col justify-center ${compact ? "gap-0" : "gap-0.5"}`}>
-            <span className={`${compact ? "text-[11px] leading-3.5" : `${isMobile ? "text-sm" : "text-xs"} leading-4`} block truncate font-medium`}>
+          <span aria-hidden="true" className={`w-1 shrink-0 self-stretch rounded-full ${accent}`} />
+          <span className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
+            <span className="block truncate text-xs font-semibold leading-4">
               {event.patient || event.title}
             </span>
-            <span className={`flex min-w-0 items-center gap-1 truncate text-[11px] text-muted-foreground ${compact ? "leading-3.5" : "leading-4"}`}>
-              <Clock3 className="size-3 shrink-0" />
+            <span className="flex min-w-0 items-center gap-1 truncate text-xs leading-4 text-muted-foreground">
+              <Clock3 className="size-3 shrink-0" aria-hidden="true" />
               <span className="truncate">{event.appointmentType || "Appointment"}{event.start && !Number.isNaN(start.getTime()) ? ` · ${format(start, "h:mm a")}` : ""}</span>
             </span>
           </span>

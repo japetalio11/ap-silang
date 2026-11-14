@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
-import { Activity, AlertTriangle, Baby, Building2, CalendarDays, Clock3, Download, Droplets, FileText, HeartPulse, Hospital, MapPin, MessageSquare, Phone, Printer, RefreshCw, Ruler, ShieldCheck, Thermometer, UserRound, UsersRound, Weight, ZoomIn, ZoomOut, X } from "lucide-react"
+import { Activity, Building2, CalendarDays, Clock3, Download, Ellipsis, FileText, HeartPulse, Hospital, MapPin, Printer, RefreshCw, ShieldCheck, UserRound, ZoomIn, ZoomOut, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,11 +9,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Checkbox } from "@/components/ui/checkbox"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
-import { Breadcrumb, BreadcrumbItem, BreadcrumbList, BreadcrumbPage, BreadcrumbSeparator } from "@/components/ui/breadcrumb"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { z } from "zod"
@@ -47,40 +48,10 @@ function DrawerDetail({ icon: Icon, label, children }: { icon: typeof UserRound;
   </div>
 }
 
-function ClinicalField({ label, value }: { label: string; value: string }) {
-  const iconByLabel: Record<string, typeof FileText> = {
-    "Chief complaint": MessageSquare,
-    "Complete Name": UserRound,
-    Age: CalendarDays,
-    Address: MapPin,
-    "CP Number": Phone,
-    "Civil Status": UsersRound,
-    Birthday: CalendarDays,
-    "Blood Type": HeartPulse,
-    "Family Serial No.": FileText,
-    Temperature: Thermometer,
-    "Pulse Rate": Activity,
-    "Blood Pressure": HeartPulse,
-    Weight,
-    Height: Ruler,
-    LMP: CalendarDays,
-    "EDC / EDD": CalendarDays,
-    AOG: Clock3,
-    "Gravida / Para": Baby,
-    "Previous Delivery": Baby,
-    "Co-morbidities": HeartPulse,
-    "Primary Danger Signs": AlertTriangle,
-    "Blood Sugar": Droplets,
-    "Body Temp": Thermometer,
-    "Heart Rate": Activity,
-    "Respiratory Rate": Activity,
-    "O2 Saturation": Droplets,
-  }
-  const Icon = iconByLabel[label] ?? FileText
-
-  return <div className="grid grid-cols-2 items-start gap-3 py-2.5">
-    <dt className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground"><Icon className="size-3.5 shrink-0" /><span>{label}</span></dt>
-    <dd className="min-w-0 break-words text-xs font-medium leading-relaxed">{value}</dd>
+function ClinicalField({ label, value, className = "" }: { label: string; value: string; className?: string }) {
+  return <div className={`min-w-0 ${className}`}>
+    <dt className="text-xs leading-5 text-muted-foreground">{label}</dt>
+    <dd className="mt-0.5 min-w-0 break-words text-sm font-medium leading-5 text-foreground">{value}</dd>
   </div>
 }
 
@@ -95,30 +66,43 @@ function HandoverTable({ headers, rows, emptyTitle, emptyDescription }: { header
   const allVisibleSelected = visibleRows.length > 0 && visibleRows.every((row) => selected.includes(row.id))
 
   return <>
-    <div className="overflow-x-auto rounded-md border border-sidebar-border bg-background dark:bg-black">
+    <div className="hidden overflow-x-auto rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
       <div className="min-w-[720px]">
         <Table>
           <TableHeader className="bg-card dark:bg-[#111]">
             <TableRow className="border-sidebar-border hover:bg-transparent">
-              <TableHead className="w-12 pl-4 text-center"><Checkbox aria-label="Select all visible records" checked={allVisibleSelected} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, ...visibleRows.map((row) => row.id)])] : current.filter((id) => !visibleRows.some((row) => row.id === id)))} className="border-sidebar-border" /></TableHead>
-              {headers.map((header) => <TableHead key={header} className="whitespace-nowrap text-xs font-medium text-foreground">{header}</TableHead>)}
+              <TableHead className="h-8 w-12 py-1.5 pl-4 text-center"><Checkbox aria-label="Select all visible records" checked={allVisibleSelected} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, ...visibleRows.map((row) => row.id)])] : current.filter((id) => !visibleRows.some((row) => row.id === id)))} className="border-sidebar-border" /></TableHead>
+              {headers.map((header) => <TableHead key={header} className="h-8 whitespace-nowrap px-2 py-1.5 text-xs font-medium leading-tight text-foreground">{header}</TableHead>)}
             </TableRow>
           </TableHeader>
           <TableBody>
             {visibleRows.map((row) => <TableRow key={row.id} className={`border-sidebar-border hover:bg-muted/50 ${row.onClick ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`} onClick={row.onClick} onKeyDown={row.onClick ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); row.onClick?.() } } : undefined} tabIndex={row.onClick ? 0 : undefined}>
-              <TableCell className="w-12 pl-4 text-center" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select record ${row.id}`} checked={selected.includes(row.id)} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))} className="border-sidebar-border" /></TableCell>
-              {row.cells.map((cell, index) => <TableCell key={`${row.id}-${index}`} className="max-w-64 whitespace-normal text-xs align-top">{cell}</TableCell>)}
+              <TableCell className="w-12 py-3 pl-4 text-center" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select record ${row.id}`} checked={selected.includes(row.id)} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))} className="border-sidebar-border" /></TableCell>
+              {row.cells.map((cell, index) => <TableCell key={`${row.id}-${index}`} className="max-w-64 whitespace-normal px-2 py-3 text-xs leading-relaxed align-middle">{cell}</TableCell>)}
             </TableRow>)}
             {rows.length === 0 && <TableEmptyState colSpan={headers.length + 1} icon={FileText} title={emptyTitle} description={emptyDescription} />}
           </TableBody>
         </Table>
       </div>
     </div>
+    <div className="space-y-2 md:hidden">
+      {visibleRows.map((row) => <div key={row.id} className="rounded-md border border-sidebar-border bg-background p-3">
+        <div className="flex items-start gap-3">
+          <Checkbox aria-label={`Select record ${row.id}`} checked={selected.includes(row.id)} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))} className="mt-1 border-sidebar-border" />
+          <div className="min-w-0 flex-1" role={row.onClick ? "button" : undefined} tabIndex={row.onClick ? 0 : undefined} onClick={row.onClick} onKeyDown={row.onClick ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); row.onClick?.() } } : undefined}>
+            {row.cells.map((cell, index) => <div key={`${row.id}-${index}`} className="flex min-w-0 items-start justify-between gap-3 py-1.5 text-xs">
+              <span className="shrink-0 text-muted-foreground">{headers[index]}</span><div className="min-w-0 break-words text-right font-medium">{cell}</div>
+            </div>)}
+          </div>
+        </div>
+      </div>)}
+      {rows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-xs"><p className="font-medium">{emptyTitle}</p><p className="mt-1 text-muted-foreground">{emptyDescription}</p></div>}
+    </div>
     <TablePaginationFooter rowCount={rows.length} selectedCount={selected.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />
   </>
 }
 
-function attachmentName(fileUrl?: string | null, fallback = "EHR record") {
+function attachmentName(fileUrl?: string | null, fallback = "Health record") {
   if (!fileUrl) return fallback
   try {
     const pathname = new URL(fileUrl, window.location.origin).pathname
@@ -136,7 +120,7 @@ function attachmentUrl(fileUrl?: string | null) {
 function HandoverEhrPreview({ record, onClose }: { record: HandoverEhrRecord | null; onClose: () => void }) {
   const [zoom, setZoom] = useState(100)
   const fileUrl = record?.file_url
-  const fileName = attachmentName(fileUrl, record?.screening_type || "EHR record")
+  const fileName = attachmentName(fileUrl, record?.screening_type || "Health record")
   const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
   const isImage = ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
   const isPdf = extension === "pdf"
@@ -156,7 +140,7 @@ function HandoverEhrPreview({ record, onClose }: { record: HandoverEhrRecord | n
       <header className="fixed inset-x-0 top-0 z-[101] flex h-14 items-center justify-between gap-3 border-b border-sidebar-border bg-background px-3 sm:px-5">
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-medium">{fileName}</div>
-          <div className="truncate text-xs text-muted-foreground">{record.screening_type || "EHR Record"}{record.date_of_screening ? ` · ${prettyDate(record.date_of_screening)}` : ""}</div>
+          <div className="truncate text-xs text-muted-foreground">{record.screening_type || "Health Record"}{record.date_of_screening ? ` · ${prettyDate(record.date_of_screening)}` : ""}</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex items-center gap-1 rounded-md border border-sidebar-border p-0.5">
@@ -190,6 +174,7 @@ export function ReferralGatewayPage() {
   const [previewEhrRecord, setPreviewEhrRecord] = useState<HandoverEhrRecord | null>(null)
   const closeEhrPreview = useCallback(() => setPreviewEhrRecord(null), [])
   const [isInitiateReferralOpen, setIsInitiateReferralOpen] = useState(false)
+  const [isMobileTransferOpen, setIsMobileTransferOpen] = useState(false)
   const [referralHospital, setReferralHospital] = useState("")
   const [referralReason, setReferralReason] = useState("")
   const [referralFormErrors, setReferralFormErrors] = useState<{ hospital?: string; reason?: string }>({})
@@ -397,6 +382,7 @@ export function ReferralGatewayPage() {
   </main>
 
   return <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
+    <Sheet open={isMobileTransferOpen} onOpenChange={setIsMobileTransferOpen}>
     <header className="sticky top-0 z-20 flex h-14 shrink-0 items-stretch justify-between border-b bg-white dark:bg-black print:hidden">
       <div className="flex min-w-0 flex-1 items-center px-4">
         <div className="flex shrink-0 items-center gap-2">
@@ -407,21 +393,26 @@ export function ReferralGatewayPage() {
             <span className="translate-y-0.5 whitespace-nowrap text-2xl font-semibold leading-none tracking-tight text-[#003f2c] dark:text-[#fffe8c]" style={{ fontFamily: "'Etna', sans-serif" }}>Silang</span>
           </div>
         </div>
-        <span className="mx-3 h-4 w-px shrink-0 bg-border" aria-hidden="true" />
-        <Breadcrumb>
-          <BreadcrumbList className="flex-nowrap text-xs">
-            <BreadcrumbItem><span className="whitespace-nowrap text-muted-foreground">Inter-Clinic Referrals</span></BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem><BreadcrumbPage className="whitespace-nowrap text-xs">Referral Handover</BreadcrumbPage></BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
         <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
           <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Export referral" title="Export referral" onClick={exportReferral}><Download className="size-3.5" /></Button>
           <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Refresh referral" title="Refresh referral" disabled={isRefreshing} onClick={() => void refreshReferral()}><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
-          <Button type="button" className="h-8 gap-1.5 px-3 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Print Transfer Form</Button>
+          <SheetTrigger asChild>
+            <Button type="button" className="h-8 gap-1.5 px-3 text-xs lg:hidden">
+              <ShieldCheck className="size-3.5" />
+              Finalize Transfer
+            </Button>
+          </SheetTrigger>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="outline" size="icon" className="size-8" aria-label="More handover actions" title="More actions"><Ellipsis className="size-4" /></Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onSelect={() => window.print()}><Printer className="mr-2 size-4" />Print Transfer Form</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
-      <div className="flex h-full w-[min(75vw,24rem)] shrink-0 items-center justify-start gap-2 bg-sidebar px-4 text-sidebar-foreground lg:border-l lg:border-sidebar-border">
+      <div className="hidden h-full w-[min(75vw,24rem)] shrink-0 items-center justify-start gap-2 bg-sidebar px-4 text-sidebar-foreground lg:flex lg:border-l lg:border-sidebar-border">
         <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent ring-1 ring-sidebar-border">
           <Hospital className="size-4 text-sidebar-foreground/70" aria-hidden="true" />
         </div>
@@ -434,23 +425,94 @@ export function ReferralGatewayPage() {
 
     <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section aria-label="Referral handover content" className="min-h-0 min-w-0 overflow-y-auto bg-white px-4 py-4 text-foreground dark:bg-black sm:px-5">
-        <div className="flex min-w-0 flex-col gap-4">
-          <Tabs defaultValue="ehr" className="w-full min-w-0">
-            <TabsList className="h-9 w-fit justify-start gap-1">
-              <TabsTrigger value="ehr" className="h-full flex-none px-3 text-xs">EHR Records</TabsTrigger>
-              <TabsTrigger value="prescriptions" className="h-full flex-none px-3 text-xs">Prescriptions</TabsTrigger>
-            </TabsList>
-            <TabsContent value="ehr" className="mt-3">
-              <HandoverTable headers={["Test", "Date", "Result", "File / Notes"]} rows={ehrRows} emptyTitle="No EHR records shared" emptyDescription="Laboratory results and attached records included with this referral will appear here." />
-            </TabsContent>
-            <TabsContent value="prescriptions" className="mt-3">
-              <HandoverTable headers={["Medication / Supplement", "Date", "Quantity", "Status"]} rows={prescriptionRows} emptyTitle="No prescriptions shared" emptyDescription="Prescriptions and supplements included with this referral will appear here." />
-            </TabsContent>
-          </Tabs>
-        </div>
+        <Tabs defaultValue="summary" className="w-full min-w-0 pb-6">
+          <TabsList className="h-9 w-max max-w-full justify-start gap-1 overflow-x-auto">
+            <TabsTrigger value="summary" className="h-full flex-none px-3 text-xs">Clinical Summary (1)</TabsTrigger>
+            <TabsTrigger value="ehr" className="h-full flex-none px-3 text-xs">Health Records ({record.lab_screenings?.length ?? 0})</TabsTrigger>
+            <TabsTrigger value="prescriptions" className="h-full flex-none px-3 text-xs">Prescriptions ({record.supplements?.length ?? 0})</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="summary" className="mt-4 min-w-0">
+            <div className="space-y-6">
+              <section aria-labelledby="handover-clinical-summary">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <h2 id="handover-clinical-summary" className="text-sm font-semibold text-foreground">Clinical summary</h2>
+                    <p className="mt-1 text-xs text-muted-foreground">Patient information shared for this transfer.</p>
+                  </div>
+                  <StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} />
+                </div>
+                <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
+                  <ClinicalField label="Patient" value={patientName} />
+                  <ClinicalField label="Age" value={record.patient?.age != null ? `${record.patient.age} years` : "Not recorded"} />
+                  <ClinicalField label="Date of birth" value={prettyDate(record.patient?.birth_date)} />
+                  <ClinicalField label="Contact number" value={valueOr(record.patient?.phone)} />
+                  <ClinicalField label="Civil status" value={valueOr(record.patient?.civil_status)} />
+                  <ClinicalField label="Blood type" value={valueOr(record.patient?.blood_type)} />
+                  <ClinicalField label="Family serial no." value={valueOr(record.patient?.family_serial_no)} />
+                  <ClinicalField label="Address" value={valueOr(record.patient?.address)} className="col-span-2 md:col-span-1" />
+                </dl>
+              </section>
+
+              <section aria-labelledby="handover-referral-reason" className="border-t border-border/70 pt-5">
+                <h3 id="handover-referral-reason" className="text-sm font-semibold text-foreground">Reason for referral</h3>
+                <dl className="mt-4 grid min-w-0 gap-x-6 gap-y-4 sm:grid-cols-2">
+                  <ClinicalField label="Chief complaint" value={valueOr(latestVitals?.chief_complaint, reasonField(fullClinicalSummary, "CC") || "Not recorded")} />
+                  <ClinicalField label="Requested clinical action" value={reasonField(fullClinicalSummary, "Requested clinical action") || "Not recorded"} />
+                </dl>
+                <details className="group mt-4 text-xs">
+                  <summary className="w-fit cursor-pointer font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">View complete handover notes</summary>
+                  <p className="mt-3 max-w-3xl whitespace-pre-wrap break-words text-sm font-normal leading-6 text-foreground">{fullClinicalSummary}</p>
+                </details>
+              </section>
+
+              <section aria-labelledby="handover-pregnancy-history" className="border-t border-border/70 pt-5">
+                <h3 id="handover-pregnancy-history" className="text-sm font-semibold text-foreground">Pregnancy history</h3>
+                <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
+                  <ClinicalField label="Gravida / parity" value={`G${valueOr(record.obstetric_info?.gravida, "—")} P${valueOr(record.obstetric_info?.parity, "—")}`} />
+                  <ClinicalField label="Age of gestation" value={latestVitals?.gestational_age_weeks != null ? `${latestVitals.gestational_age_weeks} weeks` : "Not recorded"} />
+                  <ClinicalField label="LMP" value={prettyDate(record.obstetric_info?.lmp_date)} />
+                  <ClinicalField label="EDD" value={prettyDate(record.obstetric_info?.edd_date || reasonField(fullClinicalSummary, "EDC"))} />
+                  <ClinicalField label="Previous delivery" value={valueOr(record.obstetric_info?.previous_delivery_history, reasonLine(fullClinicalSummary, "Previous delivery") || "None reported")} className="col-span-2 md:col-span-1" />
+                  <ClinicalField label="Co-morbidities" value={valueOr(record.obstetric_info?.co_morbidities, reasonLine(fullClinicalSummary, "Co-morbidities") || "None reported")} className="col-span-2 md:col-span-1" />
+                </dl>
+              </section>
+
+              <section aria-labelledby="handover-referral-vitals" className="border-t border-border/70 pt-5">
+                <h3 id="handover-referral-vitals" className="text-sm font-semibold text-foreground">Latest vitals</h3>
+                <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
+                  <ClinicalField label="Blood pressure" value={valueOr(latestVitals?.bp, reasonField(fullClinicalSummary, "BP") || "Not recorded")} />
+                  <ClinicalField label="Pulse rate" value={valueOr(latestVitals?.pulse_rate, reasonField(fullClinicalSummary, "PR") || "Not recorded")} />
+                  <ClinicalField label="Temperature" value={valueOr(latestVitals?.temp, reasonField(fullClinicalSummary, "T") || "Not recorded")} />
+                  <ClinicalField label="Weight" value={reasonField(fullClinicalSummary, "wt") || "Not recorded"} />
+                  <ClinicalField label="Height" value={reasonField(fullClinicalSummary, "ht") || "Not recorded"} />
+                  <ClinicalField label="Fundal height" value={valueOr(latestVitals?.fundic_height)} />
+                  <ClinicalField label="Fetal heart tone" value={valueOr(latestVitals?.fetal_heart_tone)} />
+                  <ClinicalField label="Blood sugar" value={reasonField(fullClinicalSummary, "Blood Sugar") || "Not recorded"} />
+                  <ClinicalField label="Respiratory rate" value={reasonField(fullClinicalSummary, "Respiratory Rate") || "Not recorded"} />
+                  <ClinicalField label="O₂ saturation" value={reasonField(fullClinicalSummary, "O2 Saturation") || "Not recorded"} />
+                </dl>
+              </section>
+
+              <section aria-labelledby="handover-clinical-indicators" className="border-t border-border/70 pt-5">
+                <h3 id="handover-clinical-indicators" className="text-sm font-semibold text-foreground">Clinical indicators</h3>
+                <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
+                  <ClinicalField label="Primary danger signs" value={valueOr(latestVitals?.danger_signs, record.cdss_alerts?.map((alert) => alert.alert_type || alert.alert_message).filter(Boolean).join(", ") || "None reported")} className="col-span-2 md:col-span-3 xl:col-span-4" />
+                </dl>
+              </section>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="ehr" className="mt-4 min-w-0">
+            <HandoverTable headers={["Test", "Date", "Result", "File / Notes"]} rows={ehrRows} emptyTitle="No health records shared" emptyDescription="Laboratory results and attached records included with this referral will appear here." />
+          </TabsContent>
+          <TabsContent value="prescriptions" className="mt-4 min-w-0">
+            <HandoverTable headers={["Medication / Supplement", "Date", "Quantity", "Status"]} rows={prescriptionRows} emptyTitle="No prescriptions shared" emptyDescription="Prescriptions and supplements included with this referral will appear here." />
+          </TabsContent>
+        </Tabs>
       </section>
 
-      <aside className="flex min-h-[420px] flex-col border-sidebar-border bg-sidebar text-sidebar-foreground lg:h-[calc(100dvh-3.5rem)] lg:min-h-0 lg:border-l print:hidden">
+      <aside className="hidden min-h-[420px] flex-col border-sidebar-border bg-sidebar text-sidebar-foreground lg:flex lg:h-[calc(100dvh-3.5rem)] lg:min-h-0 lg:border-l print:hidden">
         <div className="min-h-0 flex-1 overflow-y-auto px-5">
           <section aria-label="Transfer lifecycle handshake" className="-mx-5 border-b border-sidebar-border/70 px-5 py-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -465,94 +527,19 @@ export function ReferralGatewayPage() {
             <p className="mt-1 text-xs text-muted-foreground">Last updated: {prettyDate(record.date_responded || record.date_referred, true)}</p>
           </section>
 
-          <Tabs defaultValue="clinical" className="w-full">
-            <TabsList className="my-3 grid h-8 w-full grid-cols-2">
-              <TabsTrigger value="clinical" className="text-xs">Clinical</TabsTrigger>
-              <TabsTrigger value="details" className="text-xs">Details</TabsTrigger>
-            </TabsList>
-            <TabsContent value="details" className="mt-0">
-              <section className="py-2">
-                <h2 className="text-sm font-semibold">Referral information</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Routing and current handover status.</p>
-                <div className="mt-2">
-                  <DrawerDetail icon={Clock3} label="Created time">{prettyDate(record.date_referred, true)}</DrawerDetail>
-                  <DrawerDetail icon={Activity} label="Status"><StatusBadge status={status} /></DrawerDetail>
-                  <DrawerDetail icon={HeartPulse} label="Assessed risk"><StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} /></DrawerDetail>
-                  <DrawerDetail icon={MapPin} label="Destination">{valueOr(record.destination_facility?.name, "Bicol Medical Center")}</DrawerDetail>
-                  <DrawerDetail icon={Building2} label="Origin facility">{valueOr(record.referring_facility?.name)}</DrawerDetail>
-                  <DrawerDetail icon={CalendarDays} label="Pregnancy">G{valueOr(record.obstetric_info?.gravida, "—")} P{valueOr(record.obstetric_info?.parity, "—")}</DrawerDetail>
-                  <DrawerDetail icon={Activity} label="Age of gestation">{latestVitals?.gestational_age_weeks != null ? `${latestVitals.gestational_age_weeks} weeks` : "Not recorded"}</DrawerDetail>
-                </div>
-              </section>
-            </TabsContent>
-            <TabsContent value="clinical" className="mt-0">
-              <div className="space-y-5 py-4">
-              <section>
-                <h2 className="text-sm font-semibold">Clinical summary</h2>
-                <p className="mt-1 text-xs text-muted-foreground">Patient context and findings shared with the receiving facility.</p>
-                <dl className="mt-2">
-                  <ClinicalField label="Chief complaint" value={valueOr(latestVitals?.chief_complaint, reasonField(fullClinicalSummary, "CC") || "Not recorded")} />
-                  <ClinicalField label="Reason for referral" value={fullClinicalSummary} />
-                  <ClinicalField label="Requested clinical action" value={reasonField(fullClinicalSummary, "Requested clinical action") || "Not recorded"} />
-                  <ClinicalField label="Complete Name" value={patientName} />
-                  <ClinicalField label="Age" value={record.patient?.age != null ? `${record.patient.age} years` : "Not recorded"} />
-                  <ClinicalField label="Address" value={valueOr(record.patient?.address)} />
-                  <ClinicalField label="CP Number" value={valueOr(record.patient?.phone)} />
-                  <ClinicalField label="Civil Status" value={valueOr(record.patient?.civil_status)} />
-                  <ClinicalField label="Blood Type" value={valueOr(record.patient?.blood_type)} />
-                  <ClinicalField label="Family Serial No." value={valueOr(record.patient?.family_serial_no)} />
-                  <ClinicalField label="Birthday" value={prettyDate(record.patient?.birth_date)} />
-                </dl>
-              </section>
-              <section>
-                <h3 className="text-sm font-semibold text-foreground">Referral vitals</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Measurements included with this transfer.</p>
-                <dl className="mt-1">
-                  <ClinicalField label="Temperature" value={valueOr(latestVitals?.temp, reasonField(fullClinicalSummary, "T") || "Not recorded")} />
-                  <ClinicalField label="Pulse Rate" value={valueOr(latestVitals?.pulse_rate, reasonField(fullClinicalSummary, "PR") || "Not recorded")} />
-                  <ClinicalField label="Blood Pressure" value={valueOr(latestVitals?.bp, reasonField(fullClinicalSummary, "BP") || "Not recorded")} />
-                  <ClinicalField label="Weight" value={reasonField(fullClinicalSummary, "wt") || "Not recorded"} />
-                  <ClinicalField label="Height" value={reasonField(fullClinicalSummary, "ht") || "Not recorded"} />
-                  <ClinicalField label="Fundal height" value={valueOr(latestVitals?.fundic_height)} />
-                  <ClinicalField label="Fetal heart tone" value={valueOr(latestVitals?.fetal_heart_tone)} />
-                </dl>
-              </section>
-              <section>
-                <h3 className="text-sm font-semibold">Pregnancy history</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Obstetric dates and previous delivery details.</p>
-                <dl className="mt-1">
-                  <ClinicalField label="LMP" value={prettyDate(record.obstetric_info?.lmp_date)} />
-                  <ClinicalField label="EDC / EDD" value={prettyDate(record.obstetric_info?.edd_date || reasonField(fullClinicalSummary, "EDC"))} />
-                  <ClinicalField label="AOG" value={latestVitals?.gestational_age_weeks != null ? `${latestVitals.gestational_age_weeks} weeks` : "Not recorded"} />
-                  <ClinicalField label="Gravida / Para" value={`G${valueOr(record.obstetric_info?.gravida, "—")} P${valueOr(record.obstetric_info?.parity, "—")}`} />
-                  <ClinicalField label="Previous Delivery" value={valueOr(record.obstetric_info?.previous_delivery_history, reasonLine(fullClinicalSummary, "Previous delivery") || "None reported")} />
-                  <ClinicalField label="Co-morbidities" value={valueOr(record.obstetric_info?.co_morbidities, reasonLine(fullClinicalSummary, "Co-morbidities") || "None reported")} />
-                  <ClinicalField label="Handover notes" value={fullClinicalSummary} />
-                </dl>
-              </section>
-              <section>
-                <h3 className="text-sm font-semibold">Clinical indicators</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Reported warning signs for triage.</p>
-                <dl className="mt-1">
-                  <ClinicalField label="Primary Danger Signs" value={valueOr(latestVitals?.danger_signs, record.cdss_alerts?.map((alert) => alert.alert_type || alert.alert_message).filter(Boolean).join(", ") || "None reported")} />
-                </dl>
-              </section>
-              <section className="pb-2">
-                <h3 className="text-sm font-semibold text-foreground">Latest maternal vitals</h3>
-                <p className="mt-1 text-xs text-muted-foreground">Most recent observations on record.</p>
-                <dl className="mt-1">
-                  <ClinicalField label="Blood Pressure" value={valueOr(latestVitals?.bp, "Not recorded")} />
-                  <ClinicalField label="Heart Rate" value={valueOr(latestVitals?.pulse_rate, "Not recorded")} />
-                  <ClinicalField label="Blood Sugar" value={reasonField(fullClinicalSummary, "Blood Sugar") || "Not recorded"} />
-                  <ClinicalField label="Body Temp" value={valueOr(latestVitals?.temp, "Not recorded")} />
-                  <ClinicalField label="Weight" value={reasonField(fullClinicalSummary, "wt") || "Not recorded"} />
-                  <ClinicalField label="Respiratory Rate" value={reasonField(fullClinicalSummary, "Respiratory Rate") || "Not recorded"} />
-                  <ClinicalField label="O2 Saturation" value={reasonField(fullClinicalSummary, "O2 Saturation") || "Not recorded"} />
-                </dl>
-              </section>
-              </div>
-            </TabsContent>
-          </Tabs>
+          <section className="pt-5 pb-2">
+            <h2 className="text-sm font-semibold">Referral information</h2>
+            <p className="mt-1 text-xs text-muted-foreground">Routing and current handover status.</p>
+            <div className="mt-2">
+              <DrawerDetail icon={Clock3} label="Created time">{prettyDate(record.date_referred, true)}</DrawerDetail>
+              <DrawerDetail icon={Activity} label="Status"><StatusBadge status={status} /></DrawerDetail>
+              <DrawerDetail icon={HeartPulse} label="Assessed risk"><StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} /></DrawerDetail>
+              <DrawerDetail icon={MapPin} label="Destination">{valueOr(record.destination_facility?.name, "Bicol Medical Center")}</DrawerDetail>
+              <DrawerDetail icon={Building2} label="Origin facility">{valueOr(record.referring_facility?.name)}</DrawerDetail>
+              <DrawerDetail icon={CalendarDays} label="Pregnancy">G{valueOr(record.obstetric_info?.gravida, "—")} P{valueOr(record.obstetric_info?.parity, "—")}</DrawerDetail>
+              <DrawerDetail icon={Activity} label="Age of gestation">{latestVitals?.gestational_age_weeks != null ? `${latestVitals.gestational_age_weeks} weeks` : "Not recorded"}</DrawerDetail>
+            </div>
+          </section>
         </div>
 
         <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar px-5 py-3">
@@ -563,6 +550,36 @@ export function ReferralGatewayPage() {
         </div>
       </aside>
     </div>
+    <SheetContent side="right" className="max-h-[88dvh] gap-0 overflow-hidden rounded-t-xl border-sidebar-border bg-sidebar p-0 text-sidebar-foreground lg:hidden">
+      <SheetHeader className="shrink-0 border-b border-sidebar-border px-4 py-3 pr-12 text-left">
+        <SheetTitle className="text-sm">{valueOr(record.destination_facility?.name, "Bicol Medical Center")}</SheetTitle>
+        <SheetDescription className="text-xs">Recipient facility · Transfer status and actions</SheetDescription>
+      </SheetHeader>
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+        <section aria-label="Transfer lifecycle handshake" className="pb-4">
+          <div className="flex items-center justify-between gap-2"><h2 className="text-sm font-semibold">{lifecycleTitle}</h2><StatusBadge status={status} /></div>
+          <p className="mt-1 text-xs text-muted-foreground">Processed at {prettyDate(record.date_referred, true)}</p>
+          <div className="my-3 grid grid-cols-2 gap-1.5">{[0, 1].map((step) => <span key={step} className={`h-1 rounded-full ${isAdmitted ? "bg-emerald-500" : isReferred ? "bg-orange-500" : step === 0 ? "bg-orange-500" : "bg-border"}`} />)}</div>
+          <div className="grid grid-cols-2 text-xs text-muted-foreground"><span>Sent</span><span className="text-right">{isAdmitted ? "Admitted" : isReferred ? "Referred" : "Awaiting"}</span></div>
+          <p className="mt-1 text-xs text-muted-foreground">Last updated: {prettyDate(record.date_responded || record.date_referred, true)}</p>
+        </section>
+        <section className="border-t border-sidebar-border pt-4">
+          <h2 className="text-sm font-semibold">Referral information</h2>
+          <div className="mt-2">
+            <DrawerDetail icon={MapPin} label="Destination">{valueOr(record.destination_facility?.name, "Bicol Medical Center")}</DrawerDetail>
+            <DrawerDetail icon={Building2} label="Origin facility">{valueOr(record.referring_facility?.name)}</DrawerDetail>
+            <DrawerDetail icon={CalendarDays} label="Pregnancy">G{valueOr(record.obstetric_info?.gravida, "—")} P{valueOr(record.obstetric_info?.parity, "—")}</DrawerDetail>
+            <DrawerDetail icon={Activity} label="Age of gestation">{latestVitals?.gestational_age_weeks != null ? `${latestVitals.gestational_age_weeks} weeks` : "Not recorded"}</DrawerDetail>
+            <DrawerDetail icon={HeartPulse} label="Assessed risk"><StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} /></DrawerDetail>
+          </div>
+        </section>
+      </div>
+      <SheetFooter className="shrink-0 border-t border-sidebar-border bg-sidebar px-4 py-3">
+        <Button type="button" disabled={isResponding || !canAccept} onClick={() => { void updateStatus("admitted"); setIsMobileTransferOpen(false) }} className="h-10 w-full text-xs">{isResponding ? "Accepting…" : "Accept Transfer"}</Button>
+        <Button type="button" variant="outline" onClick={() => { setIsMobileTransferOpen(false); setIsInitiateReferralOpen(true) }} className="h-9 w-full text-xs">Initiate Referral</Button>
+      </SheetFooter>
+    </SheetContent>
+    </Sheet>
 
     <Dialog open={isInitiateReferralOpen} onOpenChange={setIsInitiateReferralOpen}>
       <DialogContent className="w-[calc(100%-2rem)] max-w-md gap-5">

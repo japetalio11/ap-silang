@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { DrawerHeading } from "@/components/ui/drawer-heading"
 import { Skeleton } from "@/components/ui/skeleton"
+import { EmptyStateContent } from "@/components/ui/table-empty-state"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { toast } from "sonner"
@@ -266,8 +267,8 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
 
             <div className="shrink-0 px-3 py-2">
               <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="queue" className="gap-1.5 px-2">Outbox Queue <span className="rounded-full bg-muted px-1.5 text-xs">{pendingCount}</span></TabsTrigger>
-                <TabsTrigger value="conflicts" className="gap-1.5 px-2">Conflicts <span className="rounded-full bg-amber-600 px-1.5 text-xs text-white">{conflicts.length}</span></TabsTrigger>
+                <TabsTrigger value="queue" className="px-2">Outbox Queue ({pendingCount})</TabsTrigger>
+                <TabsTrigger value="conflicts" className="px-2">Conflicts ({conflicts.length})</TabsTrigger>
               </TabsList>
             </div>
 
@@ -343,11 +344,7 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 py-10 text-center">
-                    <CheckCircle2 className="size-6 text-emerald-600" />
-                    <p className="text-xs font-medium">No changes waiting to sync</p>
-                    <p className="text-xs text-muted-foreground">Offline records and profile edits will appear here until synced.</p>
-                  </div>
+                  <EmptyStateContent icon={CheckCircle2} title="No changes waiting to sync" description="Offline records and profile edits will appear here until synced." />
                 )}
               </TabsContent>
 
@@ -361,7 +358,7 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
                       <div className="mt-3 flex justify-end"><Button variant="outline" onClick={() => setActiveConflict(conflict)} className="h-8 gap-1.5 border-sidebar-border bg-muted/30 px-3 text-xs text-foreground hover:bg-muted"><span>Resolve Conflict</span><ArrowRight className="size-3.5" /></Button></div>
                     </article>
                   ))}
-                </div> : <div className="flex flex-col items-center gap-2 py-10 text-center"><CheckCircle2 className="size-6 text-emerald-600" /><p className="text-xs font-medium">No conflicts to review</p><p className="text-xs text-muted-foreground">Conflicts will appear here if the same profile field changes online and offline.</p></div>}
+                </div> : <EmptyStateContent icon={CheckCircle2} title="No conflicts to review" description="Conflicts will appear here if the same profile field changes online and offline." />}
               </TabsContent>
             </div>
           </Tabs>

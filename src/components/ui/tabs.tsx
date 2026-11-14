@@ -5,22 +5,48 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { Tabs as TabsPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+
+const MobileTabsContext = React.createContext<{
+  value: string | undefined
+  onValueChange: (value: string) => void
+} | null>(null)
+
+function tabLabel(children: React.ReactNode): string {
+  if (typeof children === "string" || typeof children === "number") return String(children)
+  if (Array.isArray(children)) return children.map(tabLabel).filter(Boolean).join(" ")
+  if (React.isValidElement<{ children?: React.ReactNode }>(children)) return tabLabel(children.props.children)
+  return ""
+}
 
 function Tabs({
   className,
   orientation = "horizontal",
+  value,
+  defaultValue,
+  onValueChange,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.Root>) {
+  const [internalValue, setInternalValue] = React.useState(defaultValue)
+  const activeValue = value ?? internalValue
+  const changeValue = (nextValue: string) => {
+    if (value === undefined) setInternalValue(nextValue)
+    onValueChange?.(nextValue)
+  }
   return (
+    <MobileTabsContext.Provider value={{ value: activeValue, onValueChange: changeValue }}>
     <TabsPrimitive.Root
       data-slot="tabs"
       data-orientation={orientation}
+      value={activeValue}
+      onValueChange={changeValue}
       className={cn(
         "group/tabs flex gap-2 data-horizontal:flex-col",
         className
       )}
       {...props}
     />
+    </MobileTabsContext.Provider>
   )
 }
 
@@ -45,13 +71,33 @@ function TabsList({
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List> &
   VariantProps<typeof tabsListVariants>) {
+  const mobileTabs = React.useContext(MobileTabsContext)
+  const options = React.Children.toArray(props.children)
+    .filter((child): child is React.ReactElement<React.ComponentProps<typeof TabsPrimitive.Trigger>> =>
+      React.isValidElement(child) && typeof (child.props as { value?: unknown }).value === "string")
+    .map((child) => ({
+      value: child.props.value,
+      label: tabLabel(child.props.children).trim() || child.props.value.replace(/[-_]/g, " "),
+    }))
   return (
+    <>
+    {mobileTabs && options.length > 1 && (
+      <Select value={mobileTabs.value ?? options[0].value} onValueChange={mobileTabs.onValueChange}>
+        <SelectTrigger aria-label="Choose view" className="h-8 w-full min-w-0 text-xs md:hidden">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        </SelectContent>
+      </Select>
+    )}
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), className)}
+      className={cn(tabsListVariants({ variant }), options.length > 1 && "max-md:hidden", className)}
       {...props}
     />
+    </>
   )
 }
 

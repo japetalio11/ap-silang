@@ -298,7 +298,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         )}
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -394,6 +394,14 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="grid gap-3 md:hidden">
+        {filtered.map((facility) => <article key={facility.facility_id} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-foreground">{facility.facility_name}</h3><p className="mt-1 text-muted-foreground">{facility.type} · {facility.address || "Address not recorded"}</p></div><TableRowActions label={`Actions for ${facility.facility_name}`}><DropdownMenuItem onClick={() => openCreate(facility)}>Edit details</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(facility)}>Delete facility</DropdownMenuItem></TableRowActions></div>
+          <div className="mt-3 flex items-center justify-between gap-2"><span className="text-muted-foreground">{facility.contact_number || facility.email || "No contact recorded"}</span><span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span></div>
+        </article>)}
+        {filtered.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No facilities in this view.</div>}
       </div>
 
       <TablePaginationFooter rowCount={filtered.length} selectedCount={selected.length} />

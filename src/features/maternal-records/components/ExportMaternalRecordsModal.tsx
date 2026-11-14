@@ -67,7 +67,7 @@ export function ExportMaternalRecordsModal({ open, onOpenChange, exportCount, al
               </Label>
               <Label htmlFor="maternal-fields-comprehensive" className="flex cursor-pointer items-center gap-2.5 font-normal">
                 <RadioGroupItem id="maternal-fields-comprehensive" value="comprehensive" />
-                <span className="text-xs">Comprehensive EHR <span className="text-muted-foreground">(Full TCL &amp; vitals)</span></span>
+                <span className="text-xs">Comprehensive Health Record <span className="text-muted-foreground">(Full TCL &amp; vitals)</span></span>
               </Label>
             </RadioGroup>
           </section>

@@ -4,6 +4,8 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchAuditLogs, type AuditLogEntry } from "../api/superadmin-api"
 
@@ -89,7 +91,7 @@ export function SuperAdminAuditPage() {
         )}
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -101,7 +103,7 @@ export function SuperAdminAuditPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filteredLogs.length > 0 ? (
+            {loading ? <TableSkeletonRows columns={5} rows={5} checkboxColumn={false} /> : filteredLogs.length > 0 ? (
               filteredLogs.map((log) => (
                 <TableRow key={log.audit_id}>
                   <TableCell className="font-mono text-xs text-muted-foreground">
@@ -131,13 +133,21 @@ export function SuperAdminAuditPage() {
                 <TableCell colSpan={5} className="h-32 text-center text-xs text-muted-foreground">
                   <div className="flex flex-col items-center justify-center gap-1.5">
                     <FileText className="size-6 text-muted-foreground/60" />
-                    <span>{loading ? "Loading audit records..." : "No matching audit log entries found."}</span>
+                    <span>No matching audit log entries found.</span>
                   </div>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
+      <div className="grid gap-3 md:hidden">
+        {loading ? <MobileTableCardSkeleton count={3} /> : filteredLogs.map((log) => <article key={log.audit_id} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+          <div className="flex items-start justify-between gap-3"><h3 className="font-semibold text-foreground">{log.action}</h3><time className="shrink-0 text-muted-foreground">{new Date(log.timestamp).toLocaleDateString()}</time></div>
+          <p className="mt-2 text-foreground">{log.table_name} · {log.user ? `${log.user.first_name} ${log.user.last_name}` : "System Service"}</p>
+          {log.details && <p className="mt-2 break-words text-muted-foreground">{log.details}</p>}
+        </article>)}
+        {!loading && filteredLogs.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No matching audit entries.</div>}
       </div>
     </section>
   )

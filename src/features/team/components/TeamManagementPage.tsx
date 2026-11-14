@@ -31,7 +31,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
-import { Skeleton } from "@/components/ui/skeleton"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { ConfirmSensitiveActionDialog } from "@/components/ui/confirm-sensitive-action-dialog"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { EmptyStateContent, TableEmptyState } from "@/components/ui/table-empty-state"
@@ -52,6 +52,7 @@ export function TeamManagementPage() {
   const [search, setSearch] = useState("")
   const [filters, setFilters] = useState<Record<string, string[]>>({ Role: [], Facility: [], Status: [] })
   const [staff, setStaff] = useState<StaffRecord[]>([])
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [staffToDeactivate, setStaffToDeactivate] = useState<StaffRecord | null>(null)
   const [staffAction, setStaffAction] = useState<{ staff: StaffRecord; kind: "role" | "password" } | null>(null)
@@ -147,6 +148,12 @@ export function TeamManagementPage() {
     const matchesStatus = filters.Status.length === 0 || filters.Status.includes(staff.status)
     return matchesTab && matchesSearch && matchesRole && matchesFacility && matchesStatus
   })
+  const staffTabCounts = {
+    all: staff.length,
+    active: staff.filter((member) => member.status === "Active").length,
+    pending: staff.filter((member) => member.status === "Pending Activation").length,
+    deactivated: staff.filter((member) => member.status === "Deactivated").length,
+  }
 
   const toggleFilter = (filterName: string, option: string) => {
     setFilters((current) => ({
@@ -208,18 +215,18 @@ export function TeamManagementPage() {
       >
         <div className="sticky top-0 z-10 flex flex-col gap-4 bg-background dark:bg-black p-4 pl-3 pr-4 pb-4">
           {/* Tabs */}
-          <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0 flex-1 overflow-x-auto shrink-0 pb-2 -mb-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="w-full min-w-0 flex-1 overflow-x-auto pb-2 -mb-2 sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-max">
               <TabsList className="h-9 w-full md:w-max justify-start gap-1 *:flex-1 md:*:flex-initial">
-                <TabsTrigger value="all" className="text-xs font-medium px-2 py-1 h-full">All Staff</TabsTrigger>
-                <TabsTrigger value="active" className="text-xs font-medium px-2 py-1 h-full">Active</TabsTrigger>
-                <TabsTrigger value="pending" className="text-xs font-medium px-2 py-1 h-full">Pending Invites</TabsTrigger>
-                <TabsTrigger value="deactivated" className="text-xs font-medium px-2 py-1 h-full">Deactivated</TabsTrigger>
+                <TabsTrigger value="all" className="text-xs font-medium px-2 py-1 h-full">All Staff ({staffTabCounts.all})</TabsTrigger>
+                <TabsTrigger value="active" className="text-xs font-medium px-2 py-1 h-full">Active ({staffTabCounts.active})</TabsTrigger>
+                <TabsTrigger value="pending" className="text-xs font-medium px-2 py-1 h-full">Pending Invites ({staffTabCounts.pending})</TabsTrigger>
+                <TabsTrigger value="deactivated" className="text-xs font-medium px-2 py-1 h-full">Deactivated ({staffTabCounts.deactivated})</TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center justify-end gap-2">
             <TooltipProvider delayDuration={500}><Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Export staff" onClick={exportStaff} disabled={loading || filteredStaff.length === 0} className="hidden size-8 border-sidebar-border md:flex"><Download className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Export CSV</TooltipContent></Tooltip></TooltipProvider>
             <TooltipProvider delayDuration={500}><Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh team" onClick={() => void loadStaff()} disabled={loading} className="hidden size-8 border-sidebar-border md:flex"><RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} /></Button></TooltipTrigger><TooltipContent>Refresh staff</TooltipContent></Tooltip></TooltipProvider>
             <InviteTeamMemberModal>
@@ -272,7 +279,7 @@ export function TeamManagementPage() {
                 <TableHeader className="bg-card dark:bg-[#111]">
                   <TableRow className="border-sidebar-border hover:bg-transparent">
                     <TableHead className="w-12 text-center pl-4">
-                      <Checkbox className="border-sidebar-border" />
+                      <Checkbox aria-label="Select all staff in this view" checked={filteredStaff.length > 0 && filteredStaff.every((member) => selectedStaffIds.includes(member.id))} onCheckedChange={(checked) => setSelectedStaffIds((current) => checked === true ? Array.from(new Set([...current, ...filteredStaff.map((member) => member.id)])) : current.filter((id) => !filteredStaff.some((member) => member.id === id)))} className="border-sidebar-border" />
                     </TableHead>
                     <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Staff Member</TableHead>
                     <TableHead className="text-xs font-medium text-foreground dark:text-white whitespace-nowrap">Status</TableHead>
@@ -292,7 +299,7 @@ export function TeamManagementPage() {
                       tabIndex={0}
                     >
                       <TableCell className="pl-4">
-                        <Checkbox className="border-sidebar-border data-[state=checked]:bg-primary dark:data-[state=checked]:bg-white data-[state=checked]:text-primary-foreground dark:data-[state=checked]:text-black" />
+                        <Checkbox aria-label={`Select ${staff.name}`} checked={selectedStaffIds.includes(staff.id)} onClick={(event) => event.stopPropagation()} onCheckedChange={(checked) => setSelectedStaffIds((current) => checked === true ? Array.from(new Set([...current, staff.id])) : current.filter((id) => id !== staff.id))} className="border-sidebar-border" />
                       </TableCell>
                       <TableCell className="text-xs font-medium text-foreground dark:text-white">
                         <div className="min-w-0">
@@ -336,40 +343,22 @@ export function TeamManagementPage() {
 
 
           {/* Mobile Card List */}
-          <div className="flex md:hidden flex-col gap-4">
-            {loading ? Array.from({ length: 4 }, (_, index) => <article key={`staff-skeleton-${index}`} className="flex flex-col gap-4 rounded-md border border-sidebar-border p-4" aria-hidden="true"><div className="flex justify-between gap-3"><div className="flex-1 space-y-2"><Skeleton className="h-4 w-2/3" /><Skeleton className="h-3.5 w-1/2" /></div><Skeleton className="h-5 w-16" /></div><Skeleton className="h-3.5 w-3/4" /><Skeleton className="h-3.5 w-2/3" /></article>) : filteredStaff.map((staff) => (
-              <div 
+          <div className="flex flex-col gap-2 md:hidden">
+            {loading ? <MobileTableCardSkeleton /> : filteredStaff.map((staff) => (
+              <article
                 key={staff.id} 
-                className="flex flex-col p-4 rounded-xl border border-sidebar-border bg-card dark:bg-[#111] gap-4 cursor-pointer transition-colors hover:bg-accent dark:hover:bg-white/5"
+                className="flex min-w-0 flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 cursor-pointer transition-colors hover:bg-accent dark:bg-black dark:hover:bg-white/5"
                 onClick={() => navigate(`/dashboard/team/${staff.id}`)}
               >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="truncate text-sm font-semibold text-foreground dark:text-white">{staff.name}</h3>
-                    <p className="truncate text-xs text-muted-foreground">{staff.email}</p>
-                  </div>
-                  <StatusBadge status={staff.status} />
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Role</span>
-                    <div className="max-w-[65%] truncate rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 text-right text-xs dark:bg-[#222]">
-                      {staff.role}
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <Checkbox aria-label={`Select ${staff.name}`} checked={selectedStaffIds.includes(staff.id)} onClick={(event) => event.stopPropagation()} onCheckedChange={(checked) => setSelectedStaffIds((current) => checked === true ? Array.from(new Set([...current, staff.id])) : current.filter((id) => id !== staff.id))} className="border-sidebar-border" />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-foreground">{staff.name}</p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{staff.email}</p>
                     </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Facility</span>
-                    <span className="max-w-[65%] truncate text-right text-xs text-foreground dark:text-white">{staff.facility}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-muted-foreground">Contact</span>
-                    <span className="text-xs text-foreground dark:text-white text-right">{staff.phone}</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end pt-3 border-t border-sidebar-border">
-                  <TableRowActions label={`Actions for ${staff.name}`}>
+                  <TableRowActions label={`Actions for ${staff.name}`} className="-mt-1">
                     <DropdownMenuItem onSelect={() => openStaffAction(staff, "role")}>Edit Role</DropdownMenuItem>
                     <DropdownMenuItem onSelect={() => openStaffAction(staff, "password")}>Reset Password</DropdownMenuItem>
                     <DropdownMenuSeparator />
@@ -378,7 +367,13 @@ export function TeamManagementPage() {
                       : <DropdownMenuItem variant="destructive" onSelect={() => setStaffToDeactivate(staff)}>Deactivate Account</DropdownMenuItem>}
                   </TableRowActions>
                 </div>
-              </div>
+                <div className="flex flex-wrap items-center gap-1.5"><StatusBadge status={staff.status} /></div>
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs">
+                  <span className="text-muted-foreground">Role</span><span className="truncate">{staff.role}</span>
+                  <span className="text-muted-foreground">Facility</span><span className="truncate">{staff.facility}</span>
+                  <span className="text-muted-foreground">Contact</span><span>{staff.phone}</span>
+                </div>
+              </article>
             ))}
             {!loading && filteredStaff.length === 0 && (
               <div className="rounded-md border border-sidebar-border bg-card dark:bg-[#111]">
@@ -394,7 +389,7 @@ export function TeamManagementPage() {
             )}
           </div>
 
-          <TablePaginationFooter rowCount={filteredStaff.length} />
+          <TablePaginationFooter rowCount={filteredStaff.length} selectedCount={selectedStaffIds.filter((id) => filteredStaff.some((member) => member.id === id)).length} />
 
         </div>
       </div>

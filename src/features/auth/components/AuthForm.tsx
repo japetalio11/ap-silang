@@ -5,19 +5,16 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import {
   ArrowRight,
-  Baby,
   Eye,
   EyeOff,
-  HeartPulse,
   LoaderCircle,
-  ShieldCheck,
-  UsersRound,
 } from "lucide-react"
 import silangLogo from "@/assets/silang.svg"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { ResponsiveModal } from "@/components/ui/responsive-modal"
 import { ApiError } from "@/lib/api"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { toast } from "sonner"
@@ -55,6 +52,7 @@ export function AuthForm() {
   const [isGoogleReady, setIsGoogleReady] = useState(false)
   const [offlinePin, setOfflinePin] = useState("")
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine)
+  const [openPolicy, setOpenPolicy] = useState<"terms" | "privacy" | null>(null)
   const navigate = useNavigate()
   const { login, loginWithGoogle, unlockOffline, isAuthenticated } = useAuthSession()
   const savedOfflineUserStr = typeof window !== "undefined" ? window.localStorage.getItem("silang.auth.offline-user") : null
@@ -118,9 +116,15 @@ export function AuthForm() {
       await login({ ...values, rememberMe })
       navigate("/dashboard", { replace: true })
     } catch (error) {
-      toast.error(error instanceof ApiError || error instanceof Error
-        ? error.message
-        : "Unable to sign in. Check your connection and try again.")
+      if (error instanceof ApiError && error.status >= 500) {
+        toast.error("Sign-in is temporarily unavailable", {
+          description: "The server could not complete your sign-in. Please try again shortly.",
+        })
+      } else {
+        toast.error(error instanceof ApiError || error instanceof Error
+          ? error.message
+          : "Unable to sign in. Check your connection and try again.")
+      }
     } finally {
       setIsSubmitting(false)
     }
@@ -174,9 +178,9 @@ export function AuthForm() {
 
   return (
     <main className="h-dvh w-full overflow-hidden bg-background p-1 text-xs text-foreground sm:p-2" style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}>
-      <div className="grid h-full min-h-0 w-full grid-cols-1 lg:grid-cols-2">
-        <section className="flex h-full min-h-0 flex-col justify-between overflow-hidden px-4 py-3 selection:bg-accent selection:text-accent-foreground sm:px-8 sm:py-4 lg:px-10 xl:px-14">
-          <div className="mx-auto flex min-h-0 w-full max-w-[330px] flex-1 flex-col justify-center py-2">
+      <div className="flex h-full min-h-0 w-full items-center justify-center">
+        <section className="flex h-full min-h-0 w-full max-w-[420px] flex-col justify-center overflow-y-auto px-4 py-3 selection:bg-accent selection:text-accent-foreground sm:px-8 sm:py-4">
+          <div className="mx-auto flex min-h-0 w-full max-w-[330px] flex-col justify-center py-2">
             <header className="mb-6 text-center">
               <div className="mx-auto mb-3 flex size-9 items-center justify-center">
                 <img src={silangLogo} alt="Silang" className="size-8 object-contain dark:hidden" />
@@ -269,44 +273,32 @@ export function AuthForm() {
           </div>
 
           <p className="mx-auto max-w-[330px] text-center text-xs leading-relaxed text-muted-foreground">
-            By continuing, you agree to Silang&apos;s <a href="#" className="text-muted-foreground underline underline-offset-2">Terms of Service</a> and <a href="#" className="text-muted-foreground underline underline-offset-2">Health Data Privacy Policy</a>.
+            By continuing, you agree to Silang&apos;s <button type="button" onClick={() => setOpenPolicy("terms")} className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">Terms of Service</button> and <button type="button" onClick={() => setOpenPolicy("privacy")} className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">Health Data Privacy Policy</button>.
           </p>
         </section>
 
-        <aside className="relative m-1 hidden min-h-0 flex-col justify-between overflow-hidden rounded-md border border-border bg-background p-6 sm:m-2 lg:flex xl:p-10">
-          <div className="pointer-events-none absolute -right-24 -top-28 size-80 rounded-full bg-[#e8efeb]/70 blur-3xl dark:bg-[#183328]/60" />
-          <div className="pointer-events-none absolute -bottom-20 -left-20 size-72 rounded-full bg-[#f0f3f1] blur-3xl dark:bg-[#13231b]/60" />
-
-          <div className="relative text-center">
-            <h2 className="text-sm font-semibold tracking-[-0.025em] text-foreground">Care works better together.</h2>
-            <p className="mx-auto mt-1.5 max-w-sm text-xs leading-relaxed text-muted-foreground">Connect families, health workers, and clinic teams in one thoughtful workspace.</p>
+        <ResponsiveModal
+          open={openPolicy !== null}
+          onOpenChange={(open) => { if (!open) setOpenPolicy(null) }}
+          title={openPolicy === "terms" ? "Terms of Service" : "Health Data Privacy Policy"}
+          description={openPolicy === "terms" ? "Using Silang responsibly" : "How health information is handled in Silang"}
+          className="sm:max-w-lg"
+        >
+          <div className="max-h-[65dvh] space-y-4 overflow-y-auto pb-2 text-xs leading-relaxed text-muted-foreground">
+            {openPolicy === "terms" ? <>
+              <section><h3 className="font-semibold text-foreground">Authorized use</h3><p className="mt-1">Silang supports maternal care and clinic workflows. Use your account only for work you are authorized to perform and access only the records needed for that work.</p></section>
+              <section><h3 className="font-semibold text-foreground">Your account</h3><p className="mt-1">Keep your sign-in details and offline PIN private. Report suspected unauthorized access to your clinic administrator.</p></section>
+              <section><h3 className="font-semibold text-foreground">Clinical records</h3><p className="mt-1">Enter accurate information, review records before acting on them, and follow your facility&apos;s clinical and record-keeping procedures. Silang supports clinical judgment; it does not replace it.</p></section>
+              <section><h3 className="font-semibold text-foreground">Questions</h3><p className="mt-1">Contact your clinic administrator for access, account, or policy questions.</p></section>
+            </> : <>
+              <section><h3 className="font-semibold text-foreground">Health information</h3><p className="mt-1">Silang handles maternal profiles, pregnancy and consultation details, appointments, referrals, messages, and uploaded health records to support care.</p></section>
+              <section><h3 className="font-semibold text-foreground">Who can access records</h3><p className="mt-1">Access is intended for authorized care staff and the people involved in a patient&apos;s care or referral, according to their assigned roles and facility procedures.</p></section>
+              <section><h3 className="font-semibold text-foreground">Offline use</h3><p className="mt-1">Some records may be available on this device while offline and synchronized when a connection returns. Protect the device and its offline PIN.</p></section>
+              <section><h3 className="font-semibold text-foreground">Privacy questions</h3><p className="mt-1">Contact your clinic administrator to ask about access to, correction of, or handling of health records.</p></section>
+            </>}
           </div>
+        </ResponsiveModal>
 
-          <div className="relative mx-auto flex aspect-square w-full max-w-[390px] items-center justify-center" aria-label="Silang connects families, health workers, and clinics">
-            <svg viewBox="0 0 300 300" className="absolute inset-0 size-full" fill="none" aria-hidden="true">
-              <path d="M54 54H246M54 150H246M54 246H246M54 54V246M150 54V246M246 54V246M54 54 246 246M246 54 54 246" stroke="#cbd4ce" className="dark:stroke-[#53665a]" strokeWidth="1" strokeDasharray="1.5 4" />
-              <circle cx="150" cy="150" r="104" stroke="#e8ece9" className="dark:stroke-[#33433a]" strokeWidth="1" />
-            </svg>
-            <div className="relative grid grid-cols-3 items-center justify-items-center gap-x-7 gap-y-7 sm:gap-x-10 sm:gap-y-10">
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><UsersRound className="size-4" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><HeartPulse className="size-4" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><ShieldCheck className="size-4" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><Baby className="size-4" /></span>
-              <span className="flex size-[66px] items-center justify-center rounded-lg bg-[#003f2c] text-white shadow-[0_10px_24px_-10px_rgba(0,63,44,0.55)] ring-[7px] ring-background"><img src={silangLogo} alt="" className="size-8 object-contain brightness-0 invert" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><HeartPulse className="size-4" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><ShieldCheck className="size-4" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><Baby className="size-4" /></span>
-              <span className="flex size-11 items-center justify-center rounded-md border border-border bg-card text-[#003f2c] shadow-sm dark:text-[#a5c9b3]"><UsersRound className="size-4" /></span>
-            </div>
-          </div>
-
-          <div className="relative text-center">
-            <p className="text-xs font-medium text-muted-foreground">Maternal and newborn care, thoughtfully connected.</p>
-            <div className="mt-6 flex items-center justify-center gap-1.5" aria-label="Page 1 of 3">
-              <span className="h-1.5 w-4 rounded-full bg-[#003f2c]" /><span className="size-1.5 rounded-full bg-[#d6dbd7]" /><span className="size-1.5 rounded-full bg-[#d6dbd7]" />
-            </div>
-          </div>
-        </aside>
       </div>
     </main>
   )
