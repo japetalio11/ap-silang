@@ -19,6 +19,7 @@ void requestPersistentStorage()
 import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthForm } from "@/features/auth/components/AuthForm"
+import { ContactAdminPage } from "@/features/auth/components/ContactAdminPage"
 import { RequireSuperAdminAuth, isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { DashboardLayout } from "@/features/dashboard/components/DashboardLayout"
 import { DashboardPage } from "@/features/dashboard/components/DashboardPage"
@@ -63,6 +64,7 @@ function AppRoutes() {
     let pageTitle = "Dashboard"
 
     if (pathname === "/") pageTitle = "Sign In"
+    else if (pathname === "/contact-admin") pageTitle = "Contact Clinic Admin"
     else if (pathname === "/dashboard") pageTitle = "Dashboard"
     else if (pathname === "/dashboard/calendar") pageTitle = "Appointments"
     else if (pathname === "/dashboard/team") pageTitle = "Staff Management"
@@ -94,6 +96,7 @@ function AppRoutes() {
   return <>
     <Routes location={backgroundLocation ?? location}>
       <Route path="/" element={<AuthForm />} />
+      <Route path="/contact-admin" element={<ContactAdminPage />} />
       <Route path="/superadmin" element={<RequireSuperAdminAuth><SuperAdminLayout /></RequireSuperAdminAuth>}>
         <Route index element={<Navigate to="/superadmin/overview" replace />} />
         <Route path="overview" element={<SuperAdminOverviewPage />} />

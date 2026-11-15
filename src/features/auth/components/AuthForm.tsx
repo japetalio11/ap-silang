@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { ResponsiveModal } from "@/components/ui/responsive-modal"
+import { AuthLegalModal, type LegalModalTab } from "@/features/auth/components/AuthLegalModal"
 import { ApiError } from "@/lib/api"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
@@ -53,7 +53,7 @@ export function AuthForm() {
   const [isGoogleReady, setIsGoogleReady] = useState(false)
   const [offlinePin, setOfflinePin] = useState("")
   const [isOffline, setIsOffline] = useState(() => typeof navigator !== "undefined" && !navigator.onLine)
-  const [openPolicy, setOpenPolicy] = useState<"terms" | "privacy" | null>(null)
+  const [openPolicy, setOpenPolicy] = useState<LegalModalTab | null>(null)
   const navigate = useNavigate()
   const { login, loginWithGoogle, unlockOffline, isAuthenticated, session } = useAuthSession()
   const savedOfflineUserStr = typeof window !== "undefined" ? window.localStorage.getItem("silang.auth.offline-user") : null
@@ -284,35 +284,45 @@ export function AuthForm() {
             </form>
             </Form>
 
-            <p className="mt-5 text-center text-xs text-muted-foreground">Having trouble signing in? <a href="#" className="font-medium text-foreground hover:underline">Contact your clinic admin</a></p>
+            <p className="mt-5 text-center text-xs text-muted-foreground">Having trouble signing in? <button type="button" onClick={() => navigate("/contact-admin")} className="font-medium text-foreground hover:underline">Contact your clinic admin</button></p>
           </div>
 
-          <p className="mx-auto max-w-[330px] text-center text-xs leading-relaxed text-muted-foreground">
-            By continuing, you agree to Silang&apos;s <button type="button" onClick={() => setOpenPolicy("terms")} className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">Terms of Service</button> and <button type="button" onClick={() => setOpenPolicy("privacy")} className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring">Health Data Privacy Policy</button>.
+          <p className="mx-auto max-w-[340px] text-center text-xs leading-relaxed text-muted-foreground">
+            By continuing, you agree to Pili Health&apos;s{" "}
+            <button
+              type="button"
+              onClick={() => setOpenPolicy("terms")}
+              className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Terms of Service
+            </button>
+            ,{" "}
+            <button
+              type="button"
+              onClick={() => setOpenPolicy("privacy")}
+              className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Health Data Privacy Policy
+            </button>
+            , and{" "}
+            <button
+              type="button"
+              onClick={() => setOpenPolicy("consent")}
+              className="underline underline-offset-2 hover:text-foreground focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              Clinical Consent
+            </button>
+            .
           </p>
         </section>
 
-        <ResponsiveModal
+        <AuthLegalModal
           open={openPolicy !== null}
-          onOpenChange={(open) => { if (!open) setOpenPolicy(null) }}
-          title={openPolicy === "terms" ? "Terms of Service" : "Health Data Privacy Policy"}
-          description={openPolicy === "terms" ? "Using Silang responsibly" : "How health information is handled in Silang"}
-          className="sm:max-w-lg"
-        >
-          <div className="max-h-[65dvh] space-y-4 overflow-y-auto pb-2 text-xs leading-relaxed text-muted-foreground">
-            {openPolicy === "terms" ? <>
-              <section><h3 className="font-semibold text-foreground">Authorized use</h3><p className="mt-1">Silang supports maternal care and clinic workflows. Use your account only for work you are authorized to perform and access only the records needed for that work.</p></section>
-              <section><h3 className="font-semibold text-foreground">Your account</h3><p className="mt-1">Keep your sign-in details and offline PIN private. Report suspected unauthorized access to your clinic administrator.</p></section>
-              <section><h3 className="font-semibold text-foreground">Clinical records</h3><p className="mt-1">Enter accurate information, review records before acting on them, and follow your facility&apos;s clinical and record-keeping procedures. Silang supports clinical judgment; it does not replace it.</p></section>
-              <section><h3 className="font-semibold text-foreground">Questions</h3><p className="mt-1">Contact your clinic administrator for access, account, or policy questions.</p></section>
-            </> : <>
-              <section><h3 className="font-semibold text-foreground">Health information</h3><p className="mt-1">Silang handles maternal profiles, pregnancy and consultation details, appointments, referrals, messages, and uploaded health records to support care.</p></section>
-              <section><h3 className="font-semibold text-foreground">Who can access records</h3><p className="mt-1">Access is intended for authorized care staff and the people involved in a patient&apos;s care or referral, according to their assigned roles and facility procedures.</p></section>
-              <section><h3 className="font-semibold text-foreground">Offline use</h3><p className="mt-1">Some records may be available on this device while offline and synchronized when a connection returns. Protect the device and its offline PIN.</p></section>
-              <section><h3 className="font-semibold text-foreground">Privacy questions</h3><p className="mt-1">Contact your clinic administrator to ask about access to, correction of, or handling of health records.</p></section>
-            </>}
-          </div>
-        </ResponsiveModal>
+          onOpenChange={(open) => {
+            if (!open) setOpenPolicy(null)
+          }}
+          initialTab={openPolicy ?? "terms"}
+        />
 
       </div>
     </main>
