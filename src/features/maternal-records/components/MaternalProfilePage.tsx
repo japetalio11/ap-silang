@@ -497,6 +497,20 @@ export function MaternalProfilePage() {
   }, [session?.token, motherId, profileRevision])
 
   useEffect(() => {
+    const handleOpenConsultation = () => setIsVitalsOpen(true)
+    window.addEventListener("silang:open-log-consultation", handleOpenConsultation)
+    const searchParams = new URLSearchParams(window.location.search)
+    if (searchParams.get("openConsultation") === "true") {
+      setIsVitalsOpen(true)
+      const cleanUrl = window.location.pathname
+      window.history.replaceState({}, "", cleanUrl)
+    }
+    return () => {
+      window.removeEventListener("silang:open-log-consultation", handleOpenConsultation)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!isChangeStaffOpen || !session?.token) return
     setIsStaffLoading(true)
     getMaternalStaff(session.token)

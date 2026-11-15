@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -41,11 +41,12 @@ function Field({ id, label, required, children }: { id: string; label: string; r
 
 export type AppointmentMotherOption = { id: string; userId?: string; name: string; serial: string; age: string }
 
-export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMother, mothers = [], loadingMothers = false, facilityId }: {
+export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMother, initialDate, mothers = [], loadingMothers = false, facilityId }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   onCreate: (event: AppEvent, values: AppointmentFormValues) => Promise<AppEvent | void> | AppEvent | void
   initialMother?: AppointmentMotherOption
+  initialDate?: string
   mothers?: AppointmentMotherOption[]
   loadingMothers?: boolean
   facilityId?: string | null
@@ -56,6 +57,22 @@ export function CreateAppointmentModal({ open, onOpenChange, onCreate, initialMo
     resolver: zodResolver(appointmentSchema),
     defaultValues: { motherId: initialMother?.id ?? "", appointmentType: "Prenatal Checkup", date: "", time: "09:00" },
   })
+
+  useEffect(() => {
+    if (open) {
+      const isClosed = initialDate && getClosedDates(facilityId).some((item) => item.date === initialDate)
+      form.reset({
+        motherId: initialMother?.id ?? "",
+        appointmentType: "Prenatal Checkup",
+        date: isClosed ? "" : (initialDate ?? ""),
+        time: "09:00",
+      })
+      setSelectedMotherId(initialMother?.id ?? "")
+      if (isClosed) {
+        form.setError("date", { message: "The selected date is closed for appointments. Please choose an open date." })
+      }
+    }
+  }, [open, initialMother?.id, initialDate, facilityId, form])
   const selectedMother = initialMother?.id === selectedMotherId
     ? initialMother
     : mothers.find((mother) => mother.id === selectedMotherId)

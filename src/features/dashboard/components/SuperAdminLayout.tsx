@@ -48,11 +48,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { OfflineSyncDrawer } from "./OfflineSyncDrawer"
 import { toast } from "sonner"
 import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { StaffAvatar } from "@/features/team/components/StaffAvatar"
+import { db } from "@/lib/db/silangDatabase"
 
 const superAdminNavigation = [
   { label: "Municipal Overview", path: "/superadmin/overview", icon: LayoutDashboard },
@@ -91,9 +92,22 @@ export function SuperAdminLayout() {
     ? `${session.user.first_name} ${session.user.last_name}`.trim()
     : "Super Administrator"
 
-  const userInitials = session?.user
-    ? `${session.user.first_name?.[0] || "S"}${session.user.last_name?.[0] || "A"}`.toUpperCase()
-    : "SA"
+  const [userProfileUrl, setUserProfileUrl] = useState<string | null>(session?.user.profile_url || null)
+
+  useEffect(() => {
+    if (session?.user.profile_url) {
+      setUserProfileUrl(session.user.profile_url)
+      return
+    }
+    if (!session?.user.user_id) return
+    let active = true
+    db.staff.where("user_id").equals(session.user.user_id).first().then((record) => {
+      if (active && record?.profile_url) {
+        setUserProfileUrl(record.profile_url)
+      }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [session?.user.user_id, session?.user.profile_url])
 
   useEffect(() => {
     document.title = `${activeSection.label} - Silang Superadmin`
@@ -177,11 +191,11 @@ export function SuperAdminLayout() {
                       size="lg"
                       className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground transition-all duration-200 ease-linear group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
                     >
-                      <Avatar className="size-8 shrink-0 rounded-lg">
-                        <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-                          {userInitials}
-                        </AvatarFallback>
-                      </Avatar>
+                      <StaffAvatar
+                        src={userProfileUrl}
+                        name={userFullName}
+                        className="size-8 shrink-0 rounded-lg text-xs"
+                      />
                       <span className="flex min-w-0 flex-1 flex-col overflow-hidden whitespace-nowrap text-left group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0">
                         <span className="truncate text-xs font-medium">{userFullName}</span>
                         <span className="truncate text-[11px] text-muted-foreground">

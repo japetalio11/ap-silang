@@ -111,6 +111,17 @@ export function SuperAdminStaffDetailPage() {
     return () => window.clearTimeout(timer)
   }, [loadStaff])
 
+  useEffect(() => {
+    const handleStaffUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ staffId?: string; payload?: { profile_url?: string } }>
+      if (customEvent.detail?.staffId === staffId && customEvent.detail?.payload?.profile_url) {
+        setStaff((prev) => prev ? { ...prev, avatar: customEvent.detail.payload!.profile_url! } : null)
+      }
+    }
+    window.addEventListener("silang:staff-updated", handleStaffUpdated)
+    return () => window.removeEventListener("silang:staff-updated", handleStaffUpdated)
+  }, [staffId])
+
   const changeRole = async (role: string) => {
     if (!staff || !token) return false
     try {
@@ -355,7 +366,14 @@ export function SuperAdminStaffDetailPage() {
         </section>
       ) : staff ? (
         <>
-          <StaffProfileContent staff={staff} activities={activities} onRoleChange={changeRole} />
+          <StaffProfileContent
+            staff={staff}
+            activities={activities}
+            onRoleChange={changeRole}
+            onAvatarUpdated={(newAvatar) => {
+              setStaff((prev) => prev ? { ...prev, avatar: newAvatar } : null)
+            }}
+          />
           <StaffScheduleDialog key={staff.id} open={isScheduleOpen} onOpenChange={setIsScheduleOpen} staff={staff} />
         </>
       ) : (

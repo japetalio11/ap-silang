@@ -32,8 +32,25 @@ const staffSchema = z.object({
   password: z.string().min(6, "Use at least 6 characters."),
 })
 
-export function InviteTeamMemberModal({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false)
+export function InviteTeamMemberModal({
+  children,
+  open: controlledOpen,
+  onOpenChange: setControlledOpen,
+}: {
+  children?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = React.useCallback((value: boolean) => {
+    if (isControlled) {
+      setControlledOpen?.(value)
+    } else {
+      setInternalOpen(value)
+    }
+  }, [isControlled, setControlledOpen])
   const { session } = useAuthSession()
   const [values, setValues] = React.useState({ firstName: "", middleName: "", lastName: "", phone: "", email: "", role: "Nurse", password: "" })
   const [errors, setErrors] = React.useState<Record<string, string>>({})

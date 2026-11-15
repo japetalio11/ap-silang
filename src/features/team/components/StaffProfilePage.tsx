@@ -18,6 +18,7 @@ export function StaffProfilePage() {
   const [activities, setActivities] = useState<StaffActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
+
   const loadStaff = useCallback(async () => {
     if (!token || !staffId) return
     setLoading(true)
@@ -35,6 +36,17 @@ export function StaffProfilePage() {
     const timer = window.setTimeout(() => { void loadStaff() }, 0)
     return () => window.clearTimeout(timer)
   }, [loadStaff])
+
+  useEffect(() => {
+    const handleStaffUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ staffId?: string; payload?: { profile_url?: string } }>
+      if (customEvent.detail?.staffId === staffId && customEvent.detail?.payload?.profile_url) {
+        setStaff((prev) => prev ? { ...prev, avatar: customEvent.detail.payload!.profile_url! } : null)
+      }
+    }
+    window.addEventListener("silang:staff-updated", handleStaffUpdated)
+    return () => window.removeEventListener("silang:staff-updated", handleStaffUpdated)
+  }, [staffId])
 
   const changeRole = async (role: string) => {
     if (!staff || !token) return false
@@ -67,7 +79,6 @@ export function StaffProfilePage() {
         {staff && !loading && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <Button variant="outline" onClick={() => setIsScheduleOpen(true)} className="h-8 gap-1.5 px-2.5 text-xs"><CalendarDays className="size-3.5" />Staff Schedule</Button>
           <Button variant="outline" onClick={() => void changeActiveStatus()} className="h-8 px-2.5 text-xs">{staff.status === "Active" ? "Deactivate Account" : "Activate Account"}</Button>
-          <Button variant="outline" disabled title="Staff profile editing is not available through the connected API." className="h-8 px-2.5 text-xs">Edit Profile</Button>
         </div>}
       </div>
       {loading ? (
@@ -83,7 +94,14 @@ export function StaffProfilePage() {
         </section>
       ) : staff ? (
         <>
-          <StaffProfileContent staff={staff} activities={activities} onRoleChange={changeRole} />
+          <StaffProfileContent
+            staff={staff}
+            activities={activities}
+            onRoleChange={changeRole}
+            onAvatarUpdated={(newAvatar) => {
+              setStaff((prev) => prev ? { ...prev, avatar: newAvatar } : null)
+            }}
+          />
           <StaffScheduleDialog key={staff.id} open={isScheduleOpen} onOpenChange={setIsScheduleOpen} staff={staff} />
         </>
       ) : (

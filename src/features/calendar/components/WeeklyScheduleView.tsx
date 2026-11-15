@@ -1,6 +1,6 @@
 import { format, startOfWeek, addDays, isSameDay, startOfDay } from "date-fns"
 import type { AppEvent } from "./types"
-
+import type { ClosedDateRecord } from "../closed-dates"
 import { CustomEvent } from "./CustomEvent"
 import { useIsMobile } from "@/hooks/use-mobile"
 
@@ -8,11 +8,12 @@ interface WeeklyScheduleViewProps {
   viewDate: Date
   selectedDate: Date
   events: AppEvent[]
+  closedDates?: ClosedDateRecord[]
   onSelectDate: (date: Date) => void
   onSelectEvent: (event: AppEvent) => void
 }
 
-export function WeeklyScheduleView({ viewDate, selectedDate, events, onSelectDate, onSelectEvent }: WeeklyScheduleViewProps) {
+export function WeeklyScheduleView({ viewDate, selectedDate, events, closedDates = [], onSelectDate, onSelectEvent }: WeeklyScheduleViewProps) {
   const isMobile = useIsMobile()
   const scheduleStartHour = 7
   const scheduleEndHour = 17
@@ -85,14 +86,17 @@ export function WeeklyScheduleView({ viewDate, selectedDate, events, onSelectDat
               })
               if (overlapGroup.length) finishOverlapGroup()
 
+              const dayDateStr = format(day, "yyyy-MM-dd")
+              const closedInfo = closedDates.find((item) => item.date === dayDateStr)
+
               return (
                 <div
                   key={day.toISOString()}
-                  className={`relative flex min-w-0 flex-1 flex-col transition-colors ${idx < days.length - 1 ? 'border-r border-sidebar-border' : ''} ${isActiveDay ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-white/5'}`}
+                  className={`relative flex min-w-0 flex-1 flex-col transition-colors ${idx < days.length - 1 ? 'border-r border-sidebar-border' : ''} ${isActiveDay ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-white/5'} ${closedInfo ? 'bg-destructive/5' : ''}`}
                 >
                   <div
                     onClick={() => onSelectDate(day)}
-                    className="flex flex-col items-center py-4 shrink-0 h-20 border-b border-sidebar-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 dark:bg-black/95 sticky top-0 z-20 cursor-pointer relative"
+                    className={`flex flex-col items-center py-4 shrink-0 h-20 border-b border-sidebar-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 dark:bg-black/95 sticky top-0 z-20 cursor-pointer relative ${closedInfo ? 'bg-destructive/10 dark:bg-destructive/15' : ''}`}
                   >
                     <span className="text-xs font-medium text-foreground dark:text-white/70">
                       {format(day, 'E')}
@@ -100,9 +104,14 @@ export function WeeklyScheduleView({ viewDate, selectedDate, events, onSelectDat
                     <div className={`mt-1 flex size-9 shrink-0 items-center justify-center rounded-full text-lg font-semibold ${isActiveDay ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-foreground dark:text-white'}`}>
                       {format(day, 'd')}
                     </div>
+                    {closedInfo && (
+                      <span className="mt-0.5 rounded bg-destructive/20 px-1 text-[9px] font-semibold text-destructive">
+                        Closed
+                      </span>
+                    )}
                   </div>
 
-                  <div className="relative shrink-0 cursor-pointer" style={{ height: `${scheduleHeight}px` }} onClick={() => onSelectDate(day)}>
+                  <div className={`relative shrink-0 ${closedInfo ? 'cursor-not-allowed bg-destructive/5' : 'cursor-pointer'}`} style={{ height: `${scheduleHeight}px` }} onClick={() => onSelectDate(day)}>
 
                     {Array.from({ length: scheduleEndHour - scheduleStartHour + 1 }).map((_, i) => (
                       <div key={i} className="absolute w-full border-t border-sidebar-border/30 pointer-events-none" style={{ top: `${i * 60}px` }}></div>

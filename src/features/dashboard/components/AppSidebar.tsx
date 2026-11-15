@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react"
 import { useNavigate, useLocation } from "react-router-dom"
 import {
   Sidebar,
@@ -19,6 +20,8 @@ import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { backendAssetUrl } from "@/lib/api"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
+import { StaffAvatar } from "@/features/team/components/StaffAvatar"
+import { db } from "@/lib/db/silangDatabase"
 
 const navigationGroups = [
   {
@@ -68,10 +71,25 @@ export function AppSidebar() {
   const facilityName = session?.facility?.facility_name || (session?.user.facility_id ? "Loading facility…" : "No facility assigned")
   const facilityType = session?.facility?.type || (session?.user.facility_id ? "Facility profile" : "Facility not set")
 
+  const [userProfileUrl, setUserProfileUrl] = useState<string | null>(session?.user.profile_url || null)
+
+  useEffect(() => {
+    if (session?.user.profile_url) {
+      setUserProfileUrl(session.user.profile_url)
+      return
+    }
+    if (!session?.user.user_id) return
+    let active = true
+    db.staff.where("user_id").equals(session.user.user_id).first().then((record) => {
+      if (active && record?.profile_url) {
+        setUserProfileUrl(record.profile_url)
+      }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [session?.user.user_id, session?.user.profile_url])
+
   const handleNavigate = (path: string) => {
     setOpenMobile(false)
-    // Wait for the bottom sheet's closing animation to completely finish (typically 300ms)
-    // before triggering the navigation. This prevents layout shifts and stuttering.
     setTimeout(() => {
       if (path === "/dashboard/settings") navigate(path, { state: { backgroundLocation: location } })
       else navigate(path)
@@ -162,9 +180,11 @@ export function AppSidebar() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground transition-all duration-200 ease-linear group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg overflow-hidden bg-transparent transition-all duration-200 ease-linear">
-                    <img src="https://github.com/shadcn.png" alt={signedInName} className="h-full w-full object-cover" />
-                  </div>
+                  <StaffAvatar
+                    src={userProfileUrl}
+                    name={signedInName}
+                    className="size-8 shrink-0 rounded-lg text-xs"
+                  />
                   <div className="flex flex-col flex-1 text-left overflow-hidden transition-all duration-200 ease-linear max-w-[250px] group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0 whitespace-nowrap">
                     <span className="truncate font-medium text-xs">{signedInName}</span>
                     <span className="truncate text-xs font-normal text-muted-foreground">{signedInRole}</span>

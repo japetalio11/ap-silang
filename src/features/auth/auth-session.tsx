@@ -16,6 +16,7 @@ export type AuthUser = {
   facility_id: string | null
   email?: string | null
   phone_number?: string | null
+  profile_url?: string | null
 }
 
 export type AuthFacility = {
@@ -140,6 +141,18 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         return nextSession
       })
     }
+    const onStaffUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ staffId?: string; payload?: { profile_url?: string } }>
+      const updatedStaffId = customEvent.detail?.staffId
+      const newProfileUrl = customEvent.detail?.payload?.profile_url
+      if (!updatedStaffId || !newProfileUrl) return
+      setSession((current) => {
+        if (!current || current.user.user_id !== updatedStaffId) return current
+        const nextSession = { ...current, user: { ...current.user, profile_url: newProfileUrl } }
+        persistStoredSession(nextSession)
+        return nextSession
+      })
+    }
     const onFacilityUpdated = (event: Event) => {
       const detail = (event as CustomEvent<AuthFacility>).detail
       if (!detail?.facility_id) return
@@ -151,9 +164,11 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       })
     }
     window.addEventListener("silang:profile-updated", onProfileUpdated)
+    window.addEventListener("silang:staff-updated", onStaffUpdated)
     window.addEventListener("silang:facility-updated", onFacilityUpdated)
     return () => {
       window.removeEventListener("silang:profile-updated", onProfileUpdated)
+      window.removeEventListener("silang:staff-updated", onStaffUpdated)
       window.removeEventListener("silang:facility-updated", onFacilityUpdated)
     }
   }, [])

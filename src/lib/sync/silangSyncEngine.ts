@@ -606,6 +606,29 @@ export class SilangSyncEngine {
                 })
               }
             }
+          } else if (item.entity_type === "staff" && item.action === "UPDATE") {
+            const rawId = String(resolvedPayload.user_id || item.temp_id || item.endpoint.split("/")[2] || "")
+            const staffId = this.tempIdMap.get(rawId) || rawId
+            if (staffId) {
+              const localStaff = await db.staff.get(staffId) || await db.staff.where("user_id").equals(staffId).first()
+              if (localStaff) {
+                const resStaff = (response?.user ?? response?.result) as Record<string, any> | undefined
+                const nextProfileUrl = (resStaff?.profile_url as string) || (resolvedPayload.profile_url as string) || (resolvedPayload.photo_url as string) || localStaff.profile_url
+                await db.staff.update(localStaff.id, {
+                  ...localStaff,
+                  ...resolvedPayload,
+                  profile_url: nextProfileUrl,
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
+            if (item.blob_ids && item.blob_ids.length > 0) {
+              for (const blobId of item.blob_ids) {
+                await db.blobs.delete(blobId).catch(() => {})
+              }
+            }
+            window.dispatchEvent(new CustomEvent("silang:staff-updated", { detail: { staffId, payload: resolvedPayload } }))
           } else if (item.entity_type === "mother" && item.action === "UPDATE") {
             const rawId = String(resolvedPayload.mother_id || item.temp_id || item.endpoint.split("/").pop() || "")
             const motherId = this.tempIdMap.get(rawId) || rawId
