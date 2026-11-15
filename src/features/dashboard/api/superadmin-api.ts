@@ -9,6 +9,7 @@ export type FacilityItem = {
   email: string
   type: string
   facility_profile_url?: string | null
+  is_active?: boolean
 }
 
 export type FacilityOverviewSummary = {
@@ -200,6 +201,7 @@ export async function fetchAllFacilities(token: string): Promise<FacilityItem[]>
           contact_number: f.contact_number,
           email: f.email,
           facility_profile_url: f.facility_profile_url || null,
+          is_active: f.is_active !== undefined ? f.is_active : true,
           sync_status: "synced",
           updated_at: Date.now(),
         }))
@@ -237,6 +239,15 @@ export async function deleteFacilityRecord(token: string, facilityId: string): P
     token,
     body: JSON.stringify({ facility_id: facilityId }),
   })
+}
+
+export async function toggleFacilityStatus(token: string, facilityId: string, isActive: boolean): Promise<FacilityItem> {
+  const response = await apiRequest<{ result: FacilityItem }>(`/facility/${encodeURIComponent(facilityId)}/status`, {
+    method: "PATCH",
+    token,
+    body: JSON.stringify({ is_active: isActive }),
+  })
+  return response.result
 }
 
 export async function fetchAuditLogs(token: string): Promise<AuditLogEntry[]> {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X } from "lucide-react"
+import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X, AlertTriangle, PowerOff, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -24,6 +24,7 @@ import {
   createFacilityRecord,
   updateFacilityRecord,
   deleteFacilityRecord,
+  toggleFacilityStatus,
   fetchMunicipalOverview,
   type FacilityItem,
 } from "../api/superadmin-api"
@@ -37,6 +38,15 @@ function exportCsv(filename: string, rows: string[][]) {
   link.download = filename
   link.click()
   URL.revokeObjectURL(link.href)
+}
+
+function normalizeFacilityType(rawType?: string, defaultType = "RHU"): string {
+  if (!rawType) return defaultType
+  const lower = rawType.toLowerCase()
+  if (lower.includes("bhs") || lower.includes("barangay") || lower.includes("station")) {
+    return "BHS"
+  }
+  return "RHU"
 }
 
 function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
@@ -56,8 +66,9 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState<FacilityItem | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<FacilityItem | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [statusTarget, setStatusTarget] = useState<FacilityItem | null>(null)
+  const [statusAction, setStatusAction] = useState<"deactivate" | "reactivate" | null>(null)
+  const [statusSubmitting, setStatusSubmitting] = useState(false)
 
   const [form, setForm] = useState({
     facility_name: "",
@@ -131,8 +142,17 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
     })
   }, [facilities, isRhu])
 
+  const counts = useMemo(() => {
+    const total = kindFiltered.length
+    const active = kindFiltered.filter((f) => f.is_active !== false).length
+    const deactivated = kindFiltered.filter((f) => f.is_active === false).length
+    return { total, active, deactivated }
+  }, [kindFiltered])
+
   const filtered = useMemo(() => {
     return kindFiltered.filter((facility) => {
+      if (tab === "active" && facility.is_active === false) return false
+      if (tab === "deactivated" && facility.is_active !== false) return false
       const term = query.trim().toLowerCase()
       const matchesSearch =
         !term ||
@@ -141,7 +161,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         )
       return matchesSearch
     })
-  }, [kindFiltered, query])
+  }, [kindFiltered, query, tab])
 
   useEffect(() => {
     setPage(1)
@@ -157,7 +177,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       setEditing(facility)
       setForm({
         facility_name: facility.facility_name,
-        type: facility.type,
+        type: normalizeFacilityType(facility.type, isRhu ? "RHU" : "BHS"),
         address: facility.address,
         contact_number: facility.contact_number,
         email: facility.email,
@@ -176,8 +196,8 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   }
 
   const saveFacility = async () => {
-    if (!form.facility_name.trim() || !form.address.trim()) {
-      toast.error("Validation error", { description: "Please enter the facility name and address." })
+    if (!form.facility_name.trim() || !form.address.trim() || !form.type.trim()) {
+      toast.error("Validation error", { description: "Please enter the facility name, type, and address." })
       return
     }
 
@@ -266,25 +286,31 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteTarget || !session?.token) return
+  const handleToggleStatus = async () => {
+    if (!statusTarget || !session?.token || !statusAction) return
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("Cannot delete while offline", {
-        description: "Facility deletion requires an active internet connection to ensure clinical safety boundaries.",
+      toast.error("Connectivity required", {
+        description: "Facility status updates require an active server connection to ensure clinical safety boundaries.",
       })
       return
     }
-    setDeleting(true)
+    setStatusSubmitting(true)
+    const newStatus = statusAction === "reactivate"
     try {
-      await deleteFacilityRecord(session.token, deleteTarget.facility_id)
-      toast.success(`${singular} removed`)
-      setDeleteTarget(null)
+      await toggleFacilityStatus(session.token, statusTarget.facility_id, newStatus)
+      toast.success(`${singular} ${newStatus ? "reactivated" : "deactivated"} successfully`, {
+        description: newStatus
+          ? "Staff accounts can now log in and manage services for this facility."
+          : "Staff access blocked and active mother enrollments unassigned.",
+      })
+      setStatusTarget(null)
+      setStatusAction(null)
       await loadData()
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to delete facility"
-      toast.error("Cannot delete facility", { description: message })
+      const message = error instanceof Error ? error.message : "Failed to change facility status"
+      toast.error("Operation failed", { description: message })
     } finally {
-      setDeleting(false)
+      setStatusSubmitting(false)
     }
   }
 
@@ -295,7 +321,13 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="all">
-              All {isRhu ? "RHUs" : "BHSs"} ({kindFiltered.length})
+              All {isRhu ? "RHUs" : "BHSs"} ({counts.total})
+            </TabsTrigger>
+            <TabsTrigger value="active">
+              Active ({counts.active})
+            </TabsTrigger>
+            <TabsTrigger value="deactivated">
+              Deactivated ({counts.deactivated})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -433,7 +465,10 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                   {facilityStaffCounts[facility.facility_id] ?? 0}
                 </TableCell>
                 <TableCell>
-                  <StatusBadge status="Active" />
+                  <StatusBadge
+                    status={facility.is_active === false ? "inactive" : "active"}
+                    text={facility.is_active === false ? "Deactivated" : "Active"}
+                  />
                 </TableCell>
                 <TableCell>
                   <TableRowActions label={`Actions for ${facility.facility_name}`}>
@@ -454,13 +489,29 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                       <Edit2 className="mr-2 size-4" />
                       Edit details
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => setDeleteTarget(facility)}
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      Delete facility
-                    </DropdownMenuItem>
+                    {facility.is_active === false ? (
+                      <DropdownMenuItem
+                        className="text-emerald-600 focus:text-emerald-700 dark:text-emerald-400"
+                        onClick={() => {
+                          setStatusTarget(facility)
+                          setStatusAction("reactivate")
+                        }}
+                      >
+                        <ShieldCheck className="mr-2 size-4 text-emerald-600 dark:text-emerald-400" />
+                        Reactivate facility
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        className="text-amber-600 focus:text-amber-700 dark:text-amber-400"
+                        onClick={() => {
+                          setStatusTarget(facility)
+                          setStatusAction("deactivate")
+                        }}
+                      >
+                        <PowerOff className="mr-2 size-4 text-amber-600 dark:text-amber-400" />
+                        Deactivate facility
+                      </DropdownMenuItem>
+                    )}
                   </TableRowActions>
                 </TableCell>
               </TableRow>
@@ -528,18 +579,40 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                   <Edit2 className="mr-2 size-4" />
                   Edit details
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="text-destructive focus:text-destructive"
-                  onClick={() => setDeleteTarget(facility)}
-                >
-                  <Trash2 className="mr-2 size-4" />
-                  Delete facility
-                </DropdownMenuItem>
+                {facility.is_active === false ? (
+                  <DropdownMenuItem
+                    className="text-emerald-600 focus:text-emerald-700 dark:text-emerald-400"
+                    onClick={() => {
+                      setStatusTarget(facility)
+                      setStatusAction("reactivate")
+                    }}
+                  >
+                    <ShieldCheck className="mr-2 size-4 text-emerald-600 dark:text-emerald-400" />
+                    Reactivate facility
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    className="text-amber-600 focus:text-amber-700 dark:text-amber-400"
+                    onClick={() => {
+                      setStatusTarget(facility)
+                      setStatusAction("deactivate")
+                    }}
+                  >
+                    <PowerOff className="mr-2 size-4 text-amber-600 dark:text-amber-400" />
+                    Deactivate facility
+                  </DropdownMenuItem>
+                )}
               </TableRowActions>
             </div>
             <div className="mt-3 flex items-center justify-between gap-2">
               <span className="text-muted-foreground">{facility.contact_number || facility.email || "No contact recorded"}</span>
-              <span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span>
+              <div className="flex items-center gap-2">
+                <StatusBadge
+                  status={facility.is_active === false ? "inactive" : "active"}
+                  text={facility.is_active === false ? "Deactivated" : "Active"}
+                />
+                <span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span>
+              </div>
             </div>
           </article>
         ))}
@@ -625,30 +698,75 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+      <Dialog open={!!statusTarget && !!statusAction} onOpenChange={(open) => !open && setStatusTarget(null)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete {singular.toLowerCase()}?</DialogTitle>
-            <DialogDescription>
-              This will remove {deleteTarget?.facility_name} from the central municipal database. This action cannot be
-              undone if there are no linked clinical records.
+            <div className="flex items-center gap-2">
+              {statusAction === "deactivate" ? (
+                <div className="flex size-9 items-center justify-center rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="size-5" />
+                </div>
+              ) : (
+                <div className="flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="size-5" />
+                </div>
+              )}
+              <DialogTitle>
+                {statusAction === "deactivate"
+                  ? `Deactivate ${statusTarget?.facility_name}?`
+                  : `Reactivate ${statusTarget?.facility_name}?`}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs leading-relaxed">
+              {statusAction === "deactivate"
+                ? "Deactivating this facility enforces institutional safeguards across the municipal health network:"
+                : "Reactivating this facility will restore institutional access and allow staff members to log in and resume clinical care services."}
             </DialogDescription>
           </DialogHeader>
-          {typeof navigator !== "undefined" && !navigator.onLine && (
-            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-              Facility deletion requires an active internet connection to ensure clinical safety boundaries.
+
+          {statusAction === "deactivate" && statusTarget && (
+            <div className="space-y-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-300">
+              <div className="flex items-start gap-2">
+                <PowerOff className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  <strong>Staff Access Locked:</strong> All staff assigned to this facility ({facilityStaffCounts[statusTarget.facility_id] ?? 0} staff) will immediately be prevented from logging in.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  <strong>Maternal Care Unassigned:</strong> Any mothers currently assigned or enrolled at this facility will be unassigned so their care can be safely transferred.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  <strong>Data Preservation:</strong> All historical clinical checkups, birth records, and audit logs remain securely preserved.
+                </span>
+              </div>
             </div>
           )}
-          <DialogFooter>
-            <Button variant="outline" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+
+          {typeof navigator !== "undefined" && !navigator.onLine && (
+            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              Facility status updates require an active internet connection to ensure clinical safety boundaries.
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-3">
+            <Button variant="outline" disabled={statusSubmitting} onClick={() => setStatusTarget(null)}>
               Cancel
             </Button>
             <Button
-              variant="destructive"
-              disabled={deleting || (typeof navigator !== "undefined" && !navigator.onLine)}
-              onClick={handleDelete}
+              variant={statusAction === "deactivate" ? "destructive" : "default"}
+              disabled={statusSubmitting || (typeof navigator !== "undefined" && !navigator.onLine)}
+              onClick={handleToggleStatus}
             >
-              {deleting ? "Deleting..." : "Delete facility"}
+              {statusSubmitting
+                ? "Processing..."
+                : statusAction === "deactivate"
+                ? "Confirm Deactivation"
+                : "Confirm Reactivation"}
             </Button>
           </DialogFooter>
         </DialogContent>

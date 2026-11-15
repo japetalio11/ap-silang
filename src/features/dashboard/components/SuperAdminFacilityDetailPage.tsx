@@ -15,11 +15,15 @@ import {
   MapPin,
   MoreVertical,
   Phone,
+  PowerOff,
   RefreshCw,
   RotateCcw,
   Search,
   Shield,
+  ShieldAlert,
+  ShieldCheck,
   UserCheck,
+  UserPlus,
   UserX,
   Users,
 } from "lucide-react"
@@ -62,6 +66,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { db } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { createStaff } from "@/features/team/api"
 import {
   adminResetStaffPassword,
   fetchAllFacilities,
@@ -69,6 +74,7 @@ import {
   reassignMotherFacility,
   reassignStaffFacility,
   updateFacilityRecord,
+  toggleFacilityStatus,
   updateStaffActiveStatus,
   updateStaffRole,
   type FacilityHubDetails,
@@ -77,6 +83,15 @@ import {
   type FacilityItem,
   type StaffItem,
 } from "../api/superadmin-api"
+
+function normalizeFacilityType(rawType?: string): "RHU" | "BHS" {
+  if (!rawType) return "RHU"
+  const lower = rawType.toLowerCase()
+  if (lower.includes("bhs") || lower.includes("barangay") || lower.includes("station")) {
+    return "BHS"
+  }
+  return "RHU"
+}
 
 export function SuperAdminFacilityDetailPage() {
   const { facilityId } = useParams<{ facilityId: string }>()
@@ -88,6 +103,23 @@ export function SuperAdminFacilityDetailPage() {
   const [allFacilities, setAllFacilities] = useState<FacilityItem[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("staff")
+
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [statusAction, setStatusAction] = useState<"deactivate" | "reactivate">("deactivate")
+  const [submittingStatus, setSubmittingStatus] = useState(false)
+
+  const [addStaffOpen, setAddStaffOpen] = useState(false)
+  const [addStaffSubmitting, setAddStaffSubmitting] = useState(false)
+  const [addStaffForm, setAddStaffForm] = useState({
+    first_name: "",
+    middle_name: "",
+    last_name: "",
+    role: "Admin",
+    email: "",
+    phone_number: "",
+    password: "",
+    address: "",
+  })
 
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [editForm, setEditForm] = useState({
@@ -155,7 +187,7 @@ export function SuperAdminFacilityDetailPage() {
       setAllFacilities(facs)
       setEditForm({
         facility_name: hub.facility_name,
-        type: hub.type,
+        type: normalizeFacilityType(hub.type),
         address: hub.address,
         contact_number: hub.contact_number,
         email: hub.email,
@@ -244,6 +276,79 @@ export function SuperAdminFacilityDetailPage() {
       toast.error("Update failed", { description: message })
     } finally {
       setSavingFacility(false)
+    }
+  }
+
+  const handleToggleFacilityStatus = async () => {
+    if (!session?.token || !facilityId || !data) return
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast.error("Connectivity required", {
+        description: "Facility status updates require an active server connection to ensure clinical safety boundaries.",
+      })
+      return
+    }
+    setSubmittingStatus(true)
+    const newStatus = statusAction === "reactivate"
+    try {
+      await toggleFacilityStatus(session.token, facilityId, newStatus)
+      toast.success(`Facility ${newStatus ? "reactivated" : "deactivated"} successfully`, {
+        description: newStatus
+          ? "Staff accounts can now log in and manage services for this facility."
+          : "Staff access blocked and active mother enrollments unassigned.",
+      })
+      setStatusDialogOpen(false)
+      loadData()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to change facility status"
+      toast.error("Operation failed", { description: message })
+    } finally {
+      setSubmittingStatus(false)
+    }
+  }
+
+  const handleAddStaff = async () => {
+    if (!session?.token || !facilityId) return
+    if (!addStaffForm.first_name.trim() || !addStaffForm.last_name.trim() || !addStaffForm.email.trim() || !addStaffForm.password.trim()) {
+      toast.error("Validation error", { description: "First name, last name, email, and password are required." })
+      return
+    }
+    if (addStaffForm.password.length < 6) {
+      toast.error("Validation error", { description: "Password must be at least 6 characters." })
+      return
+    }
+    setAddStaffSubmitting(true)
+    try {
+      await createStaff(session.token, {
+        first_name: addStaffForm.first_name.trim(),
+        middle_name: addStaffForm.middle_name.trim() || undefined,
+        last_name: addStaffForm.last_name.trim(),
+        role: addStaffForm.role,
+        email: addStaffForm.email.trim().toLowerCase(),
+        phone_number: addStaffForm.phone_number.trim() || undefined,
+        password: addStaffForm.password,
+        address: addStaffForm.address.trim() || undefined,
+        facility_id: facilityId,
+      })
+      toast.success("Staff member created", {
+        description: `${addStaffForm.first_name} ${addStaffForm.last_name} (${addStaffForm.role}) can now log in to access this facility.`,
+      })
+      setAddStaffOpen(false)
+      setAddStaffForm({
+        first_name: "",
+        middle_name: "",
+        last_name: "",
+        role: "Admin",
+        email: "",
+        phone_number: "",
+        password: "",
+        address: "",
+      })
+      loadData()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to create staff member"
+      toast.error("Creation failed", { description: message })
+    } finally {
+      setAddStaffSubmitting(false)
     }
   }
 
@@ -612,12 +717,76 @@ export function SuperAdminFacilityDetailPage() {
             <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          <Button size="sm" className="h-8 gap-1.5" onClick={() => setEditDialogOpen(true)}>
+          <Button
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={() => {
+              setEditForm({
+                facility_name: data.facility_name,
+                type: normalizeFacilityType(data.type),
+                address: data.address,
+                contact_number: data.contact_number,
+                email: data.email,
+              })
+              setEditDialogOpen(true)
+            }}
+          >
             <Edit2 className="size-3.5" />
             Edit Facility
           </Button>
+          {data.is_active === false ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400"
+              onClick={() => {
+                setStatusAction("reactivate")
+                setStatusDialogOpen(true)
+              }}
+            >
+              <ShieldCheck className="size-3.5" />
+              Reactivate Facility
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
+              onClick={() => {
+                setStatusAction("deactivate")
+                setStatusDialogOpen(true)
+              }}
+            >
+              <PowerOff className="size-3.5" />
+              Deactivate Facility
+            </Button>
+          )}
         </div>
       </div>
+
+      {data.is_active === false && (
+        <div className="flex items-center gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs text-amber-900 dark:text-amber-300">
+          <AlertTriangle className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <div className="flex-1">
+            <p className="font-semibold text-sm">Facility Deactivated</p>
+            <p className="mt-0.5 text-xs opacity-90">
+              Staff members of this facility are blocked from logging in, and all enrolled mothers have been unassigned. Clinical records remain safely preserved.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-8 shrink-0 border-emerald-500/30 bg-background text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400"
+            onClick={() => {
+              setStatusAction("reactivate")
+              setStatusDialogOpen(true)
+            }}
+          >
+            <ShieldCheck className="mr-1.5 size-3.5" />
+            Reactivate
+          </Button>
+        </div>
+      )}
 
       <div className="rounded-lg border border-sidebar-border bg-card p-3.5 shadow-xs">
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
@@ -627,7 +796,10 @@ export function SuperAdminFacilityDetailPage() {
               <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
                 {data.type}
               </span>
-              <StatusBadge status="Active" />
+              <StatusBadge
+                status={data.is_active === false ? "inactive" : "active"}
+                text={data.is_active === false ? "Deactivated" : "Active"}
+              />
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1">
@@ -744,6 +916,17 @@ export function SuperAdminFacilityDetailPage() {
                 Reset Filter
               </Button>
             )}
+
+            <div className="ml-auto">
+              <Button
+                size="sm"
+                className="h-8 gap-1.5"
+                onClick={() => setAddStaffOpen(true)}
+              >
+                <UserPlus className="size-3.5" />
+                Add Staff
+              </Button>
+            </div>
           </div>
 
           <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
@@ -766,7 +949,13 @@ export function SuperAdminFacilityDetailPage() {
                     description={
                       staffQuery.trim().length > 0
                         ? "No staff match your search or filter parameters."
-                        : "No personnel currently assigned to this facility."
+                        : `No personnel currently assigned to ${data.facility_name}. Add a staff member to enable login access.`
+                    }
+                    action={
+                      <Button size="sm" onClick={() => setAddStaffOpen(true)}>
+                        <UserPlus className="mr-1.5 size-3.5" />
+                        Add Staff
+                      </Button>
                     }
                   />
                 ) : (
@@ -1433,7 +1622,7 @@ export function SuperAdminFacilityDetailPage() {
               />
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(false)}>
               Cancel
             </Button>
@@ -1469,7 +1658,7 @@ export function SuperAdminFacilityDetailPage() {
               </Select>
             </div>
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
+          <DialogFooter className="gap-2 sm:gap-3">
             <Button variant="outline" size="sm" onClick={() => setRoleDialogOpen(false)}>
               Cancel
             </Button>
@@ -1815,6 +2004,205 @@ export function SuperAdminFacilityDetailPage() {
           <DialogFooter>
             <Button size="sm" onClick={() => setReferralDetailOpen(false)}>
               Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              {statusAction === "deactivate" ? (
+                <div className="flex size-9 items-center justify-center rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="size-5" />
+                </div>
+              ) : (
+                <div className="flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="size-5" />
+                </div>
+              )}
+              <DialogTitle className="text-base font-semibold">
+                {statusAction === "deactivate"
+                  ? `Deactivate ${data.facility_name}?`
+                  : `Reactivate ${data.facility_name}?`}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs leading-relaxed">
+              {statusAction === "deactivate"
+                ? "Deactivating this facility enforces institutional safeguards across the municipal health network:"
+                : "Reactivating this facility will restore institutional access and allow staff members to log in and resume clinical care services."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {statusAction === "deactivate" && (
+            <div className="space-y-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-300">
+              <div className="flex items-start gap-2">
+                <PowerOff className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  <strong>Staff Access Locked:</strong> All staff assigned to this facility ({data.users?.length ?? 0} staff) will immediately be prevented from logging in.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  <strong>Maternal Care Unassigned:</strong> Any mothers currently assigned or enrolled ({data.motherEnrollments?.length ?? 0} active enrollments) will be unassigned so their care can be safely transferred.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  <strong>Data Preservation:</strong> All historical clinical checkups, birth records, and audit logs remain securely preserved.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {typeof navigator !== "undefined" && !navigator.onLine && (
+            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              Facility status updates require an active internet connection to ensure clinical safety boundaries.
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-3">
+            <Button variant="outline" size="sm" disabled={submittingStatus} onClick={() => setStatusDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant={statusAction === "deactivate" ? "destructive" : "default"}
+              disabled={submittingStatus || (typeof navigator !== "undefined" && !navigator.onLine)}
+              onClick={handleToggleFacilityStatus}
+            >
+              {submittingStatus
+                ? "Processing..."
+                : statusAction === "deactivate"
+                ? "Confirm Deactivation"
+                : "Confirm Reactivation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addStaffOpen} onOpenChange={setAddStaffOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <UserPlus className="size-5" />
+              </div>
+              <div>
+                <DialogTitle className="text-base font-semibold">Add Healthcare Staff</DialogTitle>
+                <DialogDescription className="text-xs">
+                  Create an institutional user account directly assigned to {data.facility_name}.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="grid grid-cols-1 gap-3 py-2 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">
+                First Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={addStaffForm.first_name}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, first_name: e.target.value }))}
+                placeholder="Juan"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Middle Name</Label>
+              <Input
+                value={addStaffForm.middle_name}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, middle_name: e.target.value }))}
+                placeholder="Santos"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label className="text-xs">
+                Last Name <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                value={addStaffForm.last_name}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, last_name: e.target.value }))}
+                placeholder="Dela Cruz"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">
+                Staff Role <span className="text-destructive">*</span>
+              </Label>
+              <Select
+                value={addStaffForm.role}
+                onValueChange={(val) => setAddStaffForm((prev) => ({ ...prev, role: val }))}
+              >
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Admin">Admin (Facility Head)</SelectItem>
+                  <SelectItem value="Doctor">Doctor</SelectItem>
+                  <SelectItem value="Midwife">Midwife</SelectItem>
+                  <SelectItem value="Nurse">Nurse</SelectItem>
+                  <SelectItem value="HealthWorker">Health Worker (BHW)</SelectItem>
+                  <SelectItem value="Staff">Clinic Staff</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">
+                Official Email <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="email"
+                value={addStaffForm.email}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="staff@silang.ph"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Phone Number</Label>
+              <Input
+                value={addStaffForm.phone_number}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, phone_number: e.target.value }))}
+                placeholder="09XX XXX XXXX"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">
+                Initial Password <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                type="password"
+                value={addStaffForm.password}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, password: e.target.value }))}
+                placeholder="Min. 6 characters"
+                className="h-8 text-xs"
+              />
+            </div>
+            <div className="space-y-1 sm:col-span-2">
+              <Label className="text-xs">Address / Residence</Label>
+              <Input
+                value={addStaffForm.address}
+                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, address: e.target.value }))}
+                placeholder="Barangay, Silang, Cavite"
+                className="h-8 text-xs"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-3">
+            <Button variant="outline" size="sm" disabled={addStaffSubmitting} onClick={() => setAddStaffOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" disabled={addStaffSubmitting} onClick={handleAddStaff}>
+              {addStaffSubmitting ? "Creating Staff..." : "Create Staff Member"}
             </Button>
           </DialogFooter>
         </DialogContent>

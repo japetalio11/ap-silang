@@ -228,6 +228,7 @@ export interface LocalFacility {
   contact_number: string
   email: string
   facility_profile_url?: string | null
+  is_active?: boolean
   sync_status: SyncStatus
   updated_at: number
   [key: string]: any
