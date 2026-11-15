@@ -327,8 +327,8 @@ export function CalendarPage() {
           />
         </div>
         {isLoading && <div className="absolute inset-0 z-20 flex flex-col overflow-hidden rounded-md border border-sidebar-border bg-background p-3 dark:bg-black" aria-label="Loading appointments" aria-busy="true">
-          <div className="grid shrink-0 grid-cols-5 gap-2 border-b border-sidebar-border pb-2">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="mx-auto h-3.5 w-16 max-w-full" />)}</div>
-          <div className="grid min-h-0 flex-1 grid-cols-5 grid-rows-5">{Array.from({ length: 25 }, (_, index) => <div key={index} className="flex min-w-0 flex-col gap-3 border-b border-r border-sidebar-border p-2"><Skeleton className="size-5 rounded-full" />{index % 3 === 0 && <><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-4/5" /></>}</div>)}</div>
+          <div className="grid shrink-0 grid-cols-5 gap-2 border-b border-sidebar-border pb-2" aria-hidden="true">{Array.from({ length: 5 }, (_, index) => <Skeleton key={index} className="mx-auto h-3 w-14 max-w-full" />)}</div>
+          <div className="grid min-h-0 flex-1 grid-cols-5 grid-rows-5" aria-hidden="true">{Array.from({ length: 25 }, (_, index) => <div key={index} className="flex min-w-0 items-start border-b border-r border-sidebar-border p-2"><Skeleton className="size-4 rounded-full" /></div>)}</div>
         </div>}
       </div>
 

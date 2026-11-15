@@ -1,4 +1,5 @@
 import { getApiCacheScope, readCachedApiValue, writeCachedApiValue } from "@/lib/offline-api-cache"
+import { normalizeStatusJsonBody } from "@/lib/utils"
 
 export type ApiErrorBody = {
   error?: string
@@ -16,7 +17,7 @@ export class ApiError extends Error {
 }
 
 const configuredOrigin = import.meta.env.VITE_BACKEND_API_URL?.trim().replace(/\/+$/, "")
-const apiRoot = configuredOrigin
+const apiRoot = import.meta.env.DEV ? "/api/v1" : configuredOrigin
   ? `${configuredOrigin.endsWith("/api/v1") ? configuredOrigin : `${configuredOrigin}/api/v1`}`
   : "/api/v1"
 
@@ -49,7 +50,7 @@ export async function apiRequest<T>(
   }
   let response: Response
   try {
-    response = await fetch(url, { ...requestOptions, headers: requestHeaders })
+    response = await fetch(url, { ...requestOptions, body: normalizeStatusJsonBody(requestOptions.body), headers: requestHeaders })
   } catch (error) {
     if (isCacheableRead) {
       try {

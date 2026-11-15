@@ -36,11 +36,11 @@ export function TablePaginationFooter({
   }
 
   return (
-    <div className={cn("flex min-h-14 w-full flex-wrap items-center justify-between gap-x-6 gap-y-3 px-0 py-3 text-xs text-muted-foreground", className)}>
+    <div className={cn("flex min-h-14 w-full flex-wrap items-center justify-between gap-x-6 gap-y-3 px-0 py-3 text-xs text-muted-foreground max-sm:flex-col max-sm:items-stretch", className)}>
       <span>{selectedCount} of {rowCount} row(s) selected.</span>
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-5">
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-5 max-sm:ml-0 max-sm:justify-between max-sm:gap-2">
         <div className="flex items-center gap-2">
-          <span className="whitespace-nowrap font-medium text-foreground">Rows per page</span>
+          <span className="whitespace-nowrap font-medium text-foreground max-sm:sr-only">Rows per page</span>
           <Select value={String(pageSize)} onValueChange={setPageSize}>
             <SelectTrigger aria-label="Rows per page" className="h-8 w-[72px] border-sidebar-border bg-background px-2">
               <SelectValue />
@@ -53,10 +53,10 @@ export function TablePaginationFooter({
         <span className="whitespace-nowrap font-medium text-foreground">Page {page} of {pageCount}</span>
         <TooltipProvider delayDuration={500}>
           <div className="flex items-center gap-1">
-            <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="First page" disabled={isFirstPage} onClick={() => onPageChange?.(1)} className="size-8 border-sidebar-border"><ChevronsLeft className="size-3.5" /></Button></TooltipTrigger><TooltipContent>First page</TooltipContent></Tooltip>
+            <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="First page" disabled={isFirstPage} onClick={() => onPageChange?.(1)} className="size-8 border-sidebar-border max-sm:hidden"><ChevronsLeft className="size-3.5" /></Button></TooltipTrigger><TooltipContent>First page</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Previous page" disabled={isFirstPage} onClick={() => onPageChange?.(Math.max(1, page - 1))} className="size-8 border-sidebar-border"><ChevronLeft className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Previous page</TooltipContent></Tooltip>
             <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Next page" disabled={isLastPage} onClick={() => onPageChange?.(Math.min(pageCount, page + 1))} className="size-8 border-sidebar-border"><ChevronRight className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Next page</TooltipContent></Tooltip>
-            <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Last page" disabled={isLastPage} onClick={() => onPageChange?.(pageCount)} className="size-8 border-sidebar-border"><ChevronsRight className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Last page</TooltipContent></Tooltip>
+            <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Last page" disabled={isLastPage} onClick={() => onPageChange?.(pageCount)} className="size-8 border-sidebar-border max-sm:hidden"><ChevronsRight className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Last page</TooltipContent></Tooltip>
           </div>
         </TooltipProvider>
       </div>

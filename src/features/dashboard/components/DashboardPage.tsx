@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
@@ -277,7 +278,7 @@ export function DashboardPage() {
 
           {appointmentViews.map((view) => (
             <TabsContent key={view.value} value={view.value} className="mt-3 flex flex-col gap-2">
-              <div className="overflow-x-auto rounded-md border border-sidebar-border bg-background dark:bg-black">
+              <div className="hidden overflow-x-auto rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
                 <Table>
                   <TableHeader className="bg-card dark:bg-[#111]">
                     <TableRow className="border-sidebar-border hover:bg-transparent">
@@ -304,6 +305,19 @@ export function DashboardPage() {
                       : <TableEmptyState colSpan={6} icon={CalendarDays} title={hasActiveFilters ? "No appointments match your filters" : "No appointments in this view"} description={hasActiveFilters ? "Adjust or reset the search and filters to see appointments." : view.value === "today" ? "There are no appointments scheduled for today." : `Appointments in the ${view.label.toLowerCase()} view will appear here.`} action={!hasActiveFilters ? <Button onClick={() => navigate("/dashboard/calendar")} className="h-8 gap-1.5 px-2.5 text-xs"><CalendarPlus className="size-3.5" />Schedule Appointment</Button> : undefined} />}
                   </TableBody>
                 </Table>
+              </div>
+              <div className="grid gap-3 md:hidden">
+                {isLoading ? <MobileTableCardSkeleton count={3} /> : pageRows.map((row) => (
+                  <article key={row.appointment.appointment_id} className="rounded-md border border-sidebar-border bg-background p-3 text-xs dark:bg-black">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0"><p className="truncate text-sm font-semibold text-foreground">{row.name}</p><p className="mt-1 text-muted-foreground">{row.start ? format(row.start, "MMM d, yyyy · h:mm a") : "Date not set"}</p></div>
+                      <StatusBadge status={row.status} label={formatStatusLabel(row.status)} />
+                    </div>
+                    <p className="mt-3 font-medium text-foreground">{row.appointment.appointment_type || "Appointment"}</p>
+                    {row.appointment.reason && <p className="mt-1 text-muted-foreground">{row.appointment.reason}</p>}
+                  </article>
+                ))}
+                {!isLoading && pageRows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No appointments in this view.</div>}
               </div>
               <TablePaginationFooter rowCount={filteredRows.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={setPageSize} />
             </TabsContent>

@@ -2,6 +2,7 @@ import { format, startOfWeek, addDays, isSameDay, startOfDay } from "date-fns"
 import type { AppEvent } from "./types"
 
 import { CustomEvent } from "./CustomEvent"
+import { useIsMobile } from "@/hooks/use-mobile"
 
 interface WeeklyScheduleViewProps {
   viewDate: Date
@@ -12,6 +13,7 @@ interface WeeklyScheduleViewProps {
 }
 
 export function WeeklyScheduleView({ viewDate, selectedDate, events, onSelectDate, onSelectEvent }: WeeklyScheduleViewProps) {
+  const isMobile = useIsMobile()
   const scheduleStartHour = 7
   const scheduleEndHour = 17
   const scheduleStartMinutes = scheduleStartHour * 60
@@ -19,7 +21,7 @@ export function WeeklyScheduleView({ viewDate, selectedDate, events, onSelectDat
   const scheduleHeight = scheduleEndMinutes - scheduleStartMinutes
 
   const startDate = startOfWeek(viewDate, { weekStartsOn: 1 })
-  const days = Array.from({ length: 5 }).map((_, i) => addDays(startDate, i))
+  const days = isMobile ? [selectedDate] : Array.from({ length: 5 }).map((_, i) => addDays(startDate, i))
 
   return (
     <div className="flex-1 w-full flex overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-[#000000]">
@@ -42,7 +44,7 @@ export function WeeklyScheduleView({ viewDate, selectedDate, events, onSelectDat
             </div>
           </div>
 
-          <div className="flex-1 flex min-w-[700px]">
+          <div className="flex min-w-0 flex-1 md:min-w-[700px]">
             {days.map((day, idx) => {
               const isActiveDay = isSameDay(day, selectedDate)
               const dayStart = startOfDay(day)

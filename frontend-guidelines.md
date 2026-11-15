@@ -134,7 +134,7 @@ Use semantic tokens so surfaces respond to light and dark mode:
 - Keep tab labels text-only throughout the system. Use icons in navigation, actions, filters, and status badges, not inside tabs.
 - Use the shared `Button` `filter` variant with `size="filter"` for filter pills so height, dashed border, spacing, and theme colors match Maternal Records.
 - Reuse the segmented muted background for peer filters or view switches. In light mode, selected is black/white and unselected is muted text; keep dark mode theme-aware.
-- Keep labels concise. On narrow screens, let the group scroll horizontally or stack intentionally; do not let a large number of tabs become unreadably compressed.
+- Keep labels concise. On phone widths, view tabs become one labeled select dropdown through the shared `TabsList`; do not squeeze or horizontally scroll a long tab strip.
 - Use tabs for switching related views, not as a substitute for primary navigation.
 
 ### Table and List Toolbar Hierarchy
@@ -148,7 +148,7 @@ Use semantic tokens so surfaces respond to light and dark mode:
 ### Cards, Tables, and Data
 
 - Use the shared `Card` primitives when their spacing and structure fit. If a feature uses a custom bordered panel, keep its surface, border, radius, and padding consistent with nearby cards.
-- Data tables should favor compact typography, clear column headings, subtle row separators, aligned numbers, and responsive overflow. Keep table actions close to the relevant row or table toolbar.
+- Data tables should favor compact typography, clear column headings, subtle row separators, aligned numbers, and responsive overflow. Keep table actions close to the relevant row or table toolbar. On phones, render the same data as stacked cards with the primary field first, labeled secondary details, selection when applicable, and the same row actions. Do not make users scroll a desktop table sideways on a phone.
 - Every data table starts with a row-selection checkbox column at the far left, including tables in profile sub-tabs. Include a select-all checkbox in the header and matching row checkboxes; keep the action column at the far right without a visible header.
 - Row action cells use a compact vertical-ellipsis trigger and the shared `TableRowActions` menu. Start directly with concise, row-specific commands; do not add an `Actions` heading or a separator above the first command. Use subtle separators only between distinct command groups, mark destructive commands with the destructive variant, and keep them in the final group. Stop row-click propagation from the trigger.
 - Destructive or high-impact actions such as deleting a record, cancelling a transfer or appointment, or deactivating an account must open a confirmation dialog before proceeding. State the exact record and consequence, require password entry, and use a clearly worded destructive confirmation button. Never execute these actions directly from a context menu.
@@ -160,7 +160,7 @@ Use semantic tokens so surfaces respond to light and dark mode:
 
 ### Modals, Drawers, and Sidepeeks
 
-- Use `ResponsiveModal` for content that should become a dialog on desktop and a Vaul drawer on mobile. Use the underlying `Dialog` or `Drawer` when a screen needs specialized behavior.
+- Use `ResponsiveModal` for content that should become a dialog on desktop and a Vaul drawer on mobile. Existing `DialogContent` follows the same bottom-sheet placement on phones. Use the underlying `Dialog` or `Drawer` when a screen needs specialized behavior, and keep its content within the visible viewport and safe area.
 - Use the shared `DrawerHeading` for drawer headers: a 32px rounded icon tile with a subtle sidebar-border ring, followed by a left-aligned title and supporting description. Keep the icon, title, and description vertically centered and use the same compact typography across drawers; place close or status controls at the far right without displacing the text.
 - Standard right-side drawers use the Inter-Clinic Referrals width: 75% of the viewport, capped at 24rem (384px). Keep specialized wide detail drawers, such as Appointment Details, at their explicitly designed width.
 - Do not add a top border to the first content section directly below `DrawerHeading`; its bottom border already separates the header. Add section separators only between later content sections, and avoid doubled borders at adjacent section edges.

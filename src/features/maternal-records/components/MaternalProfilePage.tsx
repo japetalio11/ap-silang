@@ -4,8 +4,6 @@ import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
 import { format } from "date-fns"
 import {
-  Activity,
-  AlertTriangle,
   ArrowLeft,
   ArrowLeftRight,
   Baby,
@@ -15,13 +13,11 @@ import {
   Download,
   Eye,
   FileText,
-  HeartPulse,
   MoreHorizontal,
   Pencil,
   PlusCircle,
   RefreshCw,
   RotateCcw,
-  Scale,
   Search,
   ShieldAlert,
   ShieldCheck,
@@ -90,29 +86,28 @@ import { ChangeStaffDialog, ConfirmRiskOverridePasswordDialog, EhrExportDialog, 
 import { EditMaternalProfileDialog, NewPregnancyDialog, type RegistrationValues } from "./MaternalRegistrationModal"
 import { MaternalAvatar } from "./MaternalAvatar"
 import { UploadAvatarDialog } from "./UploadAvatarDialog"
-import { VitalDetailsDrawer } from "./VitalDetailsDrawer"
 
 const riskStyles = {
   "Low Risk": {
-    card: "border-emerald-500/45 bg-emerald-50/85 dark:bg-emerald-950/35",
-    label: "text-emerald-900/70 dark:text-emerald-200/75",
-    value: "text-emerald-950 dark:text-emerald-50",
+    card: "border-sidebar-border bg-card",
+    label: "text-muted-foreground",
+    value: "text-foreground",
     icon: "bg-emerald-700 text-white",
-    panel: "bg-gradient-to-r from-emerald-200 via-emerald-100 to-emerald-50/40 dark:from-emerald-900/80 dark:via-emerald-950/65 dark:to-transparent",
+    panel: "bg-emerald-50 dark:bg-emerald-950/30",
   },
   "Moderate Risk": {
-    card: "border-amber-500/45 bg-amber-50/85 dark:bg-amber-950/35",
-    label: "text-amber-950/70 dark:text-amber-200/75",
-    value: "text-amber-950 dark:text-amber-50",
+    card: "border-sidebar-border bg-card",
+    label: "text-muted-foreground",
+    value: "text-foreground",
     icon: "bg-amber-600 text-white",
-    panel: "bg-gradient-to-r from-amber-200 via-amber-100 to-amber-50/40 dark:from-amber-900/80 dark:via-amber-950/65 dark:to-transparent",
+    panel: "bg-amber-50 dark:bg-amber-950/30",
   },
   "High Risk": {
-    card: "border-rose-500/50 bg-rose-50/85 dark:bg-rose-950/35",
-    label: "text-rose-950/70 dark:text-rose-200/75",
-    value: "text-rose-950 dark:text-rose-50",
+    card: "border-sidebar-border bg-card",
+    label: "text-muted-foreground",
+    value: "text-foreground",
     icon: "bg-rose-700 text-white",
-    panel: "bg-gradient-to-r from-rose-200 via-rose-100 to-rose-50/40 dark:from-rose-900/80 dark:via-rose-950/65 dark:to-transparent",
+    panel: "bg-rose-50 dark:bg-rose-950/30",
   },
   "Not assessed": {
     card: "border-sidebar-border bg-card",
@@ -135,14 +130,7 @@ function formatStatusLabel(value?: string | null) {
     .replace(/\b\w/g, (character) => character.toUpperCase())
 }
 
-function classifyBp(systolic?: number | null, diastolic?: number | null) {
-  if (systolic == null || diastolic == null) return { label: "Not recorded", className: "text-muted-foreground" }
-  if (systolic >= 140 || diastolic >= 90) return { label: "Hypertensive", className: "text-rose-600 dark:text-rose-400 font-semibold" }
-  if (systolic >= 120 && diastolic < 80) return { label: "Elevated", className: "text-amber-600 dark:text-amber-400" }
-  return { label: "Normal", className: "text-emerald-600 dark:text-emerald-400" }
-}
-
-function getAttachmentName(fileUrl?: string | null, fallback = "EHR record") {
+function getAttachmentName(fileUrl?: string | null, fallback = "Health record") {
   if (!fileUrl) return fallback
   if (fileUrl.startsWith("blob-")) return fallback
   try {
@@ -205,8 +193,8 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
 
   if (!record || !fileUrl) return null
 
-  const rawFileName = blobInfo?.filename || (record as any)?.file_name || getAttachmentName(fileUrl, record?.screening_type || "EHR record")
-  const fileName = rawFileName.startsWith("blob-") ? (record?.screening_type || "EHR Record") : rawFileName
+  const rawFileName = blobInfo?.filename || (record as any)?.file_name || getAttachmentName(fileUrl, record?.screening_type || "Health record")
+  const fileName = rawFileName.startsWith("blob-") ? (record?.screening_type || "Health Record") : rawFileName
   const mime = blobInfo?.mimeType?.toLowerCase() || ""
   const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
   const isImage = mime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
@@ -219,7 +207,7 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
         <header className="fixed inset-x-0 top-0 z-[101] flex h-14 items-center justify-between gap-3 border-b border-sidebar-border bg-background px-3 sm:px-5">
           <div className="min-w-0 flex-1">
             <div className="truncate text-sm font-medium">{fileName}</div>
-            <div className="truncate text-xs text-muted-foreground">{record.screening_type || "EHR Record"}{record.date_of_screening ? ` · ${formatRecordDate(record.date_of_screening)}` : ""}</div>
+            <div className="truncate text-xs text-muted-foreground">{record.screening_type || "Health Record"}{record.date_of_screening ? ` · ${formatRecordDate(record.date_of_screening)}` : ""}</div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <div className="flex items-center gap-1 rounded-md border border-sidebar-border p-0.5">
@@ -258,7 +246,7 @@ function ProfileTable({ headers, rows, emptyState, renderRowAction, onRowClick }
 
   return (
     <div className="flex w-full flex-col gap-1">
-      <div className="w-full overflow-hidden rounded-md border border-sidebar-border">
+      <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border md:block">
       <Table className="w-full table-fixed text-xs">
         <TableHeader className="bg-muted/50 dark:bg-muted/30">
           <TableRow className="border-sidebar-border hover:bg-transparent">
@@ -285,6 +273,20 @@ function ProfileTable({ headers, rows, emptyState, renderRowAction, onRowClick }
         </TableBody>
       </Table>
       </div>
+      <div className="grid gap-3 md:hidden">
+        {rows.map((row, rowIndex) => (
+          <article key={rowIndex} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+            <div className="flex items-start justify-between gap-3">
+              <button type="button" disabled={!onRowClick} onClick={() => onRowClick?.(rowIndex)} className="min-w-0 flex-1 text-left text-sm font-semibold text-foreground disabled:cursor-default">{row[0]}</button>
+              {renderRowAction?.(rowIndex)}
+            </div>
+            <dl className="mt-3 grid gap-2">
+              {row.slice(1).map((cell, index) => <div key={index} className="flex items-start justify-between gap-3"><dt className="shrink-0 text-muted-foreground">{headers[index + 1]}</dt><dd className="min-w-0 text-right text-foreground">{cell}</dd></div>)}
+            </dl>
+          </article>
+        ))}
+        {rows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">{emptyState.title}</div>}
+      </div>
       <TablePaginationFooter rowCount={rows.length} selectedCount={selectedRows.length} />
     </div>
   )
@@ -292,7 +294,7 @@ function ProfileTable({ headers, rows, emptyState, renderRowAction, onRowClick }
 
 function ToolbarSearch({ placeholder, value, onChange }: { placeholder: string; value: string; onChange: (value: string) => void }) {
   return (
-    <div className="relative min-w-[320px] max-w-md flex-1">
+    <div className="relative min-w-0 w-full max-w-md flex-1 md:min-w-[320px]">
       <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
       <Input aria-label={placeholder} placeholder={placeholder} value={value} onChange={(event) => onChange(event.target.value)} className="h-8 w-full bg-muted/70 pl-8 text-xs dark:bg-muted/60" />
     </div>
@@ -379,14 +381,10 @@ export function MaternalProfilePage() {
   const [appointmentStatusFilters, setAppointmentStatusFilters] = useState<string[]>([])
   const [appointmentTypeFilters, setAppointmentTypeFilters] = useState<string[]>([])
   const [selectedVitalVisit, setSelectedVitalVisit] = useState<{ visit: MaternalPrenatalVisit; pregnancy?: MaternalPregnancy } | null>(null)
-  const [isVitalDrawerOpen, setIsVitalDrawerOpen] = useState(false)
-  const [vitalSearch, setVitalSearch] = useState("")
-  const [vitalTrimesterFilters, setVitalTrimesterFilters] = useState<string[]>([])
-  const [vitalRiskFilters, setVitalRiskFilters] = useState<string[]>([])
-  const [vitalSignsFilters, setVitalSignsFilters] = useState<string[]>([])
   const [pregnancySearch, setPregnancySearch] = useState("")
   const [pregnancyStatusFilters, setPregnancyStatusFilters] = useState<string[]>([])
   const [laboratorySearch, setLaboratorySearch] = useState("")
+  const [prescriptionSearch, setPrescriptionSearch] = useState("")
   const [selectedLabRows, setSelectedLabRows] = useState<number[]>([])
   const [isRiskOverrideOpen, setIsRiskOverrideOpen] = useState(false)
   const [isRiskPasswordOpen, setIsRiskPasswordOpen] = useState(false)
@@ -416,7 +414,6 @@ export function MaternalProfilePage() {
         setAppointmentRowsState((result.appointments ?? []).map((appointment) => [
           `${formatRecordDate(appointment.appointment_date)} · ${appointment.appointment_time || "Time not set"}`,
           appointment.appointment_type || "Appointment",
-          appointment.reason || "—",
           <StatusBadge key={appointment.appointment_id} status={appointment.status || "Scheduled"} label={formatStatusLabel(appointment.status)} />,
         ]))
         const pregnancies = result.pregnancies ?? []
@@ -428,7 +425,7 @@ export function MaternalProfilePage() {
         }))
         setDeliveryEntries(pregnancies.flatMap((pregnancy) => (pregnancy.deliveryOutcomes ?? []).map((delivery) => ({ delivery, pregnancy }))))
         setLaboratoryRowsState((result.labRecords ?? []).map((lab) => [
-          getAttachmentName(lab.file_url, lab.screening_type || "EHR record"),
+          getAttachmentName(lab.file_url, lab.screening_type || "Health record"),
           "",
           lab.screening_type || "Laboratory screening",
           formatRecordDate(lab.date_of_screening),
@@ -669,18 +666,31 @@ export function MaternalProfilePage() {
   }, [maternalRecord, patientName])
   const currentPregnancy = getLatestMaternalPregnancy(maternalRecord?.pregnancies)
   const selectedAppointment = maternalRecord?.appointments?.find((appointment) => appointment.appointment_id === selectedAppointmentId)
-  const appointmentVisit = selectedAppointment ? (maternalRecord?.prenatalVisits ?? []).find((visit) => {
-    if (!visit.visit_date || !selectedAppointment.appointment_date) return false
-    return new Date(visit.visit_date).toDateString() === new Date(selectedAppointment.appointment_date).toDateString()
-  }) : undefined
-  const appointmentPregnancy = maternalRecord?.pregnancies?.find((pregnancy) => pregnancy.pregnancy_id === appointmentVisit?.pregnancy_id)
-  const appointmentSupplements = (maternalRecord?.supplements ?? []).filter((supplement) => supplement.visit_id === appointmentVisit?.visit_id || supplement.pregnancy_id === appointmentPregnancy?.pregnancy_id)
+  const appointmentVisit = selectedVitalVisit?.visit
+  const appointmentPregnancy = selectedVitalVisit?.pregnancy ?? maternalRecord?.pregnancies?.find((pregnancy) => pregnancy.pregnancy_id === appointmentVisit?.pregnancy_id)
+  const appointmentSupplements = (maternalRecord?.supplements ?? []).filter((supplement) =>
+    (Boolean(appointmentVisit?.visit_id) && supplement.visit_id === appointmentVisit?.visit_id)
+    || (Boolean(appointmentPregnancy?.pregnancy_id) && supplement.pregnancy_id === appointmentPregnancy?.pregnancy_id)
+  )
   const latestVisit = getLatestPrenatalVisit(currentPregnancy)
   const riskLevel = normalizeMaternalRisk(latestVisit?.risk_level_assessed)
+  const dangerSigns = [
+    latestVisit?.has_vaginal_bleeding && "Vaginal bleeding",
+    latestVisit?.has_fever && "Maternal fever",
+    latestVisit?.has_edema && "Edema",
+    latestVisit?.has_pallor && "Severe pallor",
+    latestVisit?.danger_signs_observed?.trim(),
+  ].filter(Boolean)
   const riskAssessment = {
     level: riskLevel as keyof typeof riskStyles,
     tews: latestVisit?.tews_score ?? 0,
-    verdict: latestVisit?.danger_signs_observed || (latestVisit ? "Clinical assessment recorded for the latest visit." : "No clinical assessment recorded yet."),
+    verdict: latestVisit
+      ? dangerSigns.length
+        ? `Triggered by: ${dangerSigns.join(", ")}.`
+        : riskLevel === "Low Risk"
+          ? "All recorded vital signs are within routine clinical limits. No danger signs reported."
+          : "Risk assessment recorded for the latest visit. Review the clinical measurements and history."
+      : "Log a consultation to see the current clinical assessment.",
   }
   const riskStyle = riskStyles[riskAssessment.level]
   const displayDate = (date?: string | null) => date ? format(new Date(date), "MMM d, yyyy") : "—"
@@ -783,117 +793,6 @@ export function MaternalProfilePage() {
     })
   }, [maternalRecord])
 
-  const filteredVitals = allVitals.filter((visit) => {
-    const provider = visit.healthWorker ? `${visit.healthWorker.first_name ?? ""} ${visit.healthWorker.last_name ?? ""}` : ""
-    const bpText = visit.bp_systolic != null && visit.bp_diastolic != null ? `${visit.bp_systolic}/${visit.bp_diastolic}` : ""
-    const text = [
-      formatRecordDate(visit.visit_date),
-      `visit ${visit.visit_number ?? ""}`,
-      `trimester ${visit.trimester ?? ""}`,
-      bpText,
-      visit.risk_level_assessed ?? "",
-      visit.chief_complaint ?? "",
-      visit.danger_signs_observed ?? "",
-      provider,
-    ].join(" ").toLowerCase()
-
-    const matchesSearch = !vitalSearch || text.includes(vitalSearch.toLowerCase())
-
-    const matchesTrimester = vitalTrimesterFilters.length === 0 || vitalTrimesterFilters.some((filter) => {
-      if (filter === "1st Trimester") return visit.trimester === 1
-      if (filter === "2nd Trimester") return visit.trimester === 2
-      if (filter === "3rd Trimester") return visit.trimester === 3
-      return false
-    })
-
-    const matchesRisk = vitalRiskFilters.length === 0 || vitalRiskFilters.some((risk) => {
-      const visitRisk = normalizeMaternalRisk(visit.risk_level_assessed)
-      return visitRisk.toLowerCase() === risk.toLowerCase()
-    })
-
-    const hasDanger = Boolean(
-      visit.has_vaginal_bleeding ||
-      visit.has_fever ||
-      visit.has_edema ||
-      visit.has_pallor ||
-      (visit.danger_signs_observed && visit.danger_signs_observed.trim())
-    )
-
-    const matchesSigns = vitalSignsFilters.length === 0 || vitalSignsFilters.some((sign) => {
-      if (sign === "Danger Signs Observed") return hasDanger
-      if (sign === "Normal / No Signs") return !hasDanger
-      return true
-    })
-
-    return matchesSearch && matchesTrimester && matchesRisk && matchesSigns
-  })
-
-  const resetVitalFilters = () => {
-    setVitalSearch("")
-    setVitalTrimesterFilters([])
-    setVitalRiskFilters([])
-    setVitalSignsFilters([])
-  }
-
-  const hasVitalFilters = Boolean(vitalSearch.trim() || vitalTrimesterFilters.length || vitalRiskFilters.length || vitalSignsFilters.length)
-
-  const filteredVitalRows = filteredVitals.map((visit) => {
-    const bpClassification = classifyBp(visit.bp_systolic, visit.bp_diastolic)
-    const providerName = visit.healthWorker ? `${visit.healthWorker.first_name ?? ""} ${visit.healthWorker.last_name ?? ""}`.trim() : ""
-    const hasDanger = Boolean(
-      visit.has_vaginal_bleeding ||
-      visit.has_fever ||
-      visit.has_edema ||
-      visit.has_pallor ||
-      (visit.danger_signs_observed && visit.danger_signs_observed.trim())
-    )
-
-    return [
-      <div key="date-visit" className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">{formatRecordDate(visit.visit_date)}</span>
-        <span className="text-[11px] text-muted-foreground">Visit #{visit.visit_number ?? "—"}</span>
-      </div>,
-      <div key="aog-trimester" className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">{visit.age_of_gestation_weeks != null ? `${visit.age_of_gestation_weeks} weeks` : "—"}</span>
-        <span className="text-[11px] text-muted-foreground">{visit.trimester ? `${visit.trimester}${visit.trimester === 1 ? "st" : visit.trimester === 2 ? "nd" : "rd"} Trimester` : "—"}</span>
-      </div>,
-      <div key="blood-pressure" className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">
-          {visit.bp_systolic != null && visit.bp_diastolic != null ? `${visit.bp_systolic}/${visit.bp_diastolic} mmHg` : "—"}
-        </span>
-        <span className={`text-[10px] ${bpClassification.className}`}>
-          {bpClassification.label}
-        </span>
-      </div>,
-      <div key="heart-rate" className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">{visit.pulse_rate_bpm != null ? `${visit.pulse_rate_bpm} bpm` : "—"}</span>
-        <span className="text-[11px] text-muted-foreground">Pulse rate</span>
-      </div>,
-      <div key="temp-weight" className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">{visit.temperature_celsius != null ? `${visit.temperature_celsius} °C` : "—"}</span>
-        <span className="text-[11px] text-muted-foreground">{visit.weight_kg != null ? `${visit.weight_kg} kg` : "—"}</span>
-      </div>,
-      <div key="fundic-fht" className="flex flex-col gap-0.5">
-        <span className="font-medium text-foreground">{visit.fundic_height_cm != null ? `${visit.fundic_height_cm} cm` : "—"}</span>
-        <span className="text-[11px] text-muted-foreground">{visit.fetal_heart_tone_bpm != null ? `${visit.fetal_heart_tone_bpm} bpm` : "—"}</span>
-      </div>,
-      <div key="danger-risk" className="flex flex-col items-start gap-1">
-        <StatusBadge status={visit.risk_level_assessed || "Low Risk"} />
-        {hasDanger ? (
-          <span className="inline-flex items-center gap-1 text-[10px] font-medium text-rose-600 dark:text-rose-400">
-            <AlertTriangle className="size-3 shrink-0" />
-            <span>Signs reported</span>
-          </span>
-        ) : (
-          <span className="text-[10px] text-muted-foreground">No signs reported</span>
-        )}
-      </div>,
-      <div key="provider" className="truncate text-xs font-medium text-foreground" title={providerName || "Provider not set"}>
-        {providerName || "—"}
-      </div>,
-    ]
-  })
-
   const filteredDeliveryEntries = deliveryEntries.filter(({ delivery, pregnancy }) => {
     const text = [formatRecordDate(delivery.delivery_date), delivery.mode_of_delivery, delivery.place_of_delivery, delivery.maternal_outcome, delivery.birth_attendant, pregnancy.gravida, pregnancy.parity, ...(delivery.newbornRecords ?? []).flatMap((newborn) => [newborn.sex, newborn.status_at_birth, newborn.birth_weight_kg, newborn.apgar_score])].join(" ").toLowerCase()
     const matchesSearch = !deliverySearch || text.includes(deliverySearch.toLowerCase())
@@ -913,17 +812,52 @@ export function MaternalProfilePage() {
       formatRecordDate(delivery.delivery_date),
       delivery.mode_of_delivery || "—",
       delivery.place_of_delivery || "—",
-      delivery.maternal_outcome || "Alive",
+      <StatusBadge status={delivery.maternal_outcome || "Alive"} />,
       newbornSummary,
       delivery.birth_attendant || "—",
     ]
   })
-  const filteredAppointmentEntries = appointmentRowsState.map((row, index) => ({ row, index })).filter(({ row, index }) => {
+  const appointmentEntries = (() => {
+    const matchedVisitIds = new Set<string>()
+    const scheduledEntries = appointmentRowsState.map((baseRow, index) => {
+      const appointment = maternalRecord?.appointments?.[index]
+      const visit = appointment ? allVitals.find((candidate) => {
+        if (!candidate.visit_date || !appointment.appointment_date) return false
+        const matchesDate = new Date(candidate.visit_date).toDateString() === new Date(appointment.appointment_date).toDateString()
+        const notAlreadyMatched = !candidate.visit_id || !matchedVisitIds.has(candidate.visit_id)
+        if (matchesDate && notAlreadyMatched && candidate.visit_id) matchedVisitIds.add(candidate.visit_id)
+        return matchesDate && notAlreadyMatched
+      }) : undefined
+      const row: ReactNode[] = [
+        <div className="flex flex-col gap-0.5"><span className="font-medium">{baseRow[0]}</span>{visit && <span className="text-[11px] text-muted-foreground">Visit #{visit.visit_number ?? "—"} · {visit.age_of_gestation_weeks ?? "—"}w AOG</span>}</div>,
+        visit ? `${String(baseRow[1] ?? "Appointment")} · Consultation` : baseRow[1],
+        visit ? <StatusBadge status={visit.risk_level_assessed || "Not assessed"} /> : "—",
+        baseRow[2],
+      ]
+      return { row, appointment, index, visit, pregnancy: visit?.pregnancy }
+    })
+    const standaloneVisits = allVitals.filter((visit) => !visit.visit_id || !matchedVisitIds.has(visit.visit_id)).map((visit) => {
+      return {
+        appointment: undefined,
+        index: -1,
+        visit,
+        pregnancy: visit.pregnancy,
+        row: [
+          <div className="flex flex-col gap-0.5"><span className="font-medium">{formatRecordDate(visit.visit_date)}</span><span className="text-[11px] text-muted-foreground">Visit #{visit.visit_number ?? "—"} · {visit.age_of_gestation_weeks ?? "—"}w AOG</span></div>,
+          "Consultation",
+          <StatusBadge status={visit.risk_level_assessed || "Not assessed"} />,
+          <StatusBadge status="Completed" />,
+        ] as ReactNode[],
+      }
+    })
+    return [...scheduledEntries, ...standaloneVisits]
+  })()
+  const filteredAppointmentEntries = appointmentEntries.filter(({ row, appointment }) => {
     const text = rowText(row)
     const matchesSearch = !appointmentSearch || text.includes(appointmentSearch.toLowerCase())
-    const status = maternalRecord?.appointments?.[index]?.status?.toLowerCase() ?? "scheduled"
+    const status = appointment?.status?.toLowerCase() ?? "completed"
     const matchesStatus = appointmentStatusFilters.length === 0 || appointmentStatusFilters.some((filter) => filter.toLowerCase() === status)
-    const matchesType = appointmentTypeFilters.length === 0 || appointmentTypeFilters.some((type) => text.includes(type.toLowerCase()))
+    const matchesType = appointmentTypeFilters.length === 0 || appointmentTypeFilters.some((type) => text.toLowerCase().includes(type.toLowerCase()))
     return matchesSearch && matchesStatus && matchesType
   })
   const filteredAppointments = filteredAppointmentEntries.map(({ row }) => row)
@@ -942,6 +876,10 @@ export function MaternalProfilePage() {
     const matchesSearch = !laboratorySearch || searchText.includes(laboratorySearch.toLowerCase())
     return matchesSearch
   })
+  const filteredPrescriptions = (maternalRecord?.supplements ?? []).filter((supplement) => {
+    const text = `${supplement.supplement_type ?? "Supplement"} ${supplement.tablets_given_count ?? ""} ${formatRecordDate(supplement.date_given)} ${supplement.is_completed ? "completed" : "active"}`.toLowerCase()
+    return !prescriptionSearch || text.includes(prescriptionSearch.toLowerCase())
+  })
 
   const allLabRowsSelected = filteredLaboratoryRows.length > 0 && selectedLabRows.length === filteredLaboratoryRows.length
 
@@ -958,12 +896,20 @@ export function MaternalProfilePage() {
   const hasAppointmentFilters = Boolean(appointmentSearch.trim() || appointmentStatusFilters.length || appointmentTypeFilters.length)
 
   if (isProfileLoading) return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-hidden px-4 pb-4 pt-4" aria-label="Loading maternal profile" aria-busy="true">
-      <div className="flex shrink-0 items-center justify-between gap-3"><Skeleton className="h-8 w-36" /><div className="flex gap-2"><Skeleton className="h-8 w-24" /><Skeleton className="h-8 w-36" /><Skeleton className="size-8" /></div></div>
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
-        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-          <section className="shrink-0 rounded-md border border-sidebar-border p-4"><div className="flex items-center gap-3"><Skeleton className="size-11 rounded-full" /><div className="flex-1 space-y-2"><Skeleton className="h-4 w-48" /><Skeleton className="h-3 w-32" /></div><Skeleton className="h-6 w-20" /></div><div className="mt-6 grid gap-5 md:grid-cols-3">{Array.from({ length: 3 }, (_, col) => <div key={col} className="space-y-4">{Array.from({ length: 4 }, (_, row) => <div key={row} className="space-y-1.5"><Skeleton className="h-3 w-24" /><Skeleton className="h-3.5 w-full" /></div>)}</div>)}</div></section>
-          <div className="flex min-h-0 flex-1 flex-col gap-3"><Skeleton className="h-4 w-28" /><Skeleton className="h-9 w-80 max-w-full" /><Skeleton className="h-8 w-full max-w-2xl" /><div className="flex-1 rounded-md border border-sidebar-border p-3"><div className="space-y-4">{Array.from({ length: 5 }, (_, index) => <div key={index} className="flex gap-4"><Skeleton className="h-4 w-1/5" /><Skeleton className="h-4 w-1/6" /><Skeleton className="h-4 flex-1" /></div>)}</div></div></div>
+    <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-y-auto px-4 pb-4 pt-4" aria-label="Loading maternal profile" aria-busy="true">
+      <div className="flex shrink-0 items-center justify-between gap-3">
+        <Skeleton className="h-4 w-32" />
+        <div className="flex gap-2"><Skeleton className="h-8 w-24" /><Skeleton className="h-8 w-8" /></div>
+      </div>
+      <section className="shrink-0 rounded-md border border-sidebar-border p-4">
+        <div className="flex items-center gap-3"><Skeleton className="size-9 rounded-full" /><div className="flex-1 space-y-2"><Skeleton className="h-3.5 w-40" /><Skeleton className="h-3 w-24" /></div><Skeleton className="h-5 w-16 rounded-sm" /></div>
+        <div className="mt-5 grid grid-cols-2 gap-x-6 gap-y-4 md:grid-cols-3">{Array.from({ length: 6 }, (_, index) => <Skeleton key={index} className="h-3 w-4/5" />)}</div>
+      </section>
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+        <Skeleton className="h-4 w-28" />
+        <Skeleton className="h-8 w-72 max-w-full" />
+        <div className="rounded-md border border-sidebar-border p-3">
+          <div className="space-y-4">{Array.from({ length: 4 }, (_, index) => <div key={index} className="flex gap-4"><Skeleton className="h-3.5 w-1/4" /><Skeleton className="h-3.5 w-1/5" /><Skeleton className="h-3.5 flex-1" /></div>)}</div>
         </div>
       </div>
     </div>
@@ -1070,7 +1016,7 @@ export function MaternalProfilePage() {
 
       <section aria-label="Maternal overview" className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-1 pb-8">
-          <Card className={`min-w-0 shrink-0 gap-4 rounded-md border py-4 shadow-none ring-0 ${riskStyle.card}`}>
+          <Card className={`min-w-0 shrink-0 gap-5 rounded-md border py-4 shadow-none ring-0 ${riskStyle.card}`}>
             <CardHeader className="flex flex-row items-center gap-4 px-4 pb-1">
               <div className="relative group shrink-0">
                 <MaternalAvatar
@@ -1094,57 +1040,63 @@ export function MaternalProfilePage() {
                 <CardTitle className={`truncate text-base font-semibold ${riskStyle.value}`}>{profile.fullName}</CardTitle>
                 <p className={`mt-0.5 text-xs ${riskStyle.label}`}>Maternal record · {profile.serialNo}</p>
               </div>
-              {latestVisit?.risk_level_assessed ? <StatusBadge status={riskAssessment.level} /> : <span className="text-xs text-muted-foreground">Not assessed</span>}
+              <StatusBadge status={latestVisit?.risk_level_assessed ? riskAssessment.level : "Not assessed"} />
             </CardHeader>
-            <CardContent className="grid gap-4 px-4 pt-1 md:grid-cols-3 md:gap-5">
+            <CardContent className="grid gap-5 px-4 pt-1 sm:grid-cols-2 lg:grid-cols-3">
               <section className="space-y-3">
-                <h3 className={`text-xs font-semibold ${riskStyle.value}`}>Identity</h3>
+                <h3 className="text-xs font-semibold text-foreground">Patient</h3>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-3">
                   <CardDetail label="Age / DOB" value={profile.ageDob} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                   <CardDetail label="Contact" value={profile.contact} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                   <CardDetail label="Civil Status" value={profile.civilStatus} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="Blood Type" value={profile.bloodType} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                   <div className="col-span-2"><CardDetail label="Address" value={profile.address} labelClassName={riskStyle.label} valueClassName={riskStyle.value} /></div>
                 </div>
               </section>
               <section className="space-y-3">
-                <h3 className={`text-xs font-semibold ${riskStyle.value}`}>Obstetric Baseline</h3>
+                <h3 className="text-xs font-semibold text-foreground">Pregnancy</h3>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-3">
                   <CardDetail label="Gravida / Parity" value={profile.gravidaParity} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
-                  <CardDetail label="Gestational Age" value={profile.gestationalAge} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="AOG" value={profile.gestationalAge} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                   <CardDetail label="LMP" value={profile.lmp} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                   <CardDetail label="EDD" value={profile.edd} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="First Trimester BMI" value={profile.bmi} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                 </div>
               </section>
               <section className="space-y-3">
-                <h3 className={`text-xs font-semibold ${riskStyle.value}`}>Biometrics &amp; CDSS</h3>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1"><h3 className="text-xs font-semibold text-foreground">Latest Vitals</h3><span className="text-xs text-muted-foreground">{latestVisit ? displayDate(latestVisit.visit_date) : "No visit recorded"}</span></div>
                 <div className="grid grid-cols-2 gap-x-3 gap-y-3">
-                  <CardDetail label="Blood Type" value={profile.bloodType} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
-                  <CardDetail label="Baseline BP" value={profile.bloodPressure} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
-                  <CardDetail label="BMI" value={profile.bmi} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
-                  <div><div className={`mb-1 text-xs ${riskStyle.label}`}>TEWS Score</div>{latestVisit ? <StatusBadge status={riskAssessment.level} label={`TEWS ${riskAssessment.tews} · ${riskAssessment.level}`} /> : <span className="text-xs text-muted-foreground">Not assessed</span>}</div>
-                  <div className="col-span-2"><CardDetail label="Active Danger Signs" value={latestVisit?.danger_signs_observed || (latestVisit ? "None reported" : "Not recorded")} labelClassName={riskStyle.label} valueClassName={riskStyle.value} /></div>
+                  <CardDetail label="Blood Pressure" value={profile.bloodPressure} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="Pulse Rate" value={latestVisit?.pulse_rate_bpm != null ? `${latestVisit.pulse_rate_bpm} bpm` : "—"} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="Temperature" value={latestVisit?.temperature_celsius != null ? `${latestVisit.temperature_celsius} °C` : "—"} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="Weight" value={latestVisit?.weight_kg != null ? `${latestVisit.weight_kg} kg` : "—"} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="Fetal Heart Tone" value={latestVisit?.fetal_heart_tone_bpm != null ? `${latestVisit.fetal_heart_tone_bpm} bpm` : "—"} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
+                  <CardDetail label="Fundal Height" value={latestVisit?.fundic_height_cm != null ? `${latestVisit.fundic_height_cm} cm` : "—"} labelClassName={riskStyle.label} valueClassName={riskStyle.value} />
                 </div>
-                <div className={`flex items-start gap-2 rounded-md px-3 py-2 ${riskStyle.panel}`}>
-                  <div aria-hidden="true" className={`flex size-6 shrink-0 items-center justify-center rounded-md ${riskStyle.icon}`}>{riskAssessment.level === "Low Risk" ? <ShieldCheck className="size-3.5" /> : <ShieldAlert className="size-3.5" />}</div>
+              </section>
+              <section className={`flex items-start gap-3 rounded-md px-3 py-3 sm:col-span-2 lg:col-span-3 ${riskStyle.panel}`} aria-label="Clinical risk assessment">
+                <div aria-hidden="true" className={`flex size-7 shrink-0 items-center justify-center rounded-md ${riskStyle.icon}`}>{riskAssessment.level === "Low Risk" ? <ShieldCheck className="size-4" /> : <ShieldAlert className="size-4" />}</div>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2"><h3 className="text-xs font-semibold text-foreground">Clinical Risk Assessment</h3>{latestVisit && <span className="text-xs text-muted-foreground">TEWS {riskAssessment.tews}</span>}</div>
                   <p className={`text-xs leading-relaxed ${riskStyle.value}`}>{riskAssessment.verdict}</p>
                 </div>
               </section>
             </CardContent>
           </Card>
 
-          <section className="flex w-full min-w-0 shrink-0 flex-col gap-3" aria-labelledby="clinical-history-heading">
+          <section className="flex w-full min-w-0 shrink-0 flex-col gap-3 pt-2 sm:pt-3" aria-labelledby="clinical-history-heading">
             <div>
               <h2 id="clinical-history-heading" className="text-sm font-semibold text-foreground">Clinical History</h2>
-              <p className="mt-1 text-xs font-normal text-muted-foreground">Review appointments, past vitals logs, deliveries, pregnancies, and EHR records.</p>
+              <p className="mt-1 text-xs font-normal text-muted-foreground">Review appointments, consultation vitals, deliveries, pregnancies, and health records.</p>
             </div>
             <Tabs value={historyTab} onValueChange={setHistoryTab} className="w-full min-w-0">
-              <div className="flex w-full min-w-0 items-center justify-between gap-2">
+              <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <TabsList className="h-9 w-max max-w-full justify-start gap-1 overflow-x-auto">
-                  <TabsTrigger value="appointments" className="h-full flex-initial px-3 text-xs">Appointments</TabsTrigger>
-                  <TabsTrigger value="vitals" className="h-full flex-initial px-3 text-xs">Past Vitals</TabsTrigger>
-                  <TabsTrigger value="deliveries" className="h-full flex-initial px-3 text-xs">Deliveries</TabsTrigger>
-                  <TabsTrigger value="pregnancies" className="h-full flex-initial px-3 text-xs">Pregnancies</TabsTrigger>
-                  <TabsTrigger value="ehr" className="h-full flex-initial px-3 text-xs">Health Records</TabsTrigger>
+                  <TabsTrigger value="appointments" className="h-full flex-initial px-3 text-xs">Appointments ({appointmentEntries.length})</TabsTrigger>
+                  <TabsTrigger value="deliveries" className="h-full flex-initial px-3 text-xs">Deliveries ({deliveryEntries.length})</TabsTrigger>
+                  <TabsTrigger value="pregnancies" className="h-full flex-initial px-3 text-xs">Pregnancies ({pregnancyRowsState.length})</TabsTrigger>
+                  <TabsTrigger value="ehr" className="h-full flex-initial px-3 text-xs">Health Records ({laboratoryRowsState.length})</TabsTrigger>
+                  <TabsTrigger value="prescriptions" className="h-full flex-initial px-3 text-xs">Prescriptions ({maternalRecord.supplements?.length ?? 0})</TabsTrigger>
                 </TabsList>
                 <TooltipProvider>
                   <div className="ml-auto flex shrink-0 items-center gap-2">
@@ -1152,11 +1104,11 @@ export function MaternalProfilePage() {
                     <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh clinical history" onClick={refreshProfile} className="size-8 border-sidebar-border"><RefreshCw className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Refresh</TooltipContent></Tooltip>
                     {!isSuperAdminView && (
                       <>
-                        {historyTab === "vitals" && <Button onClick={() => setIsVitalsOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Stethoscope className="size-3.5" />Log Consultation</Button>}
                         {historyTab === "deliveries" && <Button onClick={() => setIsDeliveryDialogOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />Record Delivery</Button>}
                         {historyTab === "appointments" && <Button onClick={() => setIsScheduleAppointmentOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><CalendarPlus className="size-3.5" />Schedule Appointment</Button>}
                         {historyTab === "pregnancies" && <Button onClick={() => setIsNewPregnancyOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Baby className="size-3.5" />New Pregnancy</Button>}
-                        {historyTab === "ehr" && <Button onClick={() => setIsLabRecordOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Upload className="size-3.5" />Upload EHR Record</Button>}
+                        {historyTab === "ehr" && <Button onClick={() => setIsLabRecordOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><Upload className="size-3.5" />Upload Health Record</Button>}
+                        {historyTab === "prescriptions" && <Button onClick={() => setIsPrescriptionOpen(true)} className="h-8 shrink-0 gap-1.5 px-2.5 text-xs"><PlusCircle className="size-3.5" />Create Prescription</Button>}
                       </>
                     )}
                   </div>
@@ -1182,127 +1134,36 @@ export function MaternalProfilePage() {
               </TabsContent>
               <TabsContent value="appointments" className="mt-3 flex w-full min-w-0 flex-col gap-3">
                 <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                  <ToolbarSearch placeholder="Search by appointment purpose..." value={appointmentSearch} onChange={setAppointmentSearch} />
+                  <ToolbarSearch placeholder="Search appointments or visits..." value={appointmentSearch} onChange={setAppointmentSearch} />
                   <ToolbarFilter label="Status" options={["Scheduled", "Completed", "Cancelled", "Missed"]} selected={appointmentStatusFilters} onChange={setAppointmentStatusFilters} />
-                  <ToolbarFilter label="Appointment Type" options={["ANC follow-up", "Laboratory", "Ultrasound", "Postpartum"]} selected={appointmentTypeFilters} onChange={setAppointmentTypeFilters} />
+                  <ToolbarFilter label="Appointment Type" options={["ANC follow-up", "Laboratory", "Ultrasound", "Postpartum", "Consultation"]} selected={appointmentTypeFilters} onChange={setAppointmentTypeFilters} />
                   {hasAppointmentFilters && <ResetFilterButton onClick={resetAppointmentFilters} />}
                 </div>
                 <ProfileTable
-                  headers={["Date & Time", "Type", "Purpose / Visit", "Status"]}
+                  headers={["Date & Visit", "Type", "Risk", "Status"]}
                   rows={filteredAppointments}
-                  emptyState={{ icon: CalendarPlus, title: "No appointments found", description: "Appointments for this mother will appear here." }}
-                  onRowClick={(rowIndex) => { const originalIndex = filteredAppointmentEntries[rowIndex]?.index; const appointment = originalIndex === undefined ? undefined : maternalRecord.appointments?.[originalIndex]; if (appointment) { setSelectedAppointmentId(appointment.appointment_id); setIsAppointmentDetailsOpen(true) } }}
+                  emptyState={{ icon: CalendarPlus, title: "No appointments or visits found", description: "Scheduled visits and recorded consultation vitals will appear here." }}
+                  onRowClick={(rowIndex) => { const entry = filteredAppointmentEntries[rowIndex]; if (entry) { setSelectedAppointmentId(entry.appointment?.appointment_id ?? null); setSelectedVitalVisit(entry.visit ? { visit: entry.visit, pregnancy: entry.pregnancy } : null); setIsAppointmentDetailsOpen(true) } }}
                   renderRowAction={(rowIndex) => (
                     <TableRowActions label="Appointment actions">
-                      <DropdownMenuItem onSelect={() => { const originalIndex = filteredAppointmentEntries[rowIndex]?.index; const appointment = originalIndex === undefined ? undefined : maternalRecord.appointments?.[originalIndex]; if (appointment) { setSelectedAppointmentId(appointment.appointment_id); setIsAppointmentDetailsOpen(true) } }}>View Appointment</DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => { const entry = filteredAppointmentEntries[rowIndex]; if (entry) { setSelectedAppointmentId(entry.appointment?.appointment_id ?? null); setSelectedVitalVisit(entry.visit ? { visit: entry.visit, pregnancy: entry.pregnancy } : null); setIsAppointmentDetailsOpen(true) } }}>View Details</DropdownMenuItem>
                       {!isSuperAdminView && (
                         <>
                           <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>Log Consultation</DropdownMenuItem>
                           <DropdownMenuItem onSelect={() => setIsPrescriptionOpen(true)}>Create Prescription</DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(filteredAppointmentEntries[rowIndex]?.index ?? null)}>Cancel Appointment</DropdownMenuItem>
+                          {filteredAppointmentEntries[rowIndex]?.appointment && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(filteredAppointmentEntries[rowIndex]?.index ?? null)}>Cancel Appointment</DropdownMenuItem>
+                            </>
+                          )}
                         </>
                       )}
                     </TableRowActions>
                   )}
                 />
               </TabsContent>
-              <TabsContent value="vitals" className="mt-3 flex w-full min-w-0 flex-col gap-3">
-                {allVitals.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Activity className="size-3.5" />
-                        <span>Latest Blood Pressure</span>
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">
-                        {allVitals[0].bp_systolic != null && allVitals[0].bp_diastolic != null ? `${allVitals[0].bp_systolic}/${allVitals[0].bp_diastolic} mmHg` : "—"}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {allVitals[0].visit_date ? formatRecordDate(allVitals[0].visit_date) : "Recorded"}
-                      </div>
-                    </div>
-                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <HeartPulse className="size-3.5" />
-                        <span>Latest Pulse &amp; Temp</span>
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">
-                        {allVitals[0].pulse_rate_bpm != null ? `${allVitals[0].pulse_rate_bpm} bpm` : "—"} · {allVitals[0].temperature_celsius != null ? `${allVitals[0].temperature_celsius} °C` : "—"}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">Resting vitals</div>
-                    </div>
-                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Scale className="size-3.5" />
-                        <span>Latest Weight &amp; AOG</span>
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">
-                        {allVitals[0].weight_kg != null ? `${allVitals[0].weight_kg} kg` : "—"} {allVitals[0].age_of_gestation_weeks != null ? `· ${allVitals[0].age_of_gestation_weeks}w` : ""}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">Gestation progress</div>
-                    </div>
-                    <div className="rounded-md border border-sidebar-border bg-card p-2.5">
-                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <Stethoscope className="size-3.5" />
-                        <span>Total Vitals Logged</span>
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-foreground">
-                        {allVitals.length} {allVitals.length === 1 ? "consultation" : "consultations"}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">Recorded visits</div>
-                    </div>
-                  </div>
-                )}
-                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                  <ToolbarSearch placeholder="Search vitals by date, notes, danger signs, provider..." value={vitalSearch} onChange={setVitalSearch} />
-                  <ToolbarFilter label="Trimester" options={["1st Trimester", "2nd Trimester", "3rd Trimester"]} selected={vitalTrimesterFilters} onChange={setVitalTrimesterFilters} />
-                  <ToolbarFilter label="Risk Level" options={["Low Risk", "Moderate Risk", "High Risk"]} selected={vitalRiskFilters} onChange={setVitalRiskFilters} />
-                  <ToolbarFilter label="Clinical Signs" options={["Danger Signs Observed", "Normal / No Signs"]} selected={vitalSignsFilters} onChange={setVitalSignsFilters} />
-                  {hasVitalFilters && <ResetFilterButton onClick={resetVitalFilters} />}
-                </div>
-                <ProfileTable
-                  headers={["Date & Visit", "AOG / Trimester", "Blood Pressure", "Heart Rate", "Temp & Weight", "Fundic / FHT", "Danger Signs & Risk", "Attending Provider"]}
-                  rows={filteredVitalRows}
-                  emptyState={{ icon: HeartPulse, title: "No vitals logs recorded", description: "Consultation vitals, physiological readings, and clinical evaluations will appear here." }}
-                  onRowClick={(rowIndex) => {
-                    const item = filteredVitals[rowIndex]
-                    if (item) {
-                      setSelectedVitalVisit({ visit: item, pregnancy: item.pregnancy })
-                      setIsVitalDrawerOpen(true)
-                    }
-                  }}
-                  renderRowAction={(rowIndex) => {
-                    const item = filteredVitals[rowIndex]
-                    return (
-                      <TableRowActions label="Vital log actions">
-                        <DropdownMenuItem onSelect={() => {
-                          if (item) {
-                            setSelectedVitalVisit({ visit: item, pregnancy: item.pregnancy })
-                            setIsVitalDrawerOpen(true)
-                          }
-                        }}>
-                          View Vital Details
-                        </DropdownMenuItem>
-                        {!isSuperAdminView && (
-                          <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>
-                            Log New Consultation
-                          </DropdownMenuItem>
-                        )}
-                        <DropdownMenuItem onSelect={() => {
-                          if (item && navigator.clipboard?.writeText) {
-                            const summary = `Visit #${item.visit_number ?? "—"} (${formatRecordDate(item.visit_date)}): BP ${item.bp_systolic ?? "—"}/${item.bp_diastolic ?? "—"} mmHg, PR ${item.pulse_rate_bpm ?? "—"} bpm, Temp ${item.temperature_celsius ?? "—"}°C, Weight ${item.weight_kg ?? "—"}kg, AOG ${item.age_of_gestation_weeks ?? "—"}w`
-                            void navigator.clipboard.writeText(summary)
-                            toast.success("Vital summary copied")
-                          }
-                        }}>
-                          Copy Vital Summary
-                        </DropdownMenuItem>
-                      </TableRowActions>
-                    )
-                  }}
-                />
-              </TabsContent>
+
               <TabsContent value="pregnancies" className="mt-3 flex w-full min-w-0 flex-col gap-3">
                 <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   <ToolbarSearch placeholder="Search by G/P, LMP, or EDD..." value={pregnancySearch} onChange={setPregnancySearch} />
@@ -1313,15 +1174,15 @@ export function MaternalProfilePage() {
               </TabsContent>
               <TabsContent value="ehr" className="mt-3 flex w-full min-w-0 flex-col gap-3">
                 <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-                  <ToolbarSearch placeholder="Search EHR records..." value={laboratorySearch} onChange={setLaboratorySearch} />
+                  <ToolbarSearch placeholder="Search health records..." value={laboratorySearch} onChange={setLaboratorySearch} />
                   {laboratorySearch.trim() && <ResetFilterButton onClick={() => setLaboratorySearch("")} />}
                 </div>
                 <div className="flex w-full flex-col gap-1">
-                  <div className="w-full overflow-hidden rounded-md border border-sidebar-border">
+                  <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border md:block">
                     <Table className="w-full table-fixed text-xs">
                       <TableHeader className="bg-muted/50 dark:bg-muted/30">
                         <TableRow className="border-sidebar-border hover:bg-transparent">
-                          <TableHead className="w-12 pl-4 text-center"><Checkbox aria-label="Select all EHR records" checked={allLabRowsSelected} onCheckedChange={(checked) => setSelectedLabRows(checked === true ? filteredLaboratoryRows.map((_, index) => index) : [])} className="border-sidebar-border" /></TableHead>
+                          <TableHead className="w-12 pl-4 text-center"><Checkbox aria-label="Select all health records" checked={allLabRowsSelected} onCheckedChange={(checked) => setSelectedLabRows(checked === true ? filteredLaboratoryRows.map((_, index) => index) : [])} className="border-sidebar-border" /></TableHead>
                           <TableHead className="px-2 text-xs font-medium">Test / Attachment</TableHead>
                           <TableHead className="w-32 px-2 text-xs font-medium">Date</TableHead>
                           <TableHead aria-label="Actions" className="w-12 px-1" />
@@ -1357,19 +1218,57 @@ export function MaternalProfilePage() {
                                 {!isSuperAdminView && (
                                   <>
                                     <DropdownMenuSeparator />
-                                    <DropdownMenuItem variant="destructive" onSelect={() => setLabFileToDelete(screeningId)}>Delete EHR Record</DropdownMenuItem>
+                                    <DropdownMenuItem variant="destructive" onSelect={() => setLabFileToDelete(screeningId)}>Delete Health Record</DropdownMenuItem>
                                   </>
                                 )}
                               </TableRowActions>
                             </TableCell>
                           </TableRow>
                         })}
-                        {filteredLaboratoryRows.length === 0 && <TableEmptyState colSpan={4} icon={FileText} title="No EHR records" description="Clinical documents and screening records will appear here when added." />}
+                        {filteredLaboratoryRows.length === 0 && <TableEmptyState colSpan={4} icon={FileText} title="No health records" description="Clinical documents and screening records will appear here when added." />}
                       </TableBody>
                     </Table>
                   </div>
+                  <div className="space-y-2 md:hidden">
+                    {filteredLaboratoryRows.map(([fileName, , test, date, , , screeningId], index) => {
+                      const record = maternalRecord.labRecords?.find((lab) => lab.screening_id === screeningId)
+                      const openPreview = () => { if (record?.file_url) setPreviewEhrRecord(record) }
+                      return <div key={screeningId} className="rounded-md border border-sidebar-border p-3">
+                        <div className="flex items-start gap-3">
+                          <Checkbox aria-label={`Select ${test}`} checked={selectedLabRows.includes(index)} onCheckedChange={(checked) => setSelectedLabRows((current) => checked === true ? [...current, index] : current.filter((rowIndex) => rowIndex !== index))} className="mt-1 border-sidebar-border" />
+                          <button type="button" className="min-w-0 flex-1 text-left" onClick={openPreview} disabled={!record?.file_url}>
+                            <span className="block truncate text-xs font-medium">{test}</span>
+                            <span className="block truncate text-xs text-muted-foreground">{fileName}</span>
+                            <span className="mt-1 block text-xs text-muted-foreground">{date}</span>
+                          </button>
+                          <TableRowActions label={`Actions for ${test}`}>
+                            {record?.file_url && <DropdownMenuItem onSelect={openPreview}>Preview Attachment</DropdownMenuItem>}
+                            <DropdownMenuItem onSelect={() => { if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(test) }}>Copy Test Name</DropdownMenuItem>
+                            <DropdownMenuItem variant="destructive" onSelect={() => setLabFileToDelete(screeningId)}>Delete Health Record</DropdownMenuItem>
+                          </TableRowActions>
+                        </div>
+                      </div>
+                    })}
+                    {filteredLaboratoryRows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-xs"><p className="font-medium">No health records</p><p className="mt-1 text-muted-foreground">Clinical documents and screening records will appear here when added.</p></div>}
+                  </div>
                   <TablePaginationFooter rowCount={filteredLaboratoryRows.length} selectedCount={selectedLabRows.length} />
                 </div>
+              </TabsContent>
+              <TabsContent value="prescriptions" className="mt-3 flex w-full min-w-0 flex-col gap-3">
+                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                  <ToolbarSearch placeholder="Search prescriptions..." value={prescriptionSearch} onChange={setPrescriptionSearch} />
+                  {prescriptionSearch.trim() && <ResetFilterButton onClick={() => setPrescriptionSearch("")} />}
+                </div>
+                <ProfileTable
+                  headers={["Medication", "Tablets Given", "Date Given", "Status"]}
+                  rows={filteredPrescriptions.map((prescription) => [
+                    prescription.supplement_type || "Supplement",
+                    prescription.tablets_given_count ?? "—",
+                    formatRecordDate(prescription.date_given),
+                    <StatusBadge key={prescription.supplement_id} status={prescription.is_completed ? "Completed" : "Active"} />,
+                  ])}
+                  emptyState={{ icon: FileText, title: "No prescriptions recorded", description: "Medications and supplements for this mother will appear here." }}
+                />
               </TabsContent>
             </Tabs>
           </section>
@@ -1378,10 +1277,8 @@ export function MaternalProfilePage() {
 
       <EhrExportDialog open={isEhrExportOpen} onOpenChange={setIsEhrExportOpen} patientName={patientName} maternalRecord={maternalRecord} onExport={handleEhrExport} />
       <DeliveryDetailsDrawer open={isDeliveryDrawerOpen} onOpenChange={setIsDeliveryDrawerOpen} patientName={patientName} delivery={selectedDelivery?.delivery ?? null} pregnancy={selectedDelivery?.pregnancy} />
-      <VitalDetailsDrawer open={isVitalDrawerOpen} onOpenChange={setIsVitalDrawerOpen} patientName={patientName} visit={selectedVitalVisit?.visit ?? null} pregnancy={selectedVitalVisit?.pregnancy} />
       <AppointmentDetailsDialog open={isAppointmentDetailsOpen} onOpenChange={setIsAppointmentDetailsOpen} patientName={patientName} appointment={selectedAppointment} pregnancy={appointmentPregnancy} consultation={appointmentVisit} supplements={appointmentSupplements} />
       <EhrRecordPreview key={previewEhrRecord?.screening_id ?? "closed"} record={previewEhrRecord} onClose={() => setPreviewEhrRecord(null)} />
-
       {!isSuperAdminView && (
         <>
           <RiskOverrideDialog open={isRiskOverrideOpen} onOpenChange={setIsRiskOverrideOpen} patientName={patientName} pregnancyLabel={currentPregnancy ? `Active Pregnancy · G${currentPregnancy.gravida ?? "—"} P${currentPregnancy.parity ?? "—"}` : "No pregnancy record"} currentRisk={riskAssessment.level} onSubmit={prepareRiskOverride} />
@@ -1435,15 +1332,15 @@ export function MaternalProfilePage() {
           <ConfirmSensitiveActionDialog
             open={labFileToDelete !== null}
             onOpenChange={(open) => { if (!open) setLabFileToDelete(null) }}
-            title={`Are you sure you want to delete “${maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)?.screening_type ?? "this EHR record"}”?`}
-            description="This will permanently remove the EHR record and its attachment from this profile."
-            confirmLabel="I understand, delete this EHR record"
+            title={`Are you sure you want to delete “${maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)?.screening_type ?? "this health record"}”?`}
+            description="This will permanently remove the health record and its attachment from this profile."
+            confirmLabel="I understand, delete this health record"
             onConfirm={() => {
               const record = maternalRecord.labRecords?.find((lab) => lab.screening_id === labFileToDelete)
-              if (!record || !session?.token) { toast.error("Unable to find this EHR record"); setLabFileToDelete(null); return }
+              if (!record || !session?.token) { toast.error("Unable to find this health record"); setLabFileToDelete(null); return }
               void deleteMaternalLabScreening(session.token, record.screening_id)
-                .then(() => { toast.success("EHR record deleted"); refreshProfile() })
-                .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to delete this EHR record"))
+                .then(() => { toast.success("Health record deleted"); refreshProfile() })
+                .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to delete this health record"))
                 .finally(() => setLabFileToDelete(null))
             }}
           />

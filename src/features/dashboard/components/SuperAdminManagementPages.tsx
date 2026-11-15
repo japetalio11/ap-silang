@@ -367,7 +367,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         )}
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -487,6 +487,67 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="grid gap-3 md:hidden">
+        {paginatedFacilities.map((facility) => (
+          <article
+            key={facility.facility_id}
+            className="cursor-pointer rounded-md border border-sidebar-border bg-card p-4 text-xs transition-colors hover:bg-muted/50"
+            onClick={(e) => {
+              const target = e.target as HTMLElement
+              if (target.closest("button") || target.closest("[role='menuitem']")) return
+              navigate(`/superadmin/facility/${facility.facility_id}`, {
+                state: {
+                  returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                  returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                },
+              })
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-semibold text-foreground">{facility.facility_name}</h3>
+                <p className="mt-1 text-muted-foreground">{facility.type} · {facility.address || "Address not recorded"}</p>
+              </div>
+              <TableRowActions label={`Actions for ${facility.facility_name}`}>
+                <DropdownMenuItem
+                  onClick={() =>
+                    navigate(`/superadmin/facility/${facility.facility_id}`, {
+                      state: {
+                        returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                        returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                      },
+                    })
+                  }
+                >
+                  <ExternalLink className="mr-2 size-4" />
+                  View Facility Hub
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openCreate(facility)}>
+                  <Edit2 className="mr-2 size-4" />
+                  Edit details
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onClick={() => setDeleteTarget(facility)}
+                >
+                  <Trash2 className="mr-2 size-4" />
+                  Delete facility
+                </DropdownMenuItem>
+              </TableRowActions>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">{facility.contact_number || facility.email || "No contact recorded"}</span>
+              <span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span>
+            </div>
+          </article>
+        ))}
+        {filtered.length === 0 && (
+          <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">
+            No facilities in this view.
+          </div>
+        )}
       </div>
 
       <TablePaginationFooter

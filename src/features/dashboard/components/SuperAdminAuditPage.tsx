@@ -7,6 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { CachedDataBanner } from "@/components/ui/cached-data-banner"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchAuditLogs, type AuditLogEntry } from "../api/superadmin-api"
 
@@ -206,7 +208,7 @@ export function SuperAdminAuditPage() {
         )}
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -218,7 +220,9 @@ export function SuperAdminAuditPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedLogs.length > 0 ? (
+            {loading ? (
+              <TableSkeletonRows columns={5} rows={5} checkboxColumn={false} />
+            ) : paginatedLogs.length > 0 ? (
               paginatedLogs.map((log) => {
                 const action = log.action_type || log.action || "LOG"
                 const isSensitive = action.includes("DELETE") || action.includes("DEACTIVATE")
@@ -263,13 +267,45 @@ export function SuperAdminAuditPage() {
                 <TableCell colSpan={5} className="h-32 text-center text-xs text-muted-foreground">
                   <div className="flex flex-col items-center justify-center gap-1.5">
                     <FileText className="size-6 text-muted-foreground/60" />
-                    <span>{loading ? "Loading audit records..." : "No matching audit log entries found."}</span>
+                    <span>No matching audit log entries found.</span>
                   </div>
                 </TableCell>
               </TableRow>
             )}
           </TableBody>
         </Table>
+      </div>
+
+      <div className="grid gap-3 md:hidden">
+        {loading ? (
+          <MobileTableCardSkeleton count={3} />
+        ) : (
+          paginatedLogs.map((log) => {
+            const action = log.action_type || log.action || "LOG"
+            const time = log.timestamp || log.client_timestamp
+            return (
+              <article key={log.audit_id} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-semibold text-foreground">{action}</h3>
+                  <time className="shrink-0 text-muted-foreground">
+                    {time ? new Date(time).toLocaleDateString() : "—"}
+                  </time>
+                </div>
+                <p className="mt-2 text-foreground">
+                  {log.table_name} · {log.user ? `${log.user.first_name} ${log.user.last_name}` : "System Service"}
+                </p>
+                {(log.details || log.new_state) && (
+                  <p className="mt-2 break-words text-muted-foreground">{log.details || log.new_state}</p>
+                )}
+              </article>
+            )
+          })
+        )}
+        {!loading && filteredLogs.length === 0 && (
+          <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">
+            No matching audit entries.
+          </div>
+        )}
       </div>
 
       <TablePaginationFooter

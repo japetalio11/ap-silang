@@ -11,6 +11,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { ConfirmSensitiveActionDialog } from "@/components/ui/confirm-sensitive-action-dialog"
 import { MaternalRegistrationModal, type RegistrationValues } from "./MaternalRegistrationModal"
 import { ConnectMotherQrModal } from "./ConnectMotherQrModal"
@@ -39,6 +40,14 @@ const recordTabs = [
   { value: "referred", label: "Referred" },
   { value: "postpartum", label: "Postpartum" },
 ]
+
+function MaternalNeutralBadge({ children }: { children: string }) {
+  return (
+    <span className="inline-flex w-fit max-w-48 items-center rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 text-xs text-foreground dark:bg-[#222]">
+      {children}
+    </span>
+  )
+}
 
 const filters = [
   {
@@ -306,9 +315,9 @@ export function MaternalRecordsPage() {
     <div className="relative flex h-full w-full items-start overflow-hidden">
       <div className="relative flex h-full min-w-0 w-full flex-col overflow-y-auto text-foreground">
         <div className="sticky top-0 z-10 flex flex-col gap-3 bg-background p-4 dark:bg-black">
-          <div className="flex min-w-0 items-center justify-between gap-4 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="shrink-0">
-              <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setPage(1) }} className="w-max">
+          <div className="flex min-w-0 flex-col gap-3 pb-1 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0 md:shrink-0">
+              <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value); setPage(1) }} className="w-full md:w-max">
                 <TabsList className="h-9 w-max justify-start gap-1">
                   {recordTabs.map(({ value, label }) => (
                     <TabsTrigger
@@ -316,7 +325,11 @@ export function MaternalRecordsPage() {
                       value={value}
                       className="h-full flex-initial border px-2 py-1 text-xs font-medium"
                     >
-                      {label}
+                      {label} ({value === "all" ? viewRows.length : viewRows.filter((row) => value === "active"
+                        ? row.pregnancyStatus === "active"
+                        : value === "referred"
+                          ? row.pregnancyStatus.includes("refer")
+                          : row.pregnancyStatus.includes("postpartum") || row.pregnancyStatus.includes("delivered")).length})
                     </TabsTrigger>
                   ))}
                 </TabsList>
@@ -324,7 +337,7 @@ export function MaternalRecordsPage() {
             </div>
 
             <TooltipProvider>
-              <div className="flex shrink-0 flex-nowrap items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2 md:shrink-0 md:flex-nowrap">
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="outline" size="icon" aria-label="Export CSV" onClick={() => setIsExportOpen(true)} className="size-8 border-sidebar-border">
@@ -353,8 +366,8 @@ export function MaternalRecordsPage() {
             </TooltipProvider>
           </div>
 
-          <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
-            <div className="relative min-w-[280px] max-w-md flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 pb-1">
+            <div className="relative min-w-0 basis-full md:max-w-md md:flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                 aria-label="Search mothers"
@@ -407,7 +420,7 @@ export function MaternalRecordsPage() {
         </div>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 px-4 pb-6 md:pt-0">
-          <div className="overflow-x-auto rounded-md border border-sidebar-border bg-background dark:bg-black">
+          <div className="hidden overflow-x-auto rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
             <div className="min-w-[980px]">
               <Table>
                 <TableHeader className="bg-card dark:bg-[#111]">
@@ -473,7 +486,7 @@ export function MaternalRecordsPage() {
                           <span className="text-xs text-muted-foreground">{edd && isValid(edd) ? format(edd, "MMM d, yyyy") : "—"}</span>
                         </div>
                       </TableCell>
-                      <TableCell>{riskLabel === "Not assessed" ? <span className="text-muted-foreground">Not assessed</span> : <StatusBadge status={riskLabel} />}</TableCell>
+                      <TableCell>{riskLabel === "Not assessed" ? <MaternalNeutralBadge>Not assessed</MaternalNeutralBadge> : <StatusBadge status={riskLabel} />}</TableCell>
                       <TableCell className="max-w-48 truncate" title={address}>{address}</TableCell>
                       <TableCell><span className="text-muted-foreground">Not scheduled</span></TableCell>
                       <TableCell className="w-12 px-1" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
@@ -498,6 +511,35 @@ export function MaternalRecordsPage() {
                 </TableBody>
               </Table>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2 md:hidden">
+            {isLoading ? <MobileTableCardSkeleton /> : pagedRows.map(({ record, name, latestPregnancy, aog, edd, riskLabel, address }) => (
+              <article key={record.mother_id} onClick={() => navigate(`/dashboard/maternal-records/${encodeURIComponent(record.mother_id)}`)} className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 dark:bg-black">
+                <div className="flex min-w-0 items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start gap-2">
+                    <Checkbox aria-label={`Select ${name}`} checked={selectedMotherIds.includes(record.mother_id)} onClick={(event) => event.stopPropagation()} onCheckedChange={(checked) => setSelectedMotherIds((current) => checked === true ? Array.from(new Set([...current, record.mother_id])) : current.filter((id) => id !== record.mother_id))} className="border-sidebar-border" />
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-foreground">{name}</p>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{address || "Address not recorded"}</p>
+                    </div>
+                  </div>
+                  <TableRowActions label={`Actions for ${name}`}>
+                    <DropdownMenuItem onSelect={() => navigate(`/dashboard/maternal-records/${encodeURIComponent(record.mother_id)}`)}>View Profile</DropdownMenuItem>
+                    <DropdownMenuItem variant="destructive" onSelect={() => setMotherToDelete(record)}>Delete Maternal Record</DropdownMenuItem>
+                  </TableRowActions>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {riskLabel === "Not assessed" ? <MaternalNeutralBadge>Not assessed</MaternalNeutralBadge> : <StatusBadge status={riskLabel} />}
+                  <MaternalNeutralBadge>{latestPregnancy ? `G${latestPregnancy.gravida ?? "—"} P${latestPregnancy.parity ?? "—"}` : "No pregnancy"}</MaternalNeutralBadge>
+                </div>
+                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs">
+                  <span className="text-muted-foreground">AOG</span><span>{aog}</span>
+                  <span className="text-muted-foreground">EDD</span><span>{edd && isValid(edd) ? format(edd, "MMM d, yyyy") : "—"}</span>
+                </div>
+              </article>
+            ))}
+            {!isLoading && pagedRows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No maternal records in this view.</div>}
           </div>
 
           <TablePaginationFooter

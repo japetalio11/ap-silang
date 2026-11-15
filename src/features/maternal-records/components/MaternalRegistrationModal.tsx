@@ -290,7 +290,7 @@ export function MaternalRegistrationModal({
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="grid max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-4xl grid-cols-1 gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-4xl md:grid-cols-[240px_minmax(0,1fr)]">
+      <DialogContent className="maternal-registration-sheet grid max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-4xl grid-cols-1 gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-4xl md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-border bg-muted/30 px-5 py-4 md:border-b-0 md:border-r md:px-6 md:py-6">
           <DialogHeader className="gap-1.5">
             <DialogTitle className="text-base font-semibold">{mode === "pregnancy" ? "Create Pregnancy" : "Create Maternal Record"}</DialogTitle>

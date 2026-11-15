@@ -43,13 +43,13 @@ export function ResponsiveModal({
       <Drawer open={open} onOpenChange={onOpenChange}>
         {trigger && <DrawerTrigger asChild>{trigger}</DrawerTrigger>}
         <DrawerContent className="bg-background dark:bg-[#0a0a0a] border-t border-sidebar-border border-x-0 border-b-0 before:hidden rounded-t-xl overflow-hidden focus-visible:outline-none flex flex-col px-4 pb-4 max-h-[85dvh]">
-          <div className="overflow-y-auto no-scrollbar pt-2">
-            {(title || description) && (
-              <DrawerHeader className="px-0 pt-2 pb-4 text-left">
+          {(title || description) && (
+              <DrawerHeader className="shrink-0 px-0 pt-2 pb-4 text-left">
                 {title && <DrawerTitle className="text-base font-semibold text-foreground dark:text-white">{title}</DrawerTitle>}
                 {description && <DrawerDescription className="text-xs text-muted-foreground">{description}</DrawerDescription>}
               </DrawerHeader>
-            )}
+          )}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar pt-2">
             {children}
           </div>
         </DrawerContent>

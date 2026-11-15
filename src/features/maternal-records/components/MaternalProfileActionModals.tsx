@@ -212,7 +212,7 @@ export function EhrExportDialog({ open, onOpenChange, patientName, maternalRecor
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-xl">
         <DialogHeader className="gap-1">
-          <DialogTitle className="text-base font-semibold">Export Clinical Health Record (EHR Summary)</DialogTitle>
+          <DialogTitle className="text-base font-semibold">Export Clinical Health Record Summary</DialogTitle>
           <DialogDescription className="text-xs">Generate a clinical record summary for {patientName}.</DialogDescription>
         </DialogHeader>
         <PatientBanner
@@ -231,7 +231,7 @@ export function EhrExportDialog({ open, onOpenChange, patientName, maternalRecor
               <TabsTrigger value="json" className="px-2 text-xs">Complete JSON</TabsTrigger>
             </TabsList>
           </Tabs>
-          <p className="text-xs text-muted-foreground">{format === "pdf" ? "Clean A4 medical layout" : format === "csv" ? "Spreadsheet timeline" : "Full EHR exchange"}</p>
+          <p className="text-xs text-muted-foreground">{format === "pdf" ? "Clean A4 medical layout" : format === "csv" ? "Spreadsheet timeline" : "Full health record exchange"}</p>
         </div>
 
         <div className="flex flex-col gap-2">
@@ -239,7 +239,7 @@ export function EhrExportDialog({ open, onOpenChange, patientName, maternalRecor
           <div className="grid gap-1.5 sm:grid-cols-2">
             {[
               ["Prenatal Encounters & Vitals", "2", "Recorded antenatal visits and physiological vitals."],
-              ["EHR Records", "1", "Laboratory tests and screening attachments."],
+              ["Health Records", "1", "Laboratory tests and screening attachments."],
               ["Prescriptions & Supplements", "1", "Medication logs and nutritional supplements."],
               ["Delivery & Newborn Records", "2", "Labor outcomes, delivery logs, and infant statistics."],
               ["Postpartum Follow-up Care", "0", "Maternal checkups and postpartum vitals."],
@@ -458,7 +458,7 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
     if (!selectedPregnancyId || !screeningType.trim() || !screeningDate) { toast.error("Select a pregnancy and complete the screening type and date"); return }
     setIsSaving(true)
     try { await onSave({ pregnancyId: selectedPregnancyId, visitId, screeningType: screeningType.trim(), screeningDate, result: result.trim(), remarks: remarks.trim(), files }); close(false) }
-    catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save the EHR record") }
+    catch (error) { toast.error(error instanceof Error ? error.message : "Unable to save the health record") }
     finally { setIsSaving(false) }
   }
 
@@ -466,8 +466,8 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
     <Dialog open={open} onOpenChange={close}>
       <DialogContent className="max-h-[92dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-4 text-foreground sm:max-w-md">
         <DialogHeader className="gap-1">
-          <DialogTitle className="text-base font-semibold">Add EHR Record</DialogTitle>
-          <DialogDescription className="text-xs">Add a clinical document or screening record to this mother’s EHR.</DialogDescription>
+          <DialogTitle className="text-base font-semibold">Add Health Record</DialogTitle>
+          <DialogDescription className="text-xs">Add a clinical document or screening record to this mother’s health record.</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-1.5" aria-label={`Step ${step} of 2`}>
@@ -529,7 +529,7 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
             <Field id="lab-remarks" label="Remarks / Findings"><Textarea id="lab-remarks" value={remarks} onChange={(event) => setRemarks(event.target.value)} placeholder="Enter clinical observations or follow-up notes..." className="min-h-16 bg-muted/70 text-xs dark:bg-muted/60" /></Field>
             <DialogFooter className="flex-row justify-between gap-3 sm:justify-between pt-3">
               <Button type="button" variant="outline" onClick={() => setStep(1)} className="h-8 flex-1 text-xs sm:flex-initial sm:min-w-24">Back</Button>
-              <Button type="submit" disabled={isSaving} className="h-8 flex-1 text-xs sm:flex-initial sm:min-w-36">{isSaving ? "Saving…" : "Save EHR Record"}</Button>
+              <Button type="submit" disabled={isSaving} className="h-8 flex-1 text-xs sm:flex-initial sm:min-w-36">{isSaving ? "Saving…" : "Save Health Record"}</Button>
             </DialogFooter>
           </form>
         )}
