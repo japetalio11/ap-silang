@@ -28,7 +28,32 @@ export function backendAssetUrl(path: string) {
   return `${origin}${path.startsWith("/") ? path : `/${path}`}`
 }
 
+const inFlightReads = new Map<string, Promise<unknown>>()
+
 export async function apiRequest<T>(
+  path: string,
+  options: RequestInit & { token?: string | null } = {},
+): Promise<T> {
+  const { token, headers, ...requestOptions } = options
+  const method = (requestOptions.method ?? "GET").toUpperCase()
+
+  if (method === "GET" && !requestOptions.body) {
+    const dedupeKey = `${token || ""}:${path}`
+    const existing = inFlightReads.get(dedupeKey)
+    if (existing) {
+      return existing as Promise<T>
+    }
+    const requestPromise = executeApiRequest<T>(path, options).finally(() => {
+      inFlightReads.delete(dedupeKey)
+    })
+    inFlightReads.set(dedupeKey, requestPromise)
+    return requestPromise
+  }
+
+  return executeApiRequest<T>(path, options)
+}
+
+async function executeApiRequest<T>(
   path: string,
   options: RequestInit & { token?: string | null } = {},
 ): Promise<T> {
@@ -57,7 +82,6 @@ export async function apiRequest<T>(
         const cached = await readCachedApiValue<T>(cacheScope, url)
         if (cached !== undefined) return cached
       } catch {
-        // A local storage failure should not hide the original network error.
       }
     }
     throw error
@@ -79,15 +103,11 @@ export async function apiRequest<T>(
     if (token && (response.status === 401 || (response.status === 403 && /invalid or expired token/i.test(errorMessage)))) {
       window.dispatchEvent(new Event("silang:auth-expired"))
     }
-    // Vite's development proxy can return a 500 when its upstream API is
-    // unreachable. Treat gateway/server failures on reads like network errors
-    // so a previously cached route still renders while offline.
     if (isCacheableRead && response.status >= 500) {
       try {
         const cached = await readCachedApiValue<T>(cacheScope, url)
         if (cached !== undefined) return cached
       } catch {
-        // Preserve the API error if local storage cannot be read.
       }
     }
     throw new ApiError(errorMessage || `Request failed (${response.status})`, response.status)
@@ -97,7 +117,6 @@ export async function apiRequest<T>(
     try {
       await writeCachedApiValue(cacheScope, url, responseBody)
     } catch {
-      // The online request is still valid if browser storage is unavailable or full.
     }
   }
 

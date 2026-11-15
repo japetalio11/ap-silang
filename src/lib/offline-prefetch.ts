@@ -88,20 +88,29 @@ export async function warmOfflineData(token: string, userId: string, facilityId?
     const mothers = motherResponse?.status === "fulfilled"
       ? (motherResponse.value as { result?: MaternalRecord[] }).result ?? []
       : []
-    const motherIds = [...new Set(mothers.map((mother) => mother.mother_id).filter(Boolean))]
-    await runWithLimit(motherIds, 3, (motherId) => apiRequest(`/mother/composite/${encodeURIComponent(motherId)}`, { token }))
 
-    const staffResponse = coreReads[5]
-    const staff = staffResponse?.status === "fulfilled"
-      ? (staffResponse.value as { result?: StaffCacheRecord[] }).result ?? []
-      : []
-    const staffIds = [...new Set([userId, ...staff.map((person) => person.user_id)].filter((id): id is string => Boolean(id)))]
-    await runWithLimit(staffIds, 3, async (staffId) => {
-      await Promise.allSettled([
-        apiRequest(`/user/${encodeURIComponent(staffId)}`, { token }),
-        apiRequest(`/user/${encodeURIComponent(staffId)}/activities?limit=10`, { token }),
-      ])
-    })
+    if (mothers.length > 0) {
+      const mothersToStore = mothers.map((mother) => ({
+        ...mother,
+        id: mother.mother_id,
+        first_name: mother.user?.first_name,
+        middle_name: mother.user?.middle_name,
+        last_name: mother.user?.last_name,
+        phone_number: mother.user?.phone_number,
+        email: mother.user?.email,
+        address: mother.user?.address,
+        sync_status: "synced",
+        updated_at: Date.now(),
+      }))
+      await db.mothers.bulkPut(mothersToStore).catch(() => {})
+
+      const topRecentMotherIds = mothers.slice(0, 3).map((m) => m.mother_id).filter(Boolean)
+      if (topRecentMotherIds.length > 0) {
+        await runWithLimit(topRecentMotherIds, 2, (motherId) => apiRequest(`/mother/composite/${encodeURIComponent(motherId)}`, { token }))
+      }
+    }
+
+    await apiRequest(`/user/${encodeURIComponent(userId)}/activities?limit=10`, { token }).catch(() => {})
   } finally {
     warmingScopes.delete(warmKey)
   }

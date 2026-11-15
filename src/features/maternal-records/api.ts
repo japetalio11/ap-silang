@@ -243,6 +243,262 @@ function applyMotherProfileChanges<T extends MaternalRecord>(record: T, changes:
   return next
 }
 
+async function persistActiveMothersBatch(mothers: MaternalRecord[]) {
+  const mothersToPut: any[] = []
+  const pregsToPut: any[] = []
+  const visitsToPut: any[] = []
+  const deliveriesToPut: any[] = []
+  const labsToPut: any[] = []
+
+  const now = Date.now()
+  for (const mother of mothers) {
+    mothersToPut.push({
+      ...mother,
+      id: mother.mother_id,
+      first_name: mother.user?.first_name,
+      middle_name: mother.user?.middle_name,
+      last_name: mother.user?.last_name,
+      phone_number: mother.user?.phone_number,
+      email: mother.user?.email,
+      address: mother.user?.address,
+      sync_status: "synced",
+      updated_at: now,
+    })
+
+    if (Array.isArray(mother.pregnancies)) {
+      for (const p of mother.pregnancies) {
+        pregsToPut.push({
+          ...p,
+          id: p.pregnancy_id,
+          mother_id: mother.mother_id,
+          sync_status: "synced",
+          updated_at: now,
+        })
+
+        if (Array.isArray(p.prenatalVisits)) {
+          for (const v of p.prenatalVisits) {
+            if (v.visit_id) {
+              visitsToPut.push({
+                ...v,
+                id: v.visit_id,
+                visit_id: v.visit_id,
+                pregnancy_id: p.pregnancy_id,
+                mother_id: mother.mother_id,
+                sync_status: "synced",
+                updated_at: now,
+              })
+            }
+          }
+        }
+
+        if (Array.isArray(p.deliveryOutcomes)) {
+          for (const d of p.deliveryOutcomes) {
+            if (d.delivery_id) {
+              deliveriesToPut.push({
+                ...d,
+                id: d.delivery_id,
+                delivery_id: d.delivery_id,
+                pregnancy_id: p.pregnancy_id,
+                mother_id: mother.mother_id,
+                sync_status: "synced",
+                updated_at: now,
+              })
+            }
+          }
+        }
+
+        if (Array.isArray(p.labScreenings)) {
+          for (const l of p.labScreenings) {
+            if (l.screening_id) {
+              labsToPut.push({
+                ...l,
+                id: l.screening_id,
+                screening_id: l.screening_id,
+                pregnancy_id: p.pregnancy_id,
+                mother_id: mother.mother_id,
+                screening_type: l.screening_type || "Lab Screening",
+                date_of_screening: l.date_of_screening || new Date().toISOString(),
+                sync_status: "synced",
+                updated_at: now,
+              })
+            }
+          }
+        }
+      }
+    }
+  }
+
+  await db.transaction("rw", [db.mothers, db.pregnancies, db.prenatalVisits, db.deliveryOutcomes, db.labScreenings], async () => {
+    if (mothersToPut.length > 0) await db.mothers.bulkPut(mothersToPut)
+    if (pregsToPut.length > 0) await db.pregnancies.bulkPut(pregsToPut)
+    if (visitsToPut.length > 0) await db.prenatalVisits.bulkPut(visitsToPut)
+    if (deliveriesToPut.length > 0) await db.deliveryOutcomes.bulkPut(deliveriesToPut)
+    if (labsToPut.length > 0) await db.labScreenings.bulkPut(labsToPut)
+  }).catch(() => {})
+}
+
+async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
+  const now = Date.now()
+  const motherRecord = {
+    ...result,
+    id: result.mother_id,
+    first_name: result.user?.first_name,
+    middle_name: result.user?.middle_name,
+    last_name: result.user?.last_name,
+    phone_number: result.user?.phone_number,
+    email: result.user?.email,
+    address: result.user?.address,
+    profile_url: result.user?.profile_url || result.profile_url,
+    photo_url: result.user?.profile_url || result.photo_url || result.profile_url,
+    sync_status: "synced",
+    updated_at: now,
+  }
+
+  const pregsToPut: any[] = []
+  const visitsToPut: any[] = []
+  const deliveriesToPut: any[] = []
+  const labsToPut: any[] = []
+  const apptsToPut: any[] = []
+  const prescsToPut: any[] = []
+
+  if (Array.isArray(result.pregnancies)) {
+    for (const p of result.pregnancies) {
+      pregsToPut.push({
+        ...p,
+        id: p.pregnancy_id,
+        mother_id: result.mother_id,
+        sync_status: "synced",
+        updated_at: now,
+      })
+      if (Array.isArray(p.prenatalVisits)) {
+        for (const v of p.prenatalVisits) {
+          if (v.visit_id) {
+            visitsToPut.push({
+              ...v,
+              id: v.visit_id,
+              visit_id: v.visit_id,
+              pregnancy_id: p.pregnancy_id,
+              mother_id: result.mother_id,
+              sync_status: "synced",
+              updated_at: now,
+            })
+          }
+        }
+      }
+      if (Array.isArray(p.deliveryOutcomes)) {
+        for (const d of p.deliveryOutcomes) {
+          if (d.delivery_id) {
+            deliveriesToPut.push({
+              ...d,
+              id: d.delivery_id,
+              pregnancy_id: p.pregnancy_id,
+              mother_id: result.mother_id,
+              sync_status: "synced",
+              updated_at: now,
+            })
+          }
+        }
+      }
+      if (Array.isArray(p.labScreenings)) {
+        for (const l of p.labScreenings) {
+          if (l.screening_id) {
+            labsToPut.push({
+              ...l,
+              id: l.screening_id,
+              screening_type: l.screening_type || "Lab screening",
+              date_of_screening: l.date_of_screening || new Date().toISOString(),
+              pregnancy_id: p.pregnancy_id,
+              mother_id: result.mother_id,
+              sync_status: "synced",
+              updated_at: now,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(result.appointments)) {
+    for (const a of result.appointments) {
+      if (a.appointment_id) {
+        apptsToPut.push({
+          ...a,
+          id: a.appointment_id,
+          mother_id: result.mother_id,
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  if (Array.isArray(result.labRecords)) {
+    for (const l of result.labRecords) {
+      if (l.screening_id) {
+        labsToPut.push({
+          ...l,
+          id: l.screening_id,
+          screening_type: l.screening_type || "Lab screening",
+          date_of_screening: l.date_of_screening || new Date().toISOString(),
+          mother_id: result.mother_id,
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  if (Array.isArray(result.deliveries)) {
+    for (const d of result.deliveries) {
+      if (d.delivery_id) {
+        deliveriesToPut.push({
+          ...d,
+          id: d.delivery_id,
+          mother_id: result.mother_id,
+          pregnancy_id: (d as any).pregnancy_id || "",
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  if (Array.isArray(result.supplements)) {
+    for (const pr of result.supplements) {
+      const supId = pr.supplement_id || (pr as any).prescription_id
+      if (supId) {
+        prescsToPut.push({
+          id: supId,
+          prescription_id: supId,
+          supplement_id: supId,
+          mother_id: result.mother_id,
+          pregnancy_id: pr.pregnancy_id,
+          visit_id: pr.visit_id,
+          supplement_type: pr.supplement_type,
+          tablets_given_count: pr.tablets_given_count,
+          date_given: pr.date_given,
+          medication_name: pr.supplement_type || "Supplement",
+          dosage: `${pr.tablets_given_count ?? 1} tablets`,
+          frequency: "Daily",
+          prescribed_date: pr.date_given || new Date().toISOString(),
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  await db.transaction("rw", [db.mothers, db.pregnancies, db.prenatalVisits, db.deliveryOutcomes, db.labScreenings, db.appointments, db.prescriptions], async () => {
+    await db.mothers.put(motherRecord)
+    if (pregsToPut.length > 0) await db.pregnancies.bulkPut(pregsToPut)
+    if (visitsToPut.length > 0) await db.prenatalVisits.bulkPut(visitsToPut)
+    if (deliveriesToPut.length > 0) await db.deliveryOutcomes.bulkPut(deliveriesToPut)
+    if (labsToPut.length > 0) await db.labScreenings.bulkPut(labsToPut)
+    if (apptsToPut.length > 0) await db.appointments.bulkPut(apptsToPut)
+    if (prescsToPut.length > 0) await db.prescriptions.bulkPut(prescsToPut)
+  }).catch(() => {})
+}
+
 export async function getMaternalRecords(token: string): Promise<MaternalListResponse> {
   const pendingMothers = await db.mothers.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
 
@@ -278,82 +534,7 @@ export async function getMaternalRecords(token: string): Promise<MaternalListRes
   try {
     const response = await apiRequest<MaternalListResponse>("/mother/active", { token })
     if (Array.isArray(response.result)) {
-      for (const mother of response.result) {
-        await db.mothers.put({
-          ...mother,
-          id: mother.mother_id,
-          first_name: mother.user?.first_name,
-          middle_name: mother.user?.middle_name,
-          last_name: mother.user?.last_name,
-          phone_number: mother.user?.phone_number,
-          email: mother.user?.email,
-          address: mother.user?.address,
-          sync_status: "synced",
-          updated_at: Date.now(),
-        }).catch(() => {})
-
-        if (Array.isArray(mother.pregnancies)) {
-          for (const p of mother.pregnancies) {
-            await db.pregnancies.put({
-              ...p,
-              id: p.pregnancy_id,
-              mother_id: mother.mother_id,
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-
-            if (Array.isArray(p.prenatalVisits)) {
-              for (const v of p.prenatalVisits) {
-                if (v.visit_id) {
-                  await db.prenatalVisits.put({
-                    ...v,
-                    id: v.visit_id,
-                    visit_id: v.visit_id,
-                    pregnancy_id: p.pregnancy_id,
-                    mother_id: mother.mother_id,
-                    sync_status: "synced",
-                    updated_at: Date.now(),
-                  }).catch(() => {})
-                }
-              }
-            }
-
-            if (Array.isArray(p.deliveryOutcomes)) {
-              for (const d of p.deliveryOutcomes) {
-                if (d.delivery_id) {
-                  await db.deliveryOutcomes.put({
-                    ...d,
-                    id: d.delivery_id,
-                    delivery_id: d.delivery_id,
-                    pregnancy_id: p.pregnancy_id,
-                    mother_id: mother.mother_id,
-                    sync_status: "synced",
-                    updated_at: Date.now(),
-                  }).catch(() => {})
-                }
-              }
-            }
-
-            if (Array.isArray(p.labScreenings)) {
-              for (const l of p.labScreenings) {
-                if (l.screening_id) {
-                  await db.labScreenings.put({
-                    ...l,
-                    id: l.screening_id,
-                    screening_id: l.screening_id,
-                    pregnancy_id: p.pregnancy_id,
-                    mother_id: mother.mother_id,
-                    screening_type: l.screening_type || "Lab Screening",
-                    date_of_screening: l.date_of_screening || new Date().toISOString(),
-                    sync_status: "synced",
-                    updated_at: Date.now(),
-                  }).catch(() => {})
-                }
-              }
-            }
-          }
-        }
-      }
+      await persistActiveMothersBatch(response.result)
     }
 
     const pendingUpdates = await getPendingMotherUpdates().catch(() => [])
@@ -532,142 +713,7 @@ export async function getMaternalProfile(token: string, motherId: string): Promi
     const response = await apiRequest<{ result: MaternalCompositeRecord }>(`/mother/composite/${encodeURIComponent(motherId)}`, { token })
     const result = response.result
     if (result) {
-      await db.mothers.put({
-        ...result,
-        id: result.mother_id,
-        first_name: result.user?.first_name,
-        middle_name: result.user?.middle_name,
-        last_name: result.user?.last_name,
-        phone_number: result.user?.phone_number,
-        email: result.user?.email,
-        address: result.user?.address,
-        profile_url: result.user?.profile_url || result.profile_url,
-        photo_url: result.user?.profile_url || result.photo_url || result.profile_url,
-        sync_status: "synced",
-        updated_at: Date.now(),
-      }).catch(() => {})
-      if (Array.isArray(result.pregnancies)) {
-        for (const p of result.pregnancies) {
-          await db.pregnancies.put({
-            ...p,
-            id: p.pregnancy_id,
-            mother_id: result.mother_id,
-            sync_status: "synced",
-            updated_at: Date.now(),
-          }).catch(() => {})
-          if (Array.isArray(p.prenatalVisits)) {
-            for (const v of p.prenatalVisits) {
-              if (v.visit_id) {
-                await db.prenatalVisits.put({
-                  ...v,
-                  id: v.visit_id,
-                  visit_id: v.visit_id,
-                  pregnancy_id: p.pregnancy_id,
-                  mother_id: result.mother_id,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                }).catch(() => {})
-              }
-            }
-          }
-          if (Array.isArray(p.deliveryOutcomes)) {
-            for (const d of p.deliveryOutcomes) {
-              if (d.delivery_id) {
-                await db.deliveryOutcomes.put({
-                  ...d,
-                  id: d.delivery_id,
-                  pregnancy_id: p.pregnancy_id,
-                  mother_id: result.mother_id,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                }).catch(() => {})
-              }
-            }
-          }
-          if (Array.isArray(p.labScreenings)) {
-            for (const l of p.labScreenings) {
-              if (l.screening_id) {
-                await db.labScreenings.put({
-                  ...l,
-                  id: l.screening_id,
-                  screening_type: l.screening_type || "Lab screening",
-                  date_of_screening: l.date_of_screening || new Date().toISOString(),
-                  pregnancy_id: p.pregnancy_id,
-                  mother_id: result.mother_id,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                }).catch(() => {})
-              }
-            }
-          }
-        }
-      }
-      if (Array.isArray(result.appointments)) {
-        for (const a of result.appointments) {
-          if (a.appointment_id) {
-            await db.appointments.put({
-              ...a,
-              id: a.appointment_id,
-              mother_id: result.mother_id,
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
-      if (Array.isArray(result.labRecords)) {
-        for (const l of result.labRecords) {
-          if (l.screening_id) {
-            await db.labScreenings.put({
-              ...l,
-              id: l.screening_id,
-              screening_type: l.screening_type || "Lab screening",
-              date_of_screening: l.date_of_screening || new Date().toISOString(),
-              mother_id: result.mother_id,
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
-      if (Array.isArray(result.deliveries)) {
-        for (const d of result.deliveries) {
-          if (d.delivery_id) {
-            await db.deliveryOutcomes.put({
-              ...d,
-              id: d.delivery_id,
-              mother_id: result.mother_id,
-              pregnancy_id: (d as any).pregnancy_id || "",
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
-      if (Array.isArray(result.supplements)) {
-        for (const pr of result.supplements) {
-          const supId = pr.supplement_id || (pr as any).prescription_id
-          if (supId) {
-            await db.prescriptions.put({
-              id: supId,
-              prescription_id: supId,
-              supplement_id: supId,
-              mother_id: result.mother_id,
-              pregnancy_id: pr.pregnancy_id,
-              visit_id: pr.visit_id,
-              supplement_type: pr.supplement_type,
-              tablets_given_count: pr.tablets_given_count,
-              date_given: pr.date_given,
-              medication_name: pr.supplement_type || "Supplement",
-              dosage: `${pr.tablets_given_count ?? 1} tablets`,
-              frequency: "Daily",
-              prescribed_date: pr.date_given || new Date().toISOString(),
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
+      await persistCompositeProfileBatch(result)
     }
     return { result }
   } catch (error) {
