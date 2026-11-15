@@ -58,7 +58,7 @@ export function appointmentToEvent(appointment: AppointmentRecord): AppEvent {
   }
 }
 
-export async function getAppointments(token: string): Promise<{ message?: string; data: AppointmentRecord[] }> {
+export async function getAppointments(token: string, options?: { scope?: string }): Promise<{ message?: string; data: AppointmentRecord[] }> {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     const local = await db.appointments.toArray().catch(() => [])
     if (local.length > 0) {
@@ -82,7 +82,8 @@ export async function getAppointments(token: string): Promise<{ message?: string
   }
 
   try {
-    const res = await apiRequest<{ message?: string; data: AppointmentRecord[] }>("/appointment/getAll", { token })
+    const query = options?.scope ? `?scope=${encodeURIComponent(options.scope)}` : ""
+    const res = await apiRequest<{ message?: string; data: AppointmentRecord[] }>(`/appointment/getAll${query}`, { token })
     if (Array.isArray(res.data)) {
       for (const a of res.data) {
         await db.appointments.put({
@@ -163,6 +164,7 @@ export async function createAppointment(token: string, input: CreateAppointmentI
       await db.appointments.put({
         ...res.data,
         id: res.data.appointment_id,
+        mother_id: input.mother_id,
         sync_status: "synced",
         updated_at: Date.now(),
       }).catch(() => {})

@@ -359,8 +359,13 @@ export function updateStaffRole(token: string, id: string, role: string) {
   return apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(id)}/role`, { method: "PUT", token, body: JSON.stringify({ role }) })
 }
 
-export function setStaffActive(token: string, id: string, is_active: boolean) {
-  return apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(id)}/deactivate`, { method: "PUT", token, body: JSON.stringify({ is_active }) })
+export async function setStaffActive(token: string, id: string, is_active: boolean) {
+  const res = await apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(id)}/deactivate`, { method: "PUT", token, body: JSON.stringify({ is_active }) })
+  const local = await db.staff.get(id) || await db.staff.where("user_id").equals(id).first()
+  if (local) {
+    await db.staff.update(local.id, { is_active, updated_at: Date.now() }).catch(() => {})
+  }
+  return res
 }
 
 export function resetStaffPassword(token: string, id: string, newPassword: string) {

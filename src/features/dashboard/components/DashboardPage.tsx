@@ -88,6 +88,10 @@ export function DashboardPage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
 
+  const userRole = session?.user?.role?.toLowerCase().trim() || ""
+  const isAdminOrAbove = userRole === "admin" || userRole === "systemadmin" || userRole === "superadmin"
+  const currentUserId = session?.user?.user_id
+
   const loadDashboardData = useCallback(async (refresh = false) => {
     if (!session?.token) {
       setAppointments([])
@@ -99,7 +103,7 @@ export function DashboardPage() {
     else setIsLoading(true)
     try {
       const [appointmentResponse, motherResponse] = await Promise.all([
-        getAppointments(session.token),
+        getAppointments(session.token, { scope: isAdminOrAbove ? "facility" : "user" }),
         getMaternalRecords(session.token),
       ])
       setAppointments(Array.isArray(appointmentResponse.data) ? appointmentResponse.data : [])
@@ -111,7 +115,7 @@ export function DashboardPage() {
       setIsLoading(false)
       setIsRefreshing(false)
     }
-  }, [session?.token])
+  }, [session?.token, isAdminOrAbove])
 
   useEffect(() => { void loadDashboardData() }, [loadDashboardData])
 
@@ -123,15 +127,29 @@ export function DashboardPage() {
     })
     return records
   }, [mothers])
-  const appointmentRows = useMemo<AppointmentRow[]>(() => appointments.map((appointment) => {
-    const mother = appointment.user_id ? motherByUserId.get(appointment.user_id) : undefined
-    const name = getPatientName(appointment, mother)
-    const start = getAppointmentDate(appointment)
-    const status = appointment.status || "Scheduled"
-    const serial = mother?.family_serial_no || ""
-    const searchText = [name, serial, appointment.appointment_type, appointment.reason, status, appointment.facility?.facility_name].join(" ").toLowerCase()
-    return { appointment, mother, name, serial, start, status, searchText }
-  }), [appointments, motherByUserId])
+
+  const appointmentRows = useMemo<AppointmentRow[]>(() => {
+    return appointments
+      .filter((appointment) => {
+        if (isAdminOrAbove) return true
+        if (appointment.user_id === currentUserId) return true
+        const mother = appointment.user_id ? motherByUserId.get(appointment.user_id) : undefined
+        if (!mother) return false
+        return (
+          mother.assigned_worker_id === currentUserId ||
+          mother.created_by_id === currentUserId
+        )
+      })
+      .map((appointment) => {
+        const mother = appointment.user_id ? motherByUserId.get(appointment.user_id) : undefined
+        const name = getPatientName(appointment, mother)
+        const start = getAppointmentDate(appointment)
+        const status = appointment.status || "Scheduled"
+        const serial = mother?.family_serial_no || ""
+        const searchText = [name, serial, appointment.appointment_type, appointment.reason, status, appointment.facility?.facility_name].join(" ").toLowerCase()
+        return { appointment, mother, name, serial, start, status, searchText }
+      })
+  }, [appointments, motherByUserId, isAdminOrAbove, currentUserId])
 
   const today = startOfDay(new Date())
   const counts = useMemo(() => ({
@@ -162,8 +180,8 @@ export function DashboardPage() {
     { title: "Pending Triage", value: pendingTriageCount, status: "Pending", statusLabel: "Queued", valueClassName: "text-[#b45309] dark:text-[#fbbf24]", detail: "Clinical review", description: "Recorded visits awaiting risk assessment", icon: RefreshCw },
   ]
 
-  const appointmentTypes = useMemo(() => [...new Set(appointments.map((appointment) => appointment.appointment_type).filter((value): value is string => Boolean(value)))].sort(), [appointments])
-  const statuses = useMemo(() => [...new Set(appointments.map((appointment) => appointment.status || "Scheduled"))].sort(), [appointments])
+  const appointmentTypes = useMemo(() => [...new Set(appointmentRows.map((row) => row.appointment.appointment_type).filter((value): value is string => Boolean(value)))].sort(), [appointmentRows])
+  const statuses = useMemo(() => [...new Set(appointmentRows.map((row) => row.appointment.status || "Scheduled"))].sort(), [appointmentRows])
   const hasActiveFilters = search.trim().length > 0 || Object.values(selectedFilters).some((values) => values.length > 0)
 
   const toggleFilter = (name: string, option: string, checked: boolean) => {
@@ -226,7 +244,11 @@ export function DashboardPage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 id="upcoming-appointments-heading" className="text-sm font-semibold text-foreground">Upcoming Appointments</h2>
-            <p className="mt-1 text-xs text-muted-foreground">Review today&apos;s queue and manage upcoming maternal care visits.</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {isAdminOrAbove
+                ? "Review facility-wide queue and manage upcoming maternal care visits."
+                : "Review your assigned queue and manage upcoming maternal care visits."}
+            </p>
           </div>
           <Link to="/dashboard/calendar" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-foreground underline underline-offset-4 hover:text-muted-foreground">
             View Calendar <ArrowRight className="size-3.5" />

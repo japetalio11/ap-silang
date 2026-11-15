@@ -1172,9 +1172,9 @@ export function MaternalProfilePage() {
     setAppointmentRowsState((current) => [...current, [
       `${formatRecordDate(appointment.appointment_date)} · ${appointment.appointment_time}`,
       appointment.appointment_type,
-      "—",
       <StatusBadge key={appointment.appointment_id} status={appointment.status || "Scheduled"} label={formatStatusLabel(appointment.status)} />,
     ]])
+    refreshProfile()
     return { ...event, id: appointment.appointment_id, appointmentId: appointment.appointment_id }
   }
 

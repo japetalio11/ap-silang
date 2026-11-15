@@ -7,6 +7,7 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useAuthSession } from "@/features/auth/auth-session"
 import type { StaffRecord } from "../api"
 
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
@@ -40,17 +41,29 @@ function readSchedule(staffId: string): StaffSchedule {
 }
 
 export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boolean; onOpenChange: (open: boolean) => void; staff: StaffRecord }) {
+  const { session } = useAuthSession()
+  const userRole = session?.user?.role?.toLowerCase().trim() || ""
+  const isAdminOrAbove = userRole === "admin" || userRole === "systemadmin" || userRole === "superadmin"
+
   const [schedule, setSchedule] = useState<StaffSchedule>(() => readSchedule(staff.id))
   const { days, intervals } = schedule
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const toggleDay = (day: string) => setSchedule((current) => ({ ...current, days: current.days.includes(day) ? current.days.filter((value) => value !== day) : [...current.days, day] }))
+  const toggleDay = (day: string) => {
+    if (!isAdminOrAbove) return
+    setSchedule((current) => ({ ...current, days: current.days.includes(day) ? current.days.filter((value) => value !== day) : [...current.days, day] }))
+  }
   const updateInterval = (index: number, field: keyof TimeInterval, value: string) => {
+    if (!isAdminOrAbove) return
     setSchedule((current) => ({ ...current, intervals: current.intervals.map((interval, currentIndex) => currentIndex === index ? { ...interval, [field]: value } : interval) }))
     setErrors((current) => ({ ...current, [`interval-${index}`]: "" }))
   }
 
   const saveSchedule = () => {
+    if (!isAdminOrAbove) {
+      toast.error("Only administrators can edit staff availability.")
+      return
+    }
     const result = scheduleSchema.safeParse(schedule)
     if (!result.success) {
       const nextErrors: Record<string, string> = {}
@@ -72,50 +85,63 @@ export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boole
       <DialogContent className="w-[calc(100%-1.5rem)] max-w-lg">
         <DialogHeader className="text-left">
           <DialogTitle className="text-base font-semibold">Staff availability</DialogTitle>
-          <DialogDescription className="text-xs">Set recurring days and time ranges for {staff.name}.</DialogDescription>
+          <DialogDescription className="text-xs">
+            {isAdminOrAbove ? `Set recurring days and time ranges for ${staff.name}.` : `View recurring days and time ranges for ${staff.name}. (Read-only)`}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-5 py-1">
           <fieldset className="grid gap-2.5">
-            <legend className="text-xs font-medium">Available days <span className="text-destructive">*</span></legend>
+            <legend className="text-xs font-medium">Available days {isAdminOrAbove && <span className="text-destructive">*</span>}</legend>
             <div className="grid grid-cols-2 gap-x-5 gap-y-2 mt-3 sm:grid-cols-5">
-              {weekdays.map((day) => <label key={day} className="flex cursor-pointer items-center gap-2 text-xs">
-                <Checkbox checked={days.includes(day)} onCheckedChange={() => toggleDay(day)} aria-label={day} />
-                {day.slice(0, 3)}
-              </label>)}
+              {weekdays.map((day) => (
+                <label key={day} className={`flex items-center gap-2 text-xs ${isAdminOrAbove ? "cursor-pointer" : "cursor-default opacity-80"}`}>
+                  <Checkbox checked={days.includes(day)} disabled={!isAdminOrAbove} onCheckedChange={() => toggleDay(day)} aria-label={day} />
+                  {day.slice(0, 3)}
+                </label>
+              ))}
             </div>
             {errors.days && <p role="alert" className="text-xs text-destructive">{errors.days}</p>}
           </fieldset>
 
           <section className="grid gap-3" aria-labelledby="staff-availability-hours">
             <div className="flex items-center justify-between gap-3">
-              <h3 id="staff-availability-hours" className="text-xs font-medium">Available hours <span className="text-destructive">*</span></h3>
-              <Button type="button" variant="outline" onClick={() => setSchedule((current) => ({ ...current, intervals: [...current.intervals, { start: "", end: "" }] }))} className="h-8 gap-1.5 px-2.5 text-xs">
-                <PlusCircle className="size-3.5" />Add time
-              </Button>
+              <h3 id="staff-availability-hours" className="text-xs font-medium">Available hours {isAdminOrAbove && <span className="text-destructive">*</span>}</h3>
+              {isAdminOrAbove && (
+                <Button type="button" variant="outline" onClick={() => setSchedule((current) => ({ ...current, intervals: [...current.intervals, { start: "", end: "" }] }))} className="h-8 gap-1.5 px-2.5 text-xs">
+                  <PlusCircle className="size-3.5" />Add time
+                </Button>
+              )}
             </div>
             <div className="grid gap-2.5">
-              {intervals.map((interval, index) => <div key={`interval-${index}`} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-                <div className="grid gap-1.5">
-                  <Label htmlFor={`staff-start-${index}`} className="text-xs">Start time <span className="text-destructive">*</span></Label>
-                  <Input id={`staff-start-${index}`} type="time" value={interval.start} onChange={(event) => updateInterval(index, "start", event.target.value)} aria-invalid={Boolean(errors[`interval-${index}`])} />
+              {intervals.map((interval, index) => (
+                <div key={`interval-${index}`} className="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
+                  <div className="grid gap-1.5">
+                    <Label htmlFor={`staff-start-${index}`} className="text-xs">Start time {isAdminOrAbove && <span className="text-destructive">*</span>}</Label>
+                    <Input id={`staff-start-${index}`} type="time" disabled={!isAdminOrAbove} value={interval.start} onChange={(event) => updateInterval(index, "start", event.target.value)} aria-invalid={Boolean(errors[`interval-${index}`])} />
+                  </div>
+                  <div className="grid gap-1.5">
+                    <Label htmlFor={`staff-end-${index}`} className="text-xs">End time {isAdminOrAbove && <span className="text-destructive">*</span>}</Label>
+                    <Input id={`staff-end-${index}`} type="time" disabled={!isAdminOrAbove} value={interval.end} onChange={(event) => updateInterval(index, "end", event.target.value)} aria-invalid={Boolean(errors[`interval-${index}`])} />
+                  </div>
+                  {isAdminOrAbove ? (
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Remove time range ${index + 1}`} disabled={intervals.length === 1} onClick={() => setSchedule((current) => ({ ...current, intervals: current.intervals.filter((_, currentIndex) => currentIndex !== index) }))} className="size-9 text-muted-foreground hover:text-destructive">
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  ) : <div className="size-9" />}
+                  {errors[`interval-${index}`] && <p role="alert" className="col-span-3 -mt-1 text-xs text-destructive">{errors[`interval-${index}`]}</p>}
                 </div>
-                <div className="grid gap-1.5">
-                  <Label htmlFor={`staff-end-${index}`} className="text-xs">End time <span className="text-destructive">*</span></Label>
-                  <Input id={`staff-end-${index}`} type="time" value={interval.end} onChange={(event) => updateInterval(index, "end", event.target.value)} aria-invalid={Boolean(errors[`interval-${index}`])} />
-                </div>
-                <Button type="button" variant="ghost" size="icon" aria-label={`Remove time range ${index + 1}`} disabled={intervals.length === 1} onClick={() => setSchedule((current) => ({ ...current, intervals: current.intervals.filter((_, currentIndex) => currentIndex !== index) }))} className="size-9 text-muted-foreground hover:text-destructive">
-                  <Trash2 className="size-3.5" />
-                </Button>
-                {errors[`interval-${index}`] && <p role="alert" className="col-span-3 -mt-1 text-xs text-destructive">{errors[`interval-${index}`]}</p>}
-              </div>)}
+              ))}
             </div>
           </section>
         </div>
 
         <DialogFooter className="gap-2 sm:justify-between">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="size-3.5" />Repeats weekly</div>
-          <div className="flex gap-2"><Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button><Button type="button" onClick={saveSchedule}>Save Availability</Button></div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{isAdminOrAbove ? "Cancel" : "Close"}</Button>
+            {isAdminOrAbove && <Button type="button" onClick={saveSchedule}>Save Availability</Button>}
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
