@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react"
 import { format } from "date-fns"
 import { CalendarDays, Check, FileText, HeartPulse, Image, LockKeyhole, Printer, Search, ShieldAlert, Upload, UserRound, X } from "lucide-react"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -45,10 +45,25 @@ function PatientBanner({ name, context, details, risk = true }: { name: string; 
   )
 }
 
+function normalizeRiskValue(risk?: string | null): string {
+  const lower = risk?.toLowerCase() ?? ""
+  if (lower.includes("high")) return "high"
+  if (lower.includes("low")) return "low"
+  return "moderate"
+}
+
 export function RiskOverrideDialog({ open, onOpenChange, patientName, pregnancyLabel, currentRisk, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; patientName: string; pregnancyLabel: string; currentRisk: string; onSubmit: (riskLevel: string, reason: string) => Promise<void> }) {
-  const [riskLevel, setRiskLevel] = useState("moderate")
+  const [riskLevel, setRiskLevel] = useState(() => normalizeRiskValue(currentRisk))
   const [reason, setReason] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setRiskLevel(normalizeRiskValue(currentRisk))
+      setReason("")
+    }
+  }, [open, currentRisk])
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!reason.trim()) { toast.error("Add a clinical reason for this override"); return }

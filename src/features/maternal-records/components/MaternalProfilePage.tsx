@@ -57,7 +57,10 @@ import { createReferral, getReferralFacilities, type CreateReferralInput, type R
 import {
   assignMaternalStaff,
   cancelMaternalAppointment,
+  deleteDeliveryOutcome,
   deleteMaternalLabScreening,
+  deleteMaternalSupplement,
+  deletePregnancy,
   getLatestMaternalPregnancy,
   getLatestPrenatalVisit,
   getMaternalProfile,
@@ -68,20 +71,32 @@ import {
   registerDeliveryOutcome,
   registerPrenatalVisit,
   registerPregnancy,
-  uploadMaternalLabFile,
+  updateDeliveryOutcome,
   updateMaternalRecord,
+  updateMaternalSupplement,
+  updatePregnancy,
+  uploadMaternalLabFile,
   type MaternalCompositeRecord,
   type MaternalDelivery,
   type MaternalLabRecord,
   type MaternalPregnancy,
   type MaternalPrenatalVisit,
   type MaternalStaff,
+  type MaternalSupplement,
   type RegisterDeliveryOutcomeInput,
+  type UpdateDeliveryOutcomeInput,
+  type UpdateMaternalSupplementInput,
+  type UpdatePregnancyInput,
 } from "../api"
 import { AppointmentDetailsDialog } from "./AppointmentDetailsDialog"
 import { DeliveryDetailsDrawer } from "./DeliveryDetailsDrawer"
+import { EditDeliveryDialog } from "./EditDeliveryDialog"
 import { DeliveryOutcomeDialog } from "./DeliveryOutcomeDialog"
+import { PrescriptionDetailsDrawer } from "./PrescriptionDetailsDrawer"
+import { EditPrescriptionDialog } from "./EditPrescriptionDialog"
 import { CreatePrescriptionDialog } from "./CreatePrescriptionDialog"
+import { PregnancyDetailsDrawer } from "./PregnancyDetailsDrawer"
+import { EditPregnancyDialog } from "./EditPregnancyDialog"
 import { ChangeStaffDialog, ConfirmRiskOverridePasswordDialog, EhrExportDialog, LaboratoryRecordDialog, PrenatalVitalsDialog, RiskOverrideDialog, type EncounterValues, type LaboratoryFormValues } from "./MaternalProfileActionModals"
 import { EditMaternalProfileDialog, NewPregnancyDialog, type RegistrationValues } from "./MaternalRegistrationModal"
 import { MaternalAvatar } from "./MaternalAvatar"
@@ -240,7 +255,19 @@ function escapeHtml(value: unknown) {
 }
 
 function ProfileTable({ headers, rows, emptyState, renderRowAction, onRowClick }: { headers: string[]; rows: ReactNode[][]; emptyState: { icon: LucideIcon; title: string; description: string }; renderRowAction?: (rowIndex: number) => ReactNode; onRowClick?: (rowIndex: number) => void }) {
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [selectedRows, setSelectedRows] = useState<number[]>([])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [rows.length])
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize))
+  const safePage = Math.min(currentPage, totalPages)
+  const startIndex = (safePage - 1) * pageSize
+  const paginatedRows = rows.slice(startIndex, startIndex + pageSize)
+
   const allRowsSelected = rows.length > 0 && rows.every((_, index) => selectedRows.includes(index))
   const toggleAllRows = (checked: boolean | "indeterminate") => setSelectedRows(checked === true ? rows.map((_, index) => index) : [])
 
@@ -258,36 +285,52 @@ function ProfileTable({ headers, rows, emptyState, renderRowAction, onRowClick }
           </TableRow>
         </TableHeader>
         <TableBody>
-          {rows.map((row, rowIndex) => (
-            <TableRow key={rowIndex} onClick={() => onRowClick?.(rowIndex)} onKeyDown={(event) => { if (event.target === event.currentTarget && onRowClick && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(rowIndex) } }} tabIndex={onRowClick ? 0 : undefined} className={`border-sidebar-border ${onRowClick ? "cursor-pointer hover:bg-muted/40" : ""}`}>
-              <TableCell className="w-12 pl-4 text-center" onClick={(event) => event.stopPropagation()}>
-                <Checkbox aria-label={`Select row ${rowIndex + 1}`} checked={selectedRows.includes(rowIndex)} onCheckedChange={(checked) => setSelectedRows((current) => checked === true ? [...current, rowIndex] : current.filter((index) => index !== rowIndex))} className="border-sidebar-border" />
-              </TableCell>
-              {row.map((cell, cellIndex) => <TableCell key={cellIndex} className="whitespace-normal break-words px-2">{cell}</TableCell>)}
-              <TableCell className="w-12 px-1" onClick={(event) => event.stopPropagation()}>
-                {renderRowAction?.(rowIndex)}
-              </TableCell>
-            </TableRow>
-          ))}
+          {paginatedRows.map((row, localIndex) => {
+            const actualIndex = startIndex + localIndex
+            return (
+              <TableRow key={actualIndex} onClick={() => onRowClick?.(actualIndex)} onKeyDown={(event) => { if (event.target === event.currentTarget && onRowClick && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); onRowClick(actualIndex) } }} tabIndex={onRowClick ? 0 : undefined} className={`border-sidebar-border ${onRowClick ? "cursor-pointer hover:bg-muted/40" : ""}`}>
+                <TableCell className="w-12 pl-4 text-center" onClick={(event) => event.stopPropagation()}>
+                  <Checkbox aria-label={`Select row ${actualIndex + 1}`} checked={selectedRows.includes(actualIndex)} onCheckedChange={(checked) => setSelectedRows((current) => checked === true ? [...current, actualIndex] : current.filter((index) => index !== actualIndex))} className="border-sidebar-border" />
+                </TableCell>
+                {row.map((cell, cellIndex) => <TableCell key={cellIndex} className="whitespace-normal break-words px-2">{cell}</TableCell>)}
+                <TableCell className="w-12 px-1" onClick={(event) => event.stopPropagation()}>
+                  {renderRowAction?.(actualIndex)}
+                </TableCell>
+              </TableRow>
+            )
+          })}
           {rows.length === 0 && <TableEmptyState colSpan={headers.length + 2} {...emptyState} />}
         </TableBody>
       </Table>
       </div>
       <div className="grid gap-3 md:hidden">
-        {rows.map((row, rowIndex) => (
-          <article key={rowIndex} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
-            <div className="flex items-start justify-between gap-3">
-              <button type="button" disabled={!onRowClick} onClick={() => onRowClick?.(rowIndex)} className="min-w-0 flex-1 text-left text-sm font-semibold text-foreground disabled:cursor-default">{row[0]}</button>
-              {renderRowAction?.(rowIndex)}
-            </div>
-            <dl className="mt-3 grid gap-2">
-              {row.slice(1).map((cell, index) => <div key={index} className="flex items-start justify-between gap-3"><dt className="shrink-0 text-muted-foreground">{headers[index + 1]}</dt><dd className="min-w-0 text-right text-foreground">{cell}</dd></div>)}
-            </dl>
-          </article>
-        ))}
+        {paginatedRows.map((row, localIndex) => {
+          const actualIndex = startIndex + localIndex
+          return (
+            <article key={actualIndex} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+              <div className="flex items-start justify-between gap-3">
+                <button type="button" disabled={!onRowClick} onClick={() => onRowClick?.(actualIndex)} className="min-w-0 flex-1 text-left text-sm font-semibold text-foreground disabled:cursor-default">{row[0]}</button>
+                {renderRowAction?.(actualIndex)}
+              </div>
+              <dl className="mt-3 grid gap-2">
+                {row.slice(1).map((cell, index) => <div key={index} className="flex items-start justify-between gap-3"><dt className="shrink-0 text-muted-foreground">{headers[index + 1]}</dt><dd className="min-w-0 text-right text-foreground">{cell}</dd></div>)}
+              </dl>
+            </article>
+          )
+        })}
         {rows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">{emptyState.title}</div>}
       </div>
-      <TablePaginationFooter rowCount={rows.length} selectedCount={selectedRows.length} />
+      <TablePaginationFooter
+        rowCount={rows.length}
+        selectedCount={selectedRows.length}
+        page={safePage}
+        pageSize={pageSize}
+        onPageChange={setCurrentPage}
+        onPageSizeChange={(newSize) => {
+          setPageSize(newSize)
+          setCurrentPage(1)
+        }}
+      />
     </div>
   )
 }
@@ -386,6 +429,8 @@ export function MaternalProfilePage() {
   const [laboratorySearch, setLaboratorySearch] = useState("")
   const [prescriptionSearch, setPrescriptionSearch] = useState("")
   const [selectedLabRows, setSelectedLabRows] = useState<number[]>([])
+  const [labPage, setLabPage] = useState(1)
+  const [labPageSize, setLabPageSize] = useState(10)
   const [isRiskOverrideOpen, setIsRiskOverrideOpen] = useState(false)
   const [isRiskPasswordOpen, setIsRiskPasswordOpen] = useState(false)
   const [pendingRiskOverride, setPendingRiskOverride] = useState<{ riskLevel: string; reason: string } | null>(null)
@@ -404,6 +449,16 @@ export function MaternalProfilePage() {
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false)
   const [isUploadAvatarOpen, setIsUploadAvatarOpen] = useState(false)
   const [isReferralOpen, setIsReferralOpen] = useState(false)
+  const [selectedPrescription, setSelectedPrescription] = useState<MaternalSupplement | null>(null)
+  const [isPrescriptionDrawerOpen, setIsPrescriptionDrawerOpen] = useState(false)
+  const [isEditPrescriptionOpen, setIsEditPrescriptionOpen] = useState(false)
+  const [prescriptionToDelete, setPrescriptionToDelete] = useState<string | null>(null)
+  const [selectedPregnancyRecord, setSelectedPregnancyRecord] = useState<MaternalPregnancy | null>(null)
+  const [isPregnancyDrawerOpen, setIsPregnancyDrawerOpen] = useState(false)
+  const [isEditPregnancyOpen, setIsEditPregnancyOpen] = useState(false)
+  const [pregnancyToDelete, setPregnancyToDelete] = useState<string | null>(null)
+  const [isEditDeliveryOpen, setIsEditDeliveryOpen] = useState(false)
+  const [deliveryToDelete, setDeliveryToDelete] = useState<string | null>(null)
   useEffect(() => {
     if (!session?.token || !motherId) return
     let active = true
@@ -638,6 +693,78 @@ export function MaternalProfilePage() {
     refreshProfile()
   }
 
+  const handleSaveEditDelivery = async (deliveryId: string, input: UpdateDeliveryOutcomeInput) => {
+    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    await updateDeliveryOutcome(session.token, deliveryId, input)
+    refreshProfile()
+    if (selectedDelivery) {
+      setSelectedDelivery((prev) => prev ? { ...prev, delivery: { ...prev.delivery, ...input } } : null)
+    }
+  }
+
+  const handleConfirmDeleteDelivery = async () => {
+    if (!session?.token || !deliveryToDelete) return
+    try {
+      await deleteDeliveryOutcome(session.token, deliveryToDelete)
+      toast.success("Delivery record deleted")
+      setIsDeliveryDrawerOpen(false)
+      setSelectedDelivery(null)
+      refreshProfile()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete delivery record")
+    } finally {
+      setDeliveryToDelete(null)
+    }
+  }
+
+  const handleSaveEditPregnancy = async (pregnancyId: string, input: UpdatePregnancyInput) => {
+    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    await updatePregnancy(session.token, pregnancyId, input)
+    refreshProfile()
+    if (selectedPregnancyRecord) {
+      setSelectedPregnancyRecord((prev) => prev ? { ...prev, ...input } : null)
+    }
+  }
+
+  const handleConfirmDeletePregnancy = async () => {
+    if (!session?.token || !pregnancyToDelete) return
+    try {
+      await deletePregnancy(session.token, pregnancyToDelete)
+      toast.success("Pregnancy record deleted")
+      setIsPregnancyDrawerOpen(false)
+      setSelectedPregnancyRecord(null)
+      refreshProfile()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete pregnancy record")
+    } finally {
+      setPregnancyToDelete(null)
+    }
+  }
+
+  const handleSaveEditPrescription = async (input: UpdateMaternalSupplementInput) => {
+    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    await updateMaternalSupplement(session.token, input)
+    refreshProfile()
+    if (selectedPrescription) {
+      setSelectedPrescription((prev) => prev ? { ...prev, ...input, date_given: input.date_given ?? prev.date_given } : null)
+    }
+  }
+
+  const handleConfirmDeletePrescription = async () => {
+    if (!session?.token || !prescriptionToDelete) return
+    try {
+      await deleteMaternalSupplement(session.token, prescriptionToDelete)
+      toast.success("Prescription deleted")
+      setIsPrescriptionDrawerOpen(false)
+      setSelectedPrescription(null)
+      refreshProfile()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete prescription")
+    } finally {
+      setPrescriptionToDelete(null)
+    }
+  }
+
   const handleSaveLabRecord = async (values: LaboratoryFormValues) => {
     if (!session?.token || !maternalRecord) throw new Error("Your session has expired or patient record is missing.")
     const uploadedFiles = values.files.length
@@ -861,11 +988,24 @@ export function MaternalProfilePage() {
     return matchesSearch && matchesStatus && matchesType
   })
   const filteredAppointments = filteredAppointmentEntries.map(({ row }) => row)
-  const filteredPregnancies = pregnancyRowsState.filter((row) => {
-    const text = row.join(" ").toLowerCase()
+  const filteredPregnancyEntries = (maternalRecord?.pregnancies ?? []).filter((pregnancy) => {
+    const text = `G${pregnancy.gravida ?? ""} P${pregnancy.parity ?? ""} ${formatRecordDate(pregnancy.lmp_date)} ${formatRecordDate(pregnancy.edd_date)} ${pregnancy.pregnancy_status ?? ""}`.toLowerCase()
     const matchesSearch = !pregnancySearch || text.includes(pregnancySearch.toLowerCase())
-    const matchesStatus = pregnancyStatusFilters.length === 0 || pregnancyStatusFilters.includes(rowText([row[4]]))
+    const status = pregnancy.pregnancy_status || "Active"
+    const matchesStatus = pregnancyStatusFilters.length === 0 || pregnancyStatusFilters.includes(status)
     return matchesSearch && matchesStatus
+  })
+  const filteredPregnancies = filteredPregnancyEntries.map((pregnancy) => {
+    const lmp = pregnancy.lmp_date ? new Date(pregnancy.lmp_date) : null
+    const days = lmp && !Number.isNaN(lmp.getTime()) ? Math.max(0, Math.floor((Date.now() - lmp.getTime()) / 86_400_000)) : null
+    const aog = days === null ? "—" : `${Math.floor(days / 7)}w ${days % 7}d`
+    return [
+      `G${pregnancy.gravida ?? "—"} P${pregnancy.parity ?? "—"}`,
+      formatRecordDate(pregnancy.lmp_date),
+      formatRecordDate(pregnancy.edd_date),
+      aog,
+      <StatusBadge key={pregnancy.pregnancy_id} status={pregnancy.pregnancy_status || "Active"} />,
+    ]
   })
   const filteredLaboratoryRows = laboratoryRowsState.filter((row) => {
     const fileName = row[0]
@@ -876,6 +1016,10 @@ export function MaternalProfilePage() {
     const matchesSearch = !laboratorySearch || searchText.includes(laboratorySearch.toLowerCase())
     return matchesSearch
   })
+  const totalLabPages = Math.max(1, Math.ceil(filteredLaboratoryRows.length / labPageSize))
+  const safeLabPage = Math.min(labPage, totalLabPages)
+  const startLabIndex = (safeLabPage - 1) * labPageSize
+  const paginatedLaboratoryRows = filteredLaboratoryRows.slice(startLabIndex, startLabIndex + labPageSize)
   const filteredPrescriptions = (maternalRecord?.supplements ?? []).filter((supplement) => {
     const text = `${supplement.supplement_type ?? "Supplement"} ${supplement.tablets_given_count ?? ""} ${formatRecordDate(supplement.date_given)} ${supplement.is_completed ? "completed" : "active"}`.toLowerCase()
     return !prescriptionSearch || text.includes(prescriptionSearch.toLowerCase())
@@ -1125,11 +1269,21 @@ export function MaternalProfilePage() {
                   rows={filteredDeliveries}
                   emptyState={{ icon: Baby, title: "No deliveries recorded", description: "Delivery outcomes and newborn details will appear here." }}
                   onRowClick={(rowIndex) => { const entry = filteredDeliveryEntries[rowIndex]; if (entry) { setSelectedDelivery(entry); setIsDeliveryDrawerOpen(true) } }}
-                  renderRowAction={(rowIndex) => (
-                    <TableRowActions label="Delivery actions">
-                      <DropdownMenuItem onSelect={() => { const entry = filteredDeliveryEntries[rowIndex]; if (entry) { setSelectedDelivery(entry); setIsDeliveryDrawerOpen(true) } }}>View Delivery Details</DropdownMenuItem>
-                    </TableRowActions>
-                  )}
+                  renderRowAction={(rowIndex) => {
+                    const entry = filteredDeliveryEntries[rowIndex]
+                    return (
+                      <TableRowActions label="Delivery actions">
+                        <DropdownMenuItem onSelect={() => { if (entry) { setSelectedDelivery(entry); setIsDeliveryDrawerOpen(true) } }}>View Delivery Details</DropdownMenuItem>
+                        {!isSuperAdminView && entry && (
+                          <>
+                            <DropdownMenuItem onSelect={() => { setSelectedDelivery(entry); setIsEditDeliveryOpen(true) }}>Edit Delivery</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={() => setDeliveryToDelete(entry.delivery.delivery_id)}>Delete Delivery</DropdownMenuItem>
+                          </>
+                        )}
+                      </TableRowActions>
+                    )
+                  }}
                 />
               </TabsContent>
               <TabsContent value="appointments" className="mt-3 flex w-full min-w-0 flex-col gap-3">
@@ -1170,7 +1324,33 @@ export function MaternalProfilePage() {
                   <ToolbarFilter label="Status" options={["Active", "Completed", "Postpartum"]} selected={pregnancyStatusFilters} onChange={setPregnancyStatusFilters} />
                   {(pregnancySearch.trim() || pregnancyStatusFilters.length > 0) && <ResetFilterButton onClick={() => { setPregnancySearch(""); setPregnancyStatusFilters([]) }} />}
                 </div>
-                <ProfileTable headers={["G/P", "LMP", "EDD", "AOG", "Status"]} rows={filteredPregnancies} emptyState={{ icon: CalendarDays, title: "No pregnancy records", description: "Pregnancy history will appear here when it is recorded." }} />
+                <ProfileTable
+                  headers={["G/P", "LMP", "EDD", "AOG", "Status"]}
+                  rows={filteredPregnancies}
+                  emptyState={{ icon: CalendarDays, title: "No pregnancy records", description: "Pregnancy history will appear here when it is recorded." }}
+                  onRowClick={(rowIndex) => {
+                    const entry = filteredPregnancyEntries[rowIndex]
+                    if (entry) {
+                      setSelectedPregnancyRecord(entry)
+                      setIsPregnancyDrawerOpen(true)
+                    }
+                  }}
+                  renderRowAction={(rowIndex) => {
+                    const entry = filteredPregnancyEntries[rowIndex]
+                    return (
+                      <TableRowActions label="Pregnancy actions">
+                        <DropdownMenuItem onSelect={() => { if (entry) { setSelectedPregnancyRecord(entry); setIsPregnancyDrawerOpen(true) } }}>View Pregnancy Details</DropdownMenuItem>
+                        {!isSuperAdminView && entry && (
+                          <>
+                            <DropdownMenuItem onSelect={() => { setSelectedPregnancyRecord(entry); setIsEditPregnancyOpen(true) }}>Edit Pregnancy</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={() => setPregnancyToDelete(entry.pregnancy_id)}>Delete Pregnancy</DropdownMenuItem>
+                          </>
+                        )}
+                      </TableRowActions>
+                    )
+                  }}
+                />
               </TabsContent>
               <TabsContent value="ehr" className="mt-3 flex w-full min-w-0 flex-col gap-3">
                 <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
@@ -1189,7 +1369,8 @@ export function MaternalProfilePage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredLaboratoryRows.map(([fileName, , test, date, , , screeningId], index) => {
+                        {paginatedLaboratoryRows.map(([fileName, , test, date, , , screeningId], localIndex) => {
+                          const actualIndex = startLabIndex + localIndex
                           const record = maternalRecord.labRecords?.find((lab) => lab.screening_id === screeningId)
                           const hasAttachment = Boolean(record?.file_url)
                           const openPreview = () => { if (record?.file_url) setPreviewEhrRecord(record) }
@@ -1202,7 +1383,7 @@ export function MaternalProfilePage() {
                             tabIndex={hasAttachment ? 0 : undefined}
                             aria-label={hasAttachment ? `Preview ${fileName}` : undefined}
                           >
-                            <TableCell className="w-12 pl-4 text-center" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select ${test}`} checked={selectedLabRows.includes(index)} onCheckedChange={(checked) => setSelectedLabRows((current) => checked === true ? [...current, index] : current.filter((rowIndex) => rowIndex !== index))} className="border-sidebar-border" /></TableCell>
+                            <TableCell className="w-12 pl-4 text-center" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select ${test}`} checked={selectedLabRows.includes(actualIndex)} onCheckedChange={(checked) => setSelectedLabRows((current) => checked === true ? [...current, actualIndex] : current.filter((rowIndex) => rowIndex !== actualIndex))} className="border-sidebar-border" /></TableCell>
                             <TableCell className="min-w-0 px-2">
                               <div className="min-w-0">
                                 <div className="truncate font-medium" title={test}>{test}</div>
@@ -1230,12 +1411,13 @@ export function MaternalProfilePage() {
                     </Table>
                   </div>
                   <div className="space-y-2 md:hidden">
-                    {filteredLaboratoryRows.map(([fileName, , test, date, , , screeningId], index) => {
+                    {paginatedLaboratoryRows.map(([fileName, , test, date, , , screeningId], localIndex) => {
+                      const actualIndex = startLabIndex + localIndex
                       const record = maternalRecord.labRecords?.find((lab) => lab.screening_id === screeningId)
                       const openPreview = () => { if (record?.file_url) setPreviewEhrRecord(record) }
                       return <div key={screeningId} className="rounded-md border border-sidebar-border p-3">
                         <div className="flex items-start gap-3">
-                          <Checkbox aria-label={`Select ${test}`} checked={selectedLabRows.includes(index)} onCheckedChange={(checked) => setSelectedLabRows((current) => checked === true ? [...current, index] : current.filter((rowIndex) => rowIndex !== index))} className="mt-1 border-sidebar-border" />
+                          <Checkbox aria-label={`Select ${test}`} checked={selectedLabRows.includes(actualIndex)} onCheckedChange={(checked) => setSelectedLabRows((current) => checked === true ? [...current, actualIndex] : current.filter((rowIndex) => rowIndex !== actualIndex))} className="mt-1 border-sidebar-border" />
                           <button type="button" className="min-w-0 flex-1 text-left" onClick={openPreview} disabled={!record?.file_url}>
                             <span className="block truncate text-xs font-medium">{test}</span>
                             <span className="block truncate text-xs text-muted-foreground">{fileName}</span>
@@ -1251,7 +1433,17 @@ export function MaternalProfilePage() {
                     })}
                     {filteredLaboratoryRows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-xs"><p className="font-medium">No health records</p><p className="mt-1 text-muted-foreground">Clinical documents and screening records will appear here when added.</p></div>}
                   </div>
-                  <TablePaginationFooter rowCount={filteredLaboratoryRows.length} selectedCount={selectedLabRows.length} />
+                  <TablePaginationFooter
+                    rowCount={filteredLaboratoryRows.length}
+                    selectedCount={selectedLabRows.length}
+                    page={safeLabPage}
+                    pageSize={labPageSize}
+                    onPageChange={setLabPage}
+                    onPageSizeChange={(newSize) => {
+                      setLabPageSize(newSize)
+                      setLabPage(1)
+                    }}
+                  />
                 </div>
               </TabsContent>
               <TabsContent value="prescriptions" className="mt-3 flex w-full min-w-0 flex-col gap-3">
@@ -1268,6 +1460,28 @@ export function MaternalProfilePage() {
                     <StatusBadge key={prescription.supplement_id} status={prescription.is_completed ? "Completed" : "Active"} />,
                   ])}
                   emptyState={{ icon: FileText, title: "No prescriptions recorded", description: "Medications and supplements for this mother will appear here." }}
+                  onRowClick={(rowIndex) => {
+                    const entry = filteredPrescriptions[rowIndex]
+                    if (entry) {
+                      setSelectedPrescription(entry)
+                      setIsPrescriptionDrawerOpen(true)
+                    }
+                  }}
+                  renderRowAction={(rowIndex) => {
+                    const entry = filteredPrescriptions[rowIndex]
+                    return (
+                      <TableRowActions label="Prescription actions">
+                        <DropdownMenuItem onSelect={() => { if (entry) { setSelectedPrescription(entry); setIsPrescriptionDrawerOpen(true) } }}>View Details</DropdownMenuItem>
+                        {!isSuperAdminView && entry && (
+                          <>
+                            <DropdownMenuItem onSelect={() => { setSelectedPrescription(entry); setIsEditPrescriptionOpen(true) }}>Edit Prescription</DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem variant="destructive" onSelect={() => setPrescriptionToDelete(entry.supplement_id)}>Delete Prescription</DropdownMenuItem>
+                          </>
+                        )}
+                      </TableRowActions>
+                    )
+                  }}
                 />
               </TabsContent>
             </Tabs>
@@ -1276,7 +1490,35 @@ export function MaternalProfilePage() {
       </section>
 
       <EhrExportDialog open={isEhrExportOpen} onOpenChange={setIsEhrExportOpen} patientName={patientName} maternalRecord={maternalRecord} onExport={handleEhrExport} />
-      <DeliveryDetailsDrawer open={isDeliveryDrawerOpen} onOpenChange={setIsDeliveryDrawerOpen} patientName={patientName} delivery={selectedDelivery?.delivery ?? null} pregnancy={selectedDelivery?.pregnancy} />
+      <DeliveryDetailsDrawer
+        open={isDeliveryDrawerOpen}
+        onOpenChange={setIsDeliveryDrawerOpen}
+        patientName={patientName}
+        delivery={selectedDelivery?.delivery ?? null}
+        pregnancy={selectedDelivery?.pregnancy}
+        onEdit={!isSuperAdminView ? () => setIsEditDeliveryOpen(true) : undefined}
+        onDelete={!isSuperAdminView ? () => { if (selectedDelivery) setDeliveryToDelete(selectedDelivery.delivery.delivery_id) } : undefined}
+        readOnly={isSuperAdminView}
+      />
+      <PrescriptionDetailsDrawer
+        open={isPrescriptionDrawerOpen}
+        onOpenChange={setIsPrescriptionDrawerOpen}
+        patientName={patientName}
+        prescription={selectedPrescription}
+        pregnancy={maternalRecord?.pregnancies?.find((p) => p.pregnancy_id === selectedPrescription?.pregnancy_id)}
+        onEdit={!isSuperAdminView ? () => setIsEditPrescriptionOpen(true) : undefined}
+        onDelete={!isSuperAdminView ? () => { if (selectedPrescription) setPrescriptionToDelete(selectedPrescription.supplement_id) } : undefined}
+        readOnly={isSuperAdminView}
+      />
+      <PregnancyDetailsDrawer
+        open={isPregnancyDrawerOpen}
+        onOpenChange={setIsPregnancyDrawerOpen}
+        patientName={patientName}
+        pregnancy={selectedPregnancyRecord}
+        onEdit={!isSuperAdminView ? () => setIsEditPregnancyOpen(true) : undefined}
+        onDelete={!isSuperAdminView ? () => { if (selectedPregnancyRecord) setPregnancyToDelete(selectedPregnancyRecord.pregnancy_id) } : undefined}
+        readOnly={isSuperAdminView}
+      />
       <AppointmentDetailsDialog open={isAppointmentDetailsOpen} onOpenChange={setIsAppointmentDetailsOpen} patientName={patientName} appointment={selectedAppointment} pregnancy={appointmentPregnancy} consultation={appointmentVisit} supplements={appointmentSupplements} />
       <EhrRecordPreview key={previewEhrRecord?.screening_id ?? "closed"} record={previewEhrRecord} onClose={() => setPreviewEhrRecord(null)} />
       {!isSuperAdminView && (
@@ -1285,6 +1527,25 @@ export function MaternalProfilePage() {
           <ConfirmRiskOverridePasswordDialog open={isRiskPasswordOpen} onOpenChange={(open) => { setIsRiskPasswordOpen(open); if (!open) setPendingRiskOverride(null) }} patientName={patientName} riskLevel={pendingRiskOverride?.riskLevel ?? "the selected level"} onConfirm={confirmRiskOverride} />
           <PrenatalVitalsDialog open={isVitalsOpen} onOpenChange={setIsVitalsOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveEncounter} />
           <DeliveryOutcomeDialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveDelivery} />
+          <EditDeliveryDialog
+            open={isEditDeliveryOpen}
+            onOpenChange={setIsEditDeliveryOpen}
+            delivery={selectedDelivery?.delivery ?? null}
+            onSave={handleSaveEditDelivery}
+          />
+          <EditPrescriptionDialog
+            open={isEditPrescriptionOpen}
+            onOpenChange={setIsEditPrescriptionOpen}
+            prescription={selectedPrescription}
+            pregnancies={maternalRecord.pregnancies ?? []}
+            onSave={handleSaveEditPrescription}
+          />
+          <EditPregnancyDialog
+            open={isEditPregnancyOpen}
+            onOpenChange={setIsEditPregnancyOpen}
+            pregnancy={selectedPregnancyRecord}
+            onSave={handleSaveEditPregnancy}
+          />
           <CreateAppointmentModal open={isScheduleAppointmentOpen} onOpenChange={setIsScheduleAppointmentOpen} initialMother={appointmentMother} onCreate={handleScheduleAppointment} />
           {maternalRecord && <CreatePrescriptionDialog
             open={isPrescriptionOpen}
@@ -1314,6 +1575,30 @@ export function MaternalProfilePage() {
             }}
           />
           <CreateReferralModal open={isReferralOpen} onOpenChange={setIsReferralOpen} mothers={[maternalRecord]} facilities={referralFacilities} originFacilityId={session?.user.facility_id} initialMotherId={maternalRecord.mother_id} isSaving={isCreatingReferral} onSubmit={handleCreateReferral} />
+          <ConfirmSensitiveActionDialog
+            open={deliveryToDelete !== null}
+            onOpenChange={(open) => { if (!open) setDeliveryToDelete(null) }}
+            title="Are you sure you want to delete this delivery record?"
+            description="This will permanently delete the delivery outcome and linked newborn birth records from this profile."
+            confirmLabel="I understand, delete this delivery"
+            onConfirm={handleConfirmDeleteDelivery}
+          />
+          <ConfirmSensitiveActionDialog
+            open={pregnancyToDelete !== null}
+            onOpenChange={(open) => { if (!open) setPregnancyToDelete(null) }}
+            title="Are you sure you want to delete this pregnancy record?"
+            description="This will permanently delete the pregnancy profile and its associated clinical consultation history."
+            confirmLabel="I understand, delete this pregnancy"
+            onConfirm={handleConfirmDeletePregnancy}
+          />
+          <ConfirmSensitiveActionDialog
+            open={prescriptionToDelete !== null}
+            onOpenChange={(open) => { if (!open) setPrescriptionToDelete(null) }}
+            title="Are you sure you want to delete this prescription?"
+            description="This will permanently remove the medication dispensing record from this patient profile."
+            confirmLabel="I understand, delete this prescription"
+            onConfirm={handleConfirmDeletePrescription}
+          />
           <ConfirmSensitiveActionDialog
             open={appointmentToCancel !== null}
             onOpenChange={(open) => { if (!open) setAppointmentToCancel(null) }}

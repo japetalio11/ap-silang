@@ -1559,3 +1559,277 @@ export const cancelMaternalAppointment = async (token: string, appointmentId: st
   }
   return apiRequest<{ message?: string }>(`/appointment/cancel/${encodeURIComponent(appointmentId)}`, { method: "PUT", token, body: JSON.stringify({}) })
 }
+
+export type UpdateDeliveryOutcomeInput = {
+  pregnancy_id?: string
+  delivery_date?: string
+  place_of_delivery?: string
+  mode_of_delivery?: string
+  birth_attendant?: string
+  maternal_outcome?: string
+  immediate_breastfeeding?: boolean
+  duration_of_labor_hours?: number | null
+  blood_loss_ml?: number | null
+  delivery_complications?: string
+  version?: number
+}
+
+export const updateDeliveryOutcome = async (token: string, deliveryId: string, input: UpdateDeliveryOutcomeInput) => {
+  await db.deliveryOutcomes.update(deliveryId, { ...input, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "delivery_outcome",
+      action: "UPDATE",
+      endpoint: `/delivery-outcome/update/${encodeURIComponent(deliveryId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: deliveryId,
+    })
+    return { message: "Delivery outcome updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; data?: MaternalDelivery }>(`/delivery-outcome/update/${encodeURIComponent(deliveryId)}`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "delivery_outcome",
+        action: "UPDATE",
+        endpoint: `/delivery-outcome/update/${encodeURIComponent(deliveryId)}`,
+        method: "PUT",
+        payload: input,
+        temp_id: deliveryId,
+      })
+      return { message: "Delivery outcome updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deleteDeliveryOutcome = async (token: string, deliveryId: string) => {
+  await db.deliveryOutcomes.delete(deliveryId).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "delivery_outcome",
+      action: "DELETE",
+      endpoint: `/delivery-outcome/delete/${encodeURIComponent(deliveryId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: deliveryId,
+    })
+    return { message: "Delivery outcome deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(`/delivery-outcome/delete/${encodeURIComponent(deliveryId)}`, {
+      method: "DELETE",
+      token,
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "delivery_outcome",
+        action: "DELETE",
+        endpoint: `/delivery-outcome/delete/${encodeURIComponent(deliveryId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: deliveryId,
+      })
+      return { message: "Delivery outcome deleted offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export type UpdatePregnancyInput = {
+  gravida?: number
+  parity?: number
+  lmp_date?: string
+  edd_date?: string
+  pregnancy_status?: string
+  age_group?: string
+  height_cm?: number | null
+  bmi_1st_trimester?: number | null
+  previous_delivery_history?: string
+  co_morbidities?: string
+  prev_caesarean?: boolean
+  consecutive_miscarriages?: boolean
+  stillbirth_history?: boolean
+  pph_history?: boolean
+  has_tb?: boolean
+  has_heart_disease?: boolean
+  has_diabetes?: boolean
+  has_asthma?: boolean
+  has_goiter?: boolean
+  deworming_given?: boolean
+  deworming_date?: string | null
+  completed_8anc?: boolean
+  version?: number
+}
+
+export const updatePregnancy = async (token: string, pregnancyId: string, input: UpdatePregnancyInput) => {
+  await db.pregnancies.update(pregnancyId, { ...input, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "pregnancy",
+      action: "UPDATE",
+      endpoint: `/pregnancy/update/${encodeURIComponent(pregnancyId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: pregnancyId,
+    })
+    return { message: "Pregnancy updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; pregnancy?: MaternalPregnancy }>(`/pregnancy/update/${encodeURIComponent(pregnancyId)}`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "pregnancy",
+        action: "UPDATE",
+        endpoint: `/pregnancy/update/${encodeURIComponent(pregnancyId)}`,
+        method: "PUT",
+        payload: input,
+        temp_id: pregnancyId,
+      })
+      return { message: "Pregnancy updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deletePregnancy = async (token: string, pregnancyId: string) => {
+  await db.pregnancies.delete(pregnancyId).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "pregnancy",
+      action: "DELETE",
+      endpoint: `/pregnancy/delete/${encodeURIComponent(pregnancyId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: pregnancyId,
+    })
+    return { message: "Pregnancy deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(`/pregnancy/delete/${encodeURIComponent(pregnancyId)}`, {
+      method: "DELETE",
+      token,
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "pregnancy",
+        action: "DELETE",
+        endpoint: `/pregnancy/delete/${encodeURIComponent(pregnancyId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: pregnancyId,
+      })
+      return { message: "Pregnancy deleted offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export type UpdateMaternalSupplementInput = {
+  supplement_id: string
+  pregnancy_id?: string
+  supplement_type?: string
+  tablets_given_count?: number
+  date_given?: string
+  version?: number
+}
+
+export const updateMaternalSupplement = async (token: string, input: UpdateMaternalSupplementInput) => {
+  await db.prescriptions.update(input.supplement_id, {
+    medication_name: input.supplement_type,
+    tablets_given_count: input.tablets_given_count,
+    prescribed_date: input.date_given,
+    sync_status: "pending_update",
+    updated_at: Date.now(),
+  }).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prescription",
+      action: "UPDATE",
+      endpoint: "/supplement/update",
+      method: "PUT",
+      payload: input,
+      temp_id: input.supplement_id,
+    })
+    return { message: "Supplement record updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; supplement_record?: MaternalSupplement }>("/supplement/update", {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prescription",
+        action: "UPDATE",
+        endpoint: "/supplement/update",
+        method: "PUT",
+        payload: input,
+        temp_id: input.supplement_id,
+      })
+      return { message: "Supplement record updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deleteMaternalSupplement = async (token: string, supplementId: string) => {
+  await db.prescriptions.delete(supplementId).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prescription",
+      action: "DELETE",
+      endpoint: `/supplement/delete/${encodeURIComponent(supplementId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: supplementId,
+    })
+    return { message: "Supplement record deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(`/supplement/delete/${encodeURIComponent(supplementId)}`, {
+      method: "DELETE",
+      token,
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prescription",
+        action: "DELETE",
+        endpoint: `/supplement/delete/${encodeURIComponent(supplementId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: supplementId,
+      })
+      return { message: "Supplement record deleted offline", offline: true }
+    }
+    throw error
+  }
+}
