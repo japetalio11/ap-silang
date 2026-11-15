@@ -275,6 +275,7 @@ export function AppHeader() {
     window.dispatchEvent(new Event("silang:maternal-records-updated"))
     setRawMothers([])
     setIsRegisterMotherOpen(false)
+    navigate(`/dashboard/maternal-records/${encodeURIComponent(motherId)}`)
   }
 
   const handleCreateAppointment = async (event: AppEvent, values: AppointmentFormValues) => {

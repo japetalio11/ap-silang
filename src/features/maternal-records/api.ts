@@ -1374,6 +1374,116 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
   }
 }
 
+export type UpdatePrenatalVisitInput = {
+  pregnancy_id?: string
+  visit_number?: number
+  age_of_gestation_weeks?: number
+  trimester?: number
+  bp_systolic?: number
+  bp_diastolic?: number
+  weight_kg?: number
+  pulse_rate_bpm?: number
+  temperature_celsius?: number
+  fundic_height_cm?: number | null
+  fetal_heart_tone_bpm?: number | null
+  fetal_presentation?: string | null
+  chief_complaint?: string | null
+  danger_signs_observed?: string | null
+  has_vaginal_bleeding?: boolean
+  has_fever?: boolean
+  has_edema?: boolean
+  has_pallor?: boolean
+  visit_date?: string
+  version?: number
+}
+
+export const updatePrenatalVisit = async (
+  token: string,
+  visitId: string,
+  input: UpdatePrenatalVisitInput
+) => {
+  await db.prenatalVisits.update(visitId, {
+    ...input,
+    sync_status: "pending_update",
+    updated_at: Date.now(),
+  }).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prenatal_visit",
+      action: "UPDATE",
+      endpoint: `/prenatal-visit/update/${encodeURIComponent(visitId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: visitId,
+    })
+    return { message: "Prenatal visit updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; result?: MaternalPrenatalVisit }>(
+      `/prenatal-visit/update/${encodeURIComponent(visitId)}`,
+      {
+        method: "PUT",
+        token,
+        body: JSON.stringify(input),
+      }
+    )
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prenatal_visit",
+        action: "UPDATE",
+        endpoint: `/prenatal-visit/update/${encodeURIComponent(visitId)}`,
+        method: "PUT",
+        payload: input,
+        temp_id: visitId,
+      })
+      return { message: "Prenatal visit updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deletePrenatalVisit = async (token: string, visitId: string) => {
+  await db.prenatalVisits.delete(visitId).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prenatal_visit",
+      action: "DELETE",
+      endpoint: `/prenatal-visit/delete/${encodeURIComponent(visitId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: visitId,
+    })
+    return { message: "Prenatal visit deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(
+      `/prenatal-visit/delete/${encodeURIComponent(visitId)}`,
+      {
+        method: "DELETE",
+        token,
+      }
+    )
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prenatal_visit",
+        action: "DELETE",
+        endpoint: `/prenatal-visit/delete/${encodeURIComponent(visitId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: visitId,
+      })
+      return { message: "Prenatal visit deleted offline", offline: true }
+    }
+    throw error
+  }
+}
+
 export const registerMaternalSupplement = async (token: string, input: RegisterMaternalSupplementInput): Promise<RegisterMaternalSupplementResponse> => {
   const isOffline = typeof navigator !== "undefined" && !navigator.onLine
   if (isOffline) {
@@ -1558,6 +1668,76 @@ export const cancelMaternalAppointment = async (token: string, appointmentId: st
     return { message: "Appointment cancelled offline" }
   }
   return apiRequest<{ message?: string }>(`/appointment/cancel/${encodeURIComponent(appointmentId)}`, { method: "PUT", token, body: JSON.stringify({}) })
+}
+
+export type UpdateMaternalAppointmentInput = {
+  appointment_date?: string
+  appointment_time?: string
+  appointment_type?: string
+  status?: string
+  reason?: string | null
+  version?: number
+}
+
+export const updateMaternalAppointment = async (
+  token: string,
+  appointmentId: string,
+  input: UpdateMaternalAppointmentInput
+) => {
+  await db.appointments
+    .update(appointmentId, {
+      ...(input.appointment_date ? { appointment_date: input.appointment_date } : {}),
+      ...(input.appointment_time ? { appointment_time: input.appointment_time } : {}),
+      ...(input.appointment_type ? { appointment_type: input.appointment_type } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.reason !== undefined ? { reason: input.reason } : {}),
+      sync_status: "pending_update",
+    })
+    .catch(() => {})
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "appointment",
+      action: "UPDATE",
+      endpoint: `/appointment/update/${encodeURIComponent(appointmentId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: appointmentId,
+    })
+    return { message: "Appointment updated offline" }
+  }
+  return apiRequest<{ message?: string; data?: MaternalAppointment }>(
+    `/appointment/update/${encodeURIComponent(appointmentId)}`,
+    {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    }
+  )
+}
+
+export const deleteMaternalAppointment = async (token: string, appointmentId: string) => {
+  await db.appointments.delete(appointmentId).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "appointment",
+      action: "DELETE",
+      endpoint: `/appointment/delete/${encodeURIComponent(appointmentId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: appointmentId,
+    })
+    return { message: "Appointment deleted offline" }
+  }
+  return apiRequest<{ message?: string }>(
+    `/appointment/delete/${encodeURIComponent(appointmentId)}`,
+    {
+      method: "DELETE",
+      token,
+    }
+  )
 }
 
 export type UpdateDeliveryOutcomeInput = {

@@ -82,8 +82,9 @@ export function EditPrescriptionDialog({
         supplement_id: prescription.supplement_id,
         supplement_type: medication.trim(),
         tablets_given_count: countNumber,
-        date_given: dateGiven,
+        date_given: dateGiven ? new Date(dateGiven).toISOString() : new Date().toISOString(),
         pregnancy_id: pregnancyId || undefined,
+        version: prescription.version,
       })
       toast.success("Prescription updated")
       onOpenChange(false)

@@ -13,6 +13,7 @@ import type { AppEvent } from "./types"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmSensitiveActionDialog } from "@/components/ui/confirm-sensitive-action-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
@@ -21,7 +22,7 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
 import { getMaternalRecords } from "@/features/maternal-records/api"
 import { toast } from "sonner"
-import { appointmentToEvent, cancelAppointment, createAppointment, getAppointments, maternalRecordToAppointmentOption } from "../api"
+import { appointmentToEvent, cancelAppointment, createAppointment, deleteAppointment, getAppointments, maternalRecordToAppointmentOption } from "../api"
 import { getClosedDates, type ClosedDateRecord } from "../closed-dates"
 import type { AppointmentFormValues, AppointmentMotherOption } from "./CreateAppointmentModal"
 
@@ -41,6 +42,7 @@ export function CalendarPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isDateAppointmentsOpen, setIsDateAppointmentsOpen] = useState(false)
   const [appointmentToCancel, setAppointmentToCancel] = useState<AppEvent | null>(null)
+  const [appointmentToDelete, setAppointmentToDelete] = useState<AppEvent | null>(null)
   const [cancelPassword, setCancelPassword] = useState("")
   const [isCancelling, setIsCancelling] = useState(false)
   const [events, setEvents] = useState<AppEvent[]>([])
@@ -164,6 +166,18 @@ export function CalendarPage() {
       toast.error(error instanceof Error ? error.message : "Unable to cancel appointment")
     } finally {
       setIsCancelling(false)
+    }
+  }
+
+  const confirmDeleteAppointment = async () => {
+    if (!appointmentToDelete?.appointmentId || !session?.token) return
+    try {
+      await deleteAppointment(session.token, appointmentToDelete.appointmentId)
+      setEvents((current) => current.filter((event) => event.id !== appointmentToDelete.id))
+      toast.success("Appointment deleted")
+      setAppointmentToDelete(null)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete appointment")
     }
   }
 
@@ -366,6 +380,7 @@ export function CalendarPage() {
                   <div className="min-w-0 flex-1"><CustomEvent event={event} onClick={handleSelectEvent} compact /></div>
                   {event.appointmentId && <TableRowActions label={`Actions for ${event.patient ?? "appointment"}`}>
                     <DropdownMenuItem onSelect={() => { setIsDateAppointmentsOpen(false); setAppointmentToCancel(event) }} disabled={event.status?.toLowerCase() === "cancelled" || event.status?.toLowerCase() === "completed"} className="text-destructive focus:text-destructive">Cancel Appointment</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => { setIsDateAppointmentsOpen(false); setAppointmentToDelete(event) }} className="text-destructive focus:text-destructive">Delete Appointment</DropdownMenuItem>
                   </TableRowActions>}
                 </div>)}
               </div>
@@ -406,6 +421,15 @@ export function CalendarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmSensitiveActionDialog
+        open={Boolean(appointmentToDelete)}
+        onOpenChange={(open) => { if (!open) setAppointmentToDelete(null) }}
+        title={`Are you sure you want to delete the appointment for “${appointmentToDelete?.patient ?? "this mother"}”?`}
+        description="This will permanently delete this appointment record. This action cannot be undone."
+        confirmLabel="I understand the consequences, delete this appointment"
+        onConfirm={confirmDeleteAppointment}
+      />
 
       <CreateAppointmentModal
         open={isCreateModalOpen}

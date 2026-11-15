@@ -222,6 +222,56 @@ export async function cancelAppointment(token: string, appointmentId: string, ve
   })
 }
 
+export type UpdateAppointmentPayload = {
+  appointment_date?: string
+  appointment_time?: string
+  appointment_type?: string
+  reason?: string | null
+  status?: string
+  version?: number
+}
+
+export async function updateAppointment(token: string, appointmentId: string, input: UpdateAppointmentPayload) {
+  await db.appointments.update(appointmentId, { ...input, sync_status: "pending_update" }).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "appointment",
+      action: "UPDATE",
+      endpoint: `/appointment/update/${encodeURIComponent(appointmentId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: appointmentId,
+    })
+    return { message: "Appointment updated offline" }
+  }
+  return apiRequest<{ message?: string; data?: AppointmentRecord }>(`/appointment/update/${encodeURIComponent(appointmentId)}`, {
+    method: "PUT",
+    token,
+    body: JSON.stringify(input),
+  })
+}
+
+export async function deleteAppointment(token: string, appointmentId: string) {
+  await db.appointments.delete(appointmentId).catch(() => {})
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "appointment",
+      action: "DELETE",
+      endpoint: `/appointment/delete/${encodeURIComponent(appointmentId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: appointmentId,
+    })
+    return { message: "Appointment deleted offline" }
+  }
+  return apiRequest<{ message?: string }>(`/appointment/delete/${encodeURIComponent(appointmentId)}`, {
+    method: "DELETE",
+    token,
+  })
+}
+
 export function maternalRecordToAppointmentOption(mother: MaternalRecord) {
   const name = [mother.user?.first_name, mother.user?.middle_name, mother.user?.last_name].filter(Boolean).join(" ") || "Unnamed mother"
   return {

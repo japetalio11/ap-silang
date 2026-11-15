@@ -58,9 +58,11 @@ import {
   assignMaternalStaff,
   cancelMaternalAppointment,
   deleteDeliveryOutcome,
+  deleteMaternalAppointment,
   deleteMaternalLabScreening,
   deleteMaternalSupplement,
   deletePregnancy,
+  deletePrenatalVisit,
   getLatestMaternalPregnancy,
   getLatestPrenatalVisit,
   getMaternalProfile,
@@ -72,10 +74,13 @@ import {
   registerPrenatalVisit,
   registerPregnancy,
   updateDeliveryOutcome,
+  updateMaternalAppointment,
   updateMaternalRecord,
   updateMaternalSupplement,
   updatePregnancy,
+  updatePrenatalVisit,
   uploadMaternalLabFile,
+  type MaternalAppointment,
   type MaternalCompositeRecord,
   type MaternalDelivery,
   type MaternalLabRecord,
@@ -84,12 +89,16 @@ import {
   type MaternalStaff,
   type MaternalSupplement,
   type RegisterDeliveryOutcomeInput,
+  type RegisterPrenatalVisitInput,
   type UpdateDeliveryOutcomeInput,
+  type UpdateMaternalAppointmentInput,
   type UpdateMaternalSupplementInput,
   type UpdatePregnancyInput,
+  type UpdatePrenatalVisitInput,
 } from "../api"
 import { AppointmentDetailsDialog } from "./AppointmentDetailsDialog"
 import { DeliveryDetailsDrawer } from "./DeliveryDetailsDrawer"
+import { EditAppointmentDialog } from "./EditAppointmentDialog"
 import { EditDeliveryDialog } from "./EditDeliveryDialog"
 import { DeliveryOutcomeDialog } from "./DeliveryOutcomeDialog"
 import { PrescriptionDetailsDrawer } from "./PrescriptionDetailsDrawer"
@@ -415,7 +424,13 @@ export function MaternalProfilePage() {
   const [pregnancyRowsState, setPregnancyRowsState] = useState<ReactNode[][]>([])
   const [laboratoryRowsState, setLaboratoryRowsState] = useState<string[][]>([])
   const [previewEhrRecord, setPreviewEhrRecord] = useState<MaternalLabRecord | null>(null)
-  const [appointmentToCancel, setAppointmentToCancel] = useState<number | null>(null)
+  const [appointmentToCancel, setAppointmentToCancel] = useState<MaternalAppointment | null>(null)
+  const [appointmentToDelete, setAppointmentToDelete] = useState<MaternalAppointment | null>(null)
+  const [isEditAppointmentOpen, setIsEditAppointmentOpen] = useState(false)
+  const [appointmentForEdit, setAppointmentForEdit] = useState<MaternalAppointment | null>(null)
+  const [visitForEdit, setVisitForEdit] = useState<MaternalPrenatalVisit | null>(null)
+  const [pregnancyForEdit, setPregnancyForEdit] = useState<MaternalPregnancy | null>(null)
+  const [visitToDelete, setVisitToDelete] = useState<MaternalPrenatalVisit | null>(null)
   const [labFileToDelete, setLabFileToDelete] = useState<string | null>(null)
   const [historyTab, setHistoryTab] = useState("appointments")
   const [deliverySearch, setDeliverySearch] = useState("")
@@ -459,6 +474,24 @@ export function MaternalProfilePage() {
   const [pregnancyToDelete, setPregnancyToDelete] = useState<string | null>(null)
   const [isEditDeliveryOpen, setIsEditDeliveryOpen] = useState(false)
   const [deliveryToDelete, setDeliveryToDelete] = useState<string | null>(null)
+  const [resolvedFacilityName, setResolvedFacilityName] = useState(session?.facility?.facility_name ?? "")
+
+  useEffect(() => {
+    const enrollments = maternalRecord?.facilityEnrollments ?? []
+    const activeEnrollment = enrollments.find((e) => (e.status || "").toLowerCase() === "active") || enrollments[0]
+    const directName = activeEnrollment?.facility?.facility_name || maternalRecord?.facility?.facility_name || session?.facility?.facility_name
+    if (directName) {
+      setResolvedFacilityName(directName)
+      return
+    }
+    const targetFacilityId = activeEnrollment?.facility_id || maternalRecord?.facility_id || maternalRecord?.user?.facility_id || session?.user?.facility_id
+    if (!targetFacilityId) return
+    db.facilities.where("facility_id").equals(targetFacilityId).first().then((fac) => {
+      if (fac?.facility_name) {
+        setResolvedFacilityName(fac.facility_name)
+      }
+    }).catch(() => {})
+  }, [maternalRecord, session?.facility?.facility_name, session?.user?.facility_id])
   useEffect(() => {
     if (!session?.token || !motherId) return
     let active = true
@@ -712,8 +745,40 @@ export function MaternalProfilePage() {
     await updateDeliveryOutcome(session.token, deliveryId, input)
     refreshProfile()
     if (selectedDelivery) {
-      setSelectedDelivery((prev) => prev ? { ...prev, delivery: { ...prev.delivery, ...input } } : null)
+      setSelectedDelivery((prev) =>
+        prev
+          ? {
+              ...prev,
+              delivery: {
+                ...prev.delivery,
+                ...input,
+                newbornRecords: input.newborns ?? prev.delivery.newbornRecords,
+              },
+            }
+          : null
+      )
     }
+  }
+
+  const handleSaveEditAppointment = async (appointmentId: string, input: UpdateMaternalAppointmentInput) => {
+    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    await updateMaternalAppointment(session.token, appointmentId, input)
+    refreshProfile()
+  }
+
+  const handleSaveEditVisit = async (visitId: string, input: UpdatePrenatalVisitInput) => {
+    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    await updatePrenatalVisit(session.token, visitId, input)
+    refreshProfile()
+  }
+
+  const handleCreateVisitForAppointment = async (input: RegisterPrenatalVisitInput) => {
+    if (!session?.token) throw new Error("Your session has expired. Sign in again.")
+    await registerPrenatalVisit(session.token, {
+      ...input,
+      health_worker_id: input.health_worker_id || session.user.user_id,
+    })
+    refreshProfile()
   }
 
   const handleConfirmDeleteDelivery = async () => {
@@ -1312,23 +1377,45 @@ export function MaternalProfilePage() {
                   rows={filteredAppointments}
                   emptyState={{ icon: CalendarPlus, title: "No appointments or visits found", description: "Scheduled visits and recorded consultation vitals will appear here." }}
                   onRowClick={(rowIndex) => { const entry = filteredAppointmentEntries[rowIndex]; if (entry) { setSelectedAppointmentId(entry.appointment?.appointment_id ?? null); setSelectedVitalVisit(entry.visit ? { visit: entry.visit, pregnancy: entry.pregnancy } : null); setIsAppointmentDetailsOpen(true) } }}
-                  renderRowAction={(rowIndex) => (
-                    <TableRowActions label="Appointment actions">
-                      <DropdownMenuItem onSelect={() => { const entry = filteredAppointmentEntries[rowIndex]; if (entry) { setSelectedAppointmentId(entry.appointment?.appointment_id ?? null); setSelectedVitalVisit(entry.visit ? { visit: entry.visit, pregnancy: entry.pregnancy } : null); setIsAppointmentDetailsOpen(true) } }}>View Details</DropdownMenuItem>
-                      {!isSuperAdminView && (
-                        <>
-                          <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>Log Consultation</DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => setIsPrescriptionOpen(true)}>Create Prescription</DropdownMenuItem>
-                          {filteredAppointmentEntries[rowIndex]?.appointment && (
-                            <>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(filteredAppointmentEntries[rowIndex]?.index ?? null)}>Cancel Appointment</DropdownMenuItem>
-                            </>
-                          )}
-                        </>
-                      )}
-                    </TableRowActions>
-                  )}
+                  renderRowAction={(rowIndex) => {
+                    const entry = filteredAppointmentEntries[rowIndex]
+                    const appt = entry?.appointment
+                    const vst = entry?.visit
+                    return (
+                      <TableRowActions label="Appointment actions">
+                        <DropdownMenuItem onSelect={() => { if (entry) { setSelectedAppointmentId(appt?.appointment_id ?? null); setSelectedVitalVisit(vst ? { visit: vst, pregnancy: entry.pregnancy } : null); setIsAppointmentDetailsOpen(true) } }}>View Details</DropdownMenuItem>
+                        {!isSuperAdminView && (
+                          <>
+                            <DropdownMenuItem onSelect={() => {
+                              setAppointmentForEdit(appt ?? null)
+                              setVisitForEdit(vst ?? null)
+                              setPregnancyForEdit(entry?.pregnancy ?? null)
+                              setIsEditAppointmentOpen(true)
+                            }}>
+                              {appt && vst ? "Edit Appointment & Vitals" : appt ? "Edit Appointment" : "Edit Consultation Vitals"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setIsVitalsOpen(true)}>Log Consultation</DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setIsPrescriptionOpen(true)}>Create Prescription</DropdownMenuItem>
+                            {appt && (
+                              <>
+                                {appt.status?.toLowerCase() !== "cancelled" && appt.status?.toLowerCase() !== "completed" && (
+                                  <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToCancel(appt)}>Cancel Appointment</DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem variant="destructive" onSelect={() => setAppointmentToDelete(appt)}>Delete Appointment</DropdownMenuItem>
+                              </>
+                            )}
+                            {!appt && vst && (
+                              <>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem variant="destructive" onSelect={() => setVisitToDelete(vst)}>Delete Consultation</DropdownMenuItem>
+                              </>
+                            )}
+                          </>
+                        )}
+                      </TableRowActions>
+                    )
+                  }}
                 />
               </TabsContent>
 
@@ -1533,18 +1620,45 @@ export function MaternalProfilePage() {
         onDelete={!isSuperAdminView ? () => { if (selectedPregnancyRecord) setPregnancyToDelete(selectedPregnancyRecord.pregnancy_id) } : undefined}
         readOnly={isSuperAdminView}
       />
-      <AppointmentDetailsDialog open={isAppointmentDetailsOpen} onOpenChange={setIsAppointmentDetailsOpen} patientName={patientName} appointment={selectedAppointment} pregnancy={appointmentPregnancy} consultation={appointmentVisit} supplements={appointmentSupplements} />
+      <AppointmentDetailsDialog
+        open={isAppointmentDetailsOpen}
+        onOpenChange={setIsAppointmentDetailsOpen}
+        patientName={patientName}
+        appointment={selectedAppointment}
+        pregnancy={appointmentPregnancy}
+        consultation={appointmentVisit}
+        supplements={appointmentSupplements}
+        onEdit={!isSuperAdminView && (selectedAppointment || appointmentVisit) ? () => {
+          setAppointmentForEdit(selectedAppointment ?? null)
+          setVisitForEdit(appointmentVisit ?? null)
+          setPregnancyForEdit(appointmentPregnancy ?? null)
+          setIsEditAppointmentOpen(true)
+        } : undefined}
+        onCancel={!isSuperAdminView && selectedAppointment ? () => {
+          setAppointmentToCancel(selectedAppointment)
+        } : undefined}
+        onDelete={!isSuperAdminView && (selectedAppointment || appointmentVisit) ? () => {
+          if (selectedAppointment) {
+            setAppointmentToDelete(selectedAppointment)
+          } else if (appointmentVisit) {
+            setVisitToDelete(appointmentVisit)
+          }
+        } : undefined}
+        readOnly={isSuperAdminView}
+      />
       <EhrRecordPreview key={previewEhrRecord?.screening_id ?? "closed"} record={previewEhrRecord} onClose={() => setPreviewEhrRecord(null)} />
       {!isSuperAdminView && (
         <>
           <RiskOverrideDialog open={isRiskOverrideOpen} onOpenChange={setIsRiskOverrideOpen} patientName={patientName} pregnancyLabel={currentPregnancy ? `Active Pregnancy · G${currentPregnancy.gravida ?? "—"} P${currentPregnancy.parity ?? "—"}` : "No pregnancy record"} currentRisk={riskAssessment.level} onSubmit={prepareRiskOverride} />
           <ConfirmRiskOverridePasswordDialog open={isRiskPasswordOpen} onOpenChange={(open) => { setIsRiskPasswordOpen(open); if (!open) setPendingRiskOverride(null) }} patientName={patientName} riskLevel={pendingRiskOverride?.riskLevel ?? "the selected level"} onConfirm={confirmRiskOverride} />
           <PrenatalVitalsDialog open={isVitalsOpen} onOpenChange={setIsVitalsOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveEncounter} />
-          <DeliveryOutcomeDialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveDelivery} />
+          <DeliveryOutcomeDialog open={isDeliveryDialogOpen} onOpenChange={setIsDeliveryDialogOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveDelivery} defaultPlaceOfDelivery={resolvedFacilityName} />
           <EditDeliveryDialog
+            key={selectedDelivery?.delivery?.delivery_id ?? "delivery-empty"}
             open={isEditDeliveryOpen}
             onOpenChange={setIsEditDeliveryOpen}
             delivery={selectedDelivery?.delivery ?? null}
+            pregnancies={maternalRecord.pregnancies ?? []}
             onSave={handleSaveEditDelivery}
           />
           <EditPrescriptionDialog
@@ -1555,10 +1669,25 @@ export function MaternalProfilePage() {
             onSave={handleSaveEditPrescription}
           />
           <EditPregnancyDialog
+            key={selectedPregnancyRecord?.pregnancy_id ?? "none"}
             open={isEditPregnancyOpen}
             onOpenChange={setIsEditPregnancyOpen}
             pregnancy={selectedPregnancyRecord}
             onSave={handleSaveEditPregnancy}
+          />
+          <EditAppointmentDialog
+            key={`${appointmentForEdit?.appointment_id ?? "no-appt"}-${visitForEdit?.visit_id ?? "no-visit"}`}
+            open={isEditAppointmentOpen}
+            onOpenChange={setIsEditAppointmentOpen}
+            appointment={appointmentForEdit}
+            visit={visitForEdit}
+            pregnancy={pregnancyForEdit}
+            pregnancies={maternalRecord.pregnancies ?? []}
+            patientName={patientName}
+            facilityId={session?.user?.facility_id}
+            onSaveAppointment={handleSaveEditAppointment}
+            onSaveVisit={handleSaveEditVisit}
+            onCreateVisit={handleCreateVisitForAppointment}
           />
           <CreateAppointmentModal open={isScheduleAppointmentOpen} onOpenChange={setIsScheduleAppointmentOpen} initialMother={appointmentMother} onCreate={handleScheduleAppointment} />
           {maternalRecord && <CreatePrescriptionDialog
@@ -1570,7 +1699,7 @@ export function MaternalProfilePage() {
             onSuccess={refreshProfile}
           />}
           <LaboratoryRecordDialog open={isLabRecordOpen} onOpenChange={setIsLabRecordOpen} pregnancies={maternalRecord.pregnancies ?? []} onSave={handleSaveLabRecord} />
-          <NewPregnancyDialog open={isNewPregnancyOpen} onOpenChange={setIsNewPregnancyOpen} onSubmit={handleCreatePregnancy} />
+          <NewPregnancyDialog open={isNewPregnancyOpen} onOpenChange={setIsNewPregnancyOpen} onSubmit={handleCreatePregnancy} birthDate={maternalRecord.birth_date} />
           <ChangeStaffDialog open={isChangeStaffOpen} onOpenChange={setIsChangeStaffOpen} patientName={patientName} staff={staffOptions} currentStaff={maternalRecord.assignedWorker} isLoading={isStaffLoading} onAssign={handleAssignStaff} />
           <EditMaternalProfileDialog key={JSON.stringify([maternalRecord.mother_id, maternalRecord.birth_date, maternalRecord.user?.first_name, maternalRecord.user?.middle_name, maternalRecord.user?.last_name, maternalRecord.user?.phone_number, maternalRecord.user?.email, maternalRecord.user?.address, maternalRecord.family_serial_no, maternalRecord.civil_status, maternalRecord.blood_type, maternalRecord.user?.profile_url, maternalRecord.profile_url])} open={isEditProfileOpen} onOpenChange={setIsEditProfileOpen} profile={maternalRecord} onSubmit={handleEditProfile} />
           <UploadAvatarDialog
@@ -1614,18 +1743,68 @@ export function MaternalProfilePage() {
             onConfirm={handleConfirmDeletePrescription}
           />
           <ConfirmSensitiveActionDialog
-            open={appointmentToCancel !== null}
+            open={Boolean(appointmentToCancel)}
             onOpenChange={(open) => { if (!open) setAppointmentToCancel(null) }}
-            title={`Are you sure you want to cancel “${appointmentToCancel === null ? "this appointment" : String(appointmentRowsState[appointmentToCancel]?.[1] ?? "this appointment") }”?`}
+            title={`Are you sure you want to cancel “${appointmentToCancel?.appointment_type ?? "this appointment"}”?`}
             description="The appointment will be marked as cancelled in this maternal record."
             confirmLabel="I understand, cancel this appointment"
-            onConfirm={() => {
-              const appointment = appointmentToCancel === null ? undefined : maternalRecord.appointments?.[appointmentToCancel]
-              if (!appointment || !session?.token) { toast.error("Unable to find this appointment record"); setAppointmentToCancel(null); return }
-              void cancelMaternalAppointment(session.token, appointment.appointment_id)
-                .then(() => { toast.success("Appointment cancelled"); refreshProfile() })
-                .catch((error: unknown) => toast.error(error instanceof Error ? error.message : "Unable to cancel this appointment"))
-                .finally(() => setAppointmentToCancel(null))
+            onConfirm={async () => {
+              if (!appointmentToCancel || !session?.token) return
+              try {
+                await cancelMaternalAppointment(session.token, appointmentToCancel.appointment_id)
+                toast.success("Appointment cancelled")
+                refreshProfile()
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Unable to cancel this appointment")
+              } finally {
+                setAppointmentToCancel(null)
+              }
+            }}
+          />
+          <ConfirmSensitiveActionDialog
+            open={Boolean(appointmentToDelete)}
+            onOpenChange={(open) => { if (!open) setAppointmentToDelete(null) }}
+            title={`Are you sure you want to delete “${appointmentToDelete?.appointment_type ?? "this appointment"}”?`}
+            description="This will permanently delete this appointment record. This action cannot be undone."
+            confirmLabel="I understand the consequences, delete this appointment"
+            onConfirm={async () => {
+              if (!appointmentToDelete || !session?.token) return
+              try {
+                await deleteMaternalAppointment(session.token, appointmentToDelete.appointment_id)
+                toast.success("Appointment record deleted")
+                if (selectedAppointmentId === appointmentToDelete.appointment_id) {
+                  setIsAppointmentDetailsOpen(false)
+                  setSelectedAppointmentId(null)
+                }
+                refreshProfile()
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Unable to delete this appointment")
+              } finally {
+                setAppointmentToDelete(null)
+              }
+            }}
+          />
+          <ConfirmSensitiveActionDialog
+            open={Boolean(visitToDelete)}
+            onOpenChange={(open) => { if (!open) setVisitToDelete(null) }}
+            title="Are you sure you want to delete this consultation visit record?"
+            description="This will permanently delete this prenatal consultation and its recorded vitals. This action cannot be undone."
+            confirmLabel="I understand the consequences, delete this consultation"
+            onConfirm={async () => {
+              if (!visitToDelete?.visit_id || !session?.token) return
+              try {
+                await deletePrenatalVisit(session.token, visitToDelete.visit_id)
+                toast.success("Consultation visit deleted")
+                if (selectedVitalVisit?.visit?.visit_id === visitToDelete.visit_id) {
+                  setIsAppointmentDetailsOpen(false)
+                  setSelectedVitalVisit(null)
+                }
+                refreshProfile()
+              } catch (error) {
+                toast.error(error instanceof Error ? error.message : "Unable to delete this consultation visit")
+              } finally {
+                setVisitToDelete(null)
+              }
             }}
           />
           <ConfirmSensitiveActionDialog

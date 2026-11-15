@@ -8,11 +8,60 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import type { MaternalPregnancy, UpdatePregnancyInput } from "../api"
 
 const inputClass = "h-8 bg-muted/70 text-xs dark:bg-muted/60"
+
+function safeDate(val?: string | null): string {
+  if (!val) return ""
+  if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}/.test(val)) {
+    return val.slice(0, 10)
+  }
+  try {
+    const d = new Date(val)
+    return isNaN(d.getTime()) ? "" : format(d, "yyyy-MM-dd")
+  } catch {
+    return ""
+  }
+}
+
+function parseDecimalString(val: unknown): string {
+  if (val == null) return ""
+  if (typeof val === "number") return String(val)
+  if (typeof val === "string") return val
+  if (typeof val === "object" && val !== null) {
+    if ("toNumber" in val && typeof (val as { toNumber: () => number }).toNumber === "function") {
+      return String((val as { toNumber: () => number }).toNumber())
+    }
+    if ("toString" in val && typeof (val as { toString: () => string }).toString === "function") {
+      const s = (val as { toString: () => string }).toString()
+      return s !== "[object Object]" ? s : ""
+    }
+  }
+  return ""
+}
+
+function normalizeStatus(val?: string | null): string {
+  if (!val) return "Active"
+  const lower = val.toLowerCase().trim()
+  if (lower === "active") return "Active"
+  if (lower === "delivered") return "Delivered"
+  if (lower === "postpartum") return "Postpartum"
+  if (lower === "miscarriage") return "Miscarriage"
+  if (lower === "stillbirth") return "Stillbirth"
+  if (lower === "completed") return "Completed"
+  return val
+}
+
+function normalizeAgeGroup(val?: string | null): string {
+  if (!val) return "20-34 years"
+  const lower = val.toLowerCase().trim()
+  if (lower.includes("under 20") || lower === "adolescent") return "Under 20 years"
+  if (lower.includes("35") || lower.includes("older")) return "35 years and older"
+  if (lower.includes("20-34") || lower === "adult") return "20-34 years"
+  return val
+}
 
 function Field({ id, label, required = false, children }: { id: string; label: string; required?: boolean; children: React.ReactNode }) {
   return (
@@ -48,39 +97,41 @@ export function EditPregnancyDialog({
   pregnancy: MaternalPregnancy | null
   onSave: (pregnancyId: string, input: UpdatePregnancyInput) => Promise<void>
 }) {
-  const [gravida, setGravida] = useState("1")
-  const [parity, setParity] = useState("0")
-  const [lmpDate, setLmpDate] = useState("")
-  const [eddDate, setEddDate] = useState("")
-  const [status, setStatus] = useState("Active")
-  const [ageGroup, setAgeGroup] = useState("Adult")
-  const [heightCm, setHeightCm] = useState("")
-  const [bmi, setBmi] = useState("")
-  const [prevCaesarean, setPrevCaesarean] = useState(false)
-  const [consecutiveMiscarriages, setConsecutiveMiscarriages] = useState(false)
-  const [stillbirthHistory, setStillbirthHistory] = useState(false)
-  const [pphHistory, setPphHistory] = useState(false)
-  const [previousDeliveryHistory, setPreviousDeliveryHistory] = useState("")
-  const [hasHeartDisease, setHasHeartDisease] = useState(false)
-  const [hasDiabetes, setHasDiabetes] = useState(false)
-  const [hasTb, setHasTb] = useState(false)
-  const [hasAsthma, setHasAsthma] = useState(false)
-  const [hasGoiter, setHasGoiter] = useState(false)
-  const [coMorbidities, setCoMorbidities] = useState("")
-  const [dewormingGiven, setDewormingGiven] = useState(false)
-  const [dewormingDate, setDewormingDate] = useState("")
+  const [gravida, setGravida] = useState(() => (pregnancy?.gravida != null ? String(pregnancy.gravida) : "1"))
+  const [parity, setParity] = useState(() => (pregnancy?.parity != null ? String(pregnancy.parity) : "0"))
+  const [lmpDate, setLmpDate] = useState(() => safeDate(pregnancy?.lmp_date))
+  const [eddDate, setEddDate] = useState(() => safeDate(pregnancy?.edd_date))
+  const [status, setStatus] = useState(() => normalizeStatus(pregnancy?.pregnancy_status))
+  const [ageGroup, setAgeGroup] = useState(() => normalizeAgeGroup(pregnancy?.age_group))
+  const [heightCm, setHeightCm] = useState(() => parseDecimalString(pregnancy?.height_cm))
+  const [bmi, setBmi] = useState(() => parseDecimalString(pregnancy?.bmi_1st_trimester))
+  const [completed8anc, setCompleted8anc] = useState(() => Boolean(pregnancy?.completed_8anc))
+  const [prevCaesarean, setPrevCaesarean] = useState(() => Boolean(pregnancy?.prev_caesarean))
+  const [consecutiveMiscarriages, setConsecutiveMiscarriages] = useState(() => Boolean(pregnancy?.consecutive_miscarriages))
+  const [stillbirthHistory, setStillbirthHistory] = useState(() => Boolean(pregnancy?.stillbirth_history))
+  const [pphHistory, setPphHistory] = useState(() => Boolean(pregnancy?.pph_history))
+  const [previousDeliveryHistory, setPreviousDeliveryHistory] = useState(() => pregnancy?.previous_delivery_history ?? "")
+  const [hasHeartDisease, setHasHeartDisease] = useState(() => Boolean(pregnancy?.has_heart_disease))
+  const [hasDiabetes, setHasDiabetes] = useState(() => Boolean(pregnancy?.has_diabetes))
+  const [hasTb, setHasTb] = useState(() => Boolean(pregnancy?.has_tb))
+  const [hasAsthma, setHasAsthma] = useState(() => Boolean(pregnancy?.has_asthma))
+  const [hasGoiter, setHasGoiter] = useState(() => Boolean(pregnancy?.has_goiter))
+  const [coMorbidities, setCoMorbidities] = useState(() => pregnancy?.co_morbidities ?? "")
+  const [dewormingGiven, setDewormingGiven] = useState(() => Boolean(pregnancy?.deworming_given))
+  const [dewormingDate, setDewormingDate] = useState(() => safeDate(pregnancy?.deworming_date))
   const [isSaving, setIsSaving] = useState(false)
 
   useEffect(() => {
     if (!open || !pregnancy) return
     setGravida(pregnancy.gravida != null ? String(pregnancy.gravida) : "1")
     setParity(pregnancy.parity != null ? String(pregnancy.parity) : "0")
-    setLmpDate(pregnancy.lmp_date ? format(new Date(pregnancy.lmp_date), "yyyy-MM-dd") : "")
-    setEddDate(pregnancy.edd_date ? format(new Date(pregnancy.edd_date), "yyyy-MM-dd") : "")
-    setStatus(pregnancy.pregnancy_status ?? "Active")
-    setAgeGroup(pregnancy.age_group ?? "Adult")
-    setHeightCm(pregnancy.height_cm != null ? String(pregnancy.height_cm) : "")
-    setBmi(pregnancy.bmi_1st_trimester != null ? String(pregnancy.bmi_1st_trimester) : "")
+    setLmpDate(safeDate(pregnancy.lmp_date))
+    setEddDate(safeDate(pregnancy.edd_date))
+    setStatus(normalizeStatus(pregnancy.pregnancy_status))
+    setAgeGroup(normalizeAgeGroup(pregnancy.age_group))
+    setHeightCm(parseDecimalString(pregnancy.height_cm))
+    setBmi(parseDecimalString(pregnancy.bmi_1st_trimester))
+    setCompleted8anc(Boolean(pregnancy.completed_8anc))
     setPrevCaesarean(Boolean(pregnancy.prev_caesarean))
     setConsecutiveMiscarriages(Boolean(pregnancy.consecutive_miscarriages))
     setStillbirthHistory(Boolean(pregnancy.stillbirth_history))
@@ -93,7 +144,7 @@ export function EditPregnancyDialog({
     setHasGoiter(Boolean(pregnancy.has_goiter))
     setCoMorbidities(pregnancy.co_morbidities ?? "")
     setDewormingGiven(Boolean(pregnancy.deworming_given))
-    setDewormingDate(pregnancy.deworming_date ? format(new Date(pregnancy.deworming_date), "yyyy-MM-dd") : "")
+    setDewormingDate(safeDate(pregnancy.deworming_date))
   }, [open, pregnancy])
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -115,6 +166,7 @@ export function EditPregnancyDialog({
         age_group: ageGroup,
         height_cm: heightCm ? parseFloat(heightCm) : null,
         bmi_1st_trimester: bmi ? parseFloat(bmi) : null,
+        completed_8anc: completed8anc,
         prev_caesarean: prevCaesarean,
         consecutive_miscarriages: consecutiveMiscarriages,
         stillbirth_history: stillbirthHistory,
@@ -128,6 +180,7 @@ export function EditPregnancyDialog({
         co_morbidities: coMorbidities.trim() || undefined,
         deworming_given: dewormingGiven,
         deworming_date: dewormingGiven && dewormingDate ? dewormingDate : null,
+        version: pregnancy.version,
       })
       toast.success("Pregnancy record updated")
       onOpenChange(false)
@@ -182,9 +235,11 @@ export function EditPregnancyDialog({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Active">Active</SelectItem>
-                  <SelectItem value="Completed">Completed</SelectItem>
-                  <SelectItem value="Postpartum">Postpartum</SelectItem>
                   <SelectItem value="Delivered">Delivered</SelectItem>
+                  <SelectItem value="Postpartum">Postpartum</SelectItem>
+                  <SelectItem value="Miscarriage">Miscarriage</SelectItem>
+                  <SelectItem value="Stillbirth">Stillbirth</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -195,8 +250,11 @@ export function EditPregnancyDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="Adult">Adult</SelectItem>
+                  <SelectItem value="Under 20 years">Under 20 years</SelectItem>
+                  <SelectItem value="20-34 years">20-34 years</SelectItem>
+                  <SelectItem value="35 years and older">35 years and older</SelectItem>
                   <SelectItem value="Adolescent">Adolescent</SelectItem>
+                  <SelectItem value="Adult">Adult</SelectItem>
                 </SelectContent>
               </Select>
             </Field>
@@ -239,6 +297,7 @@ export function EditPregnancyDialog({
           <div className="rounded-md border border-border p-3 space-y-2">
             <h4 className="text-xs font-semibold text-foreground">Obstetric High-Risk History</h4>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 pt-1">
+              <CheckboxField id="risk-completed-8anc" label="Completed 8 ANC Visits" checked={completed8anc} onCheckedChange={setCompleted8anc} />
               <CheckboxField id="risk-prev-cs" label="Previous Cesarean Section" checked={prevCaesarean} onCheckedChange={setPrevCaesarean} />
               <CheckboxField id="risk-consec-misc" label="3+ Consecutive Miscarriages" checked={consecutiveMiscarriages} onCheckedChange={setConsecutiveMiscarriages} />
               <CheckboxField id="risk-stillbirth" label="Stillbirth History" checked={stillbirthHistory} onCheckedChange={setStillbirthHistory} />

@@ -52,7 +52,7 @@ export function CreatePrescriptionDialog({
   const [visitId, setVisitId] = useState("")
   const [medication, setMedication] = useState("")
   const [count, setCount] = useState("30")
-  const [dateGiven, setDateGiven] = useState("")
+  const [dateGiven, setDateGiven] = useState(() => format(new Date(), "yyyy-MM-dd"))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSaving, setIsSaving] = useState(false)
 
@@ -66,7 +66,7 @@ export function CreatePrescriptionDialog({
     setVisitId("")
     setMedication("")
     setCount("30")
-    setDateGiven("")
+    setDateGiven(format(new Date(), "yyyy-MM-dd"))
     setErrors({})
   }, [open, pregnancies])
 

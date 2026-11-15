@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import { format } from "date-fns"
 import { Baby, CalendarDays, ClipboardList, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -25,18 +25,25 @@ function Field({ id, label, required, children }: { id: string; label: string; r
 type NewbornDraft = { sex: string; birthWeight: string; status: string; apgar: string }
 const newNewborn = (): NewbornDraft => ({ sex: "", birthWeight: "", status: "Alive", apgar: "" })
 
-export function DeliveryOutcomeDialog({ open, onOpenChange, pregnancies, onSave }: {
+export function DeliveryOutcomeDialog({
+  open,
+  onOpenChange,
+  pregnancies,
+  onSave,
+  defaultPlaceOfDelivery = "",
+}: {
   open: boolean
   onOpenChange: (open: boolean) => void
   pregnancies: MaternalPregnancy[]
   onSave: (input: RegisterDeliveryOutcomeInput) => Promise<void>
+  defaultPlaceOfDelivery?: string
 }) {
   const [step, setStep] = useState(0)
   const [isSaving, setIsSaving] = useState(false)
   const activePregnancy = pregnancies.find((pregnancy) => pregnancy.pregnancy_status?.toLowerCase() === "active") ?? pregnancies[0]
   const [pregnancyId, setPregnancyId] = useState("")
   const [deliveryDate, setDeliveryDate] = useState(format(new Date(), "yyyy-MM-dd"))
-  const [place, setPlace] = useState("")
+  const [place, setPlace] = useState(defaultPlaceOfDelivery)
   const [mode, setMode] = useState("")
   const [attendant, setAttendant] = useState("")
   const [maternalOutcome, setMaternalOutcome] = useState("Alive")
@@ -46,6 +53,14 @@ export function DeliveryOutcomeDialog({ open, onOpenChange, pregnancies, onSave 
   const [breastfeeding, setBreastfeeding] = useState(false)
   const [includeNewborns, setIncludeNewborns] = useState(true)
   const [newborns, setNewborns] = useState<NewbornDraft[]>([newNewborn()])
+  const prevOpenRef = useRef(open)
+
+  useEffect(() => {
+    if (open && !prevOpenRef.current) {
+      setPlace(defaultPlaceOfDelivery)
+    }
+    prevOpenRef.current = open
+  }, [open, defaultPlaceOfDelivery])
 
   const selectedPregnancyId = pregnancyId || activePregnancy?.pregnancy_id || ""
   const deliveryDetailsAreValid = () => {
@@ -59,7 +74,7 @@ export function DeliveryOutcomeDialog({ open, onOpenChange, pregnancies, onSave 
     setStep(0)
     setPregnancyId("")
     setDeliveryDate(format(new Date(), "yyyy-MM-dd"))
-    setPlace("")
+    setPlace(defaultPlaceOfDelivery)
     setMode("")
     setAttendant("")
     setMaternalOutcome("Alive")
@@ -171,7 +186,7 @@ export function DeliveryOutcomeDialog({ open, onOpenChange, pregnancies, onSave 
                   {newborns.map((newborn, index) => <section key={index} className="rounded-md border border-sidebar-border p-3">
                     <div className="mb-3 flex items-center justify-between"><h3 className="text-xs font-semibold">Newborn {index + 1}</h3>{newborns.length > 1 && <Button type="button" variant="ghost" size="icon" aria-label={`Remove newborn ${index + 1}`} onClick={() => setNewborns((current) => current.filter((_, itemIndex) => itemIndex !== index))} className="size-7 text-muted-foreground"><Trash2 className="size-3.5" /></Button>}</div>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field id={`newborn-sex-${index}`} label="Sex" required><Select value={newborn.sex} onValueChange={(value) => setNewborns((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, sex: value } : item))}><SelectTrigger id={`newborn-sex-${index}`} className="h-8 w-full text-xs"><SelectValue placeholder="Select sex" /></SelectTrigger><SelectContent><SelectItem value="Female">Female</SelectItem><SelectItem value="Male">Male</SelectItem><SelectItem value="Ambiguous">Ambiguous</SelectItem><SelectItem value="Unknown">Unknown</SelectItem></SelectContent></Select></Field>
+                      <Field id={`newborn-sex-${index}`} label="Sex" required><Select value={newborn.sex} onValueChange={(value) => setNewborns((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, sex: value } : item))}><SelectTrigger id={`newborn-sex-${index}`} className="h-8 w-full text-xs"><SelectValue placeholder="Select sex" /></SelectTrigger><SelectContent><SelectItem value="Female">Female</SelectItem><SelectItem value="Male">Male</SelectItem><SelectItem value="Indeterminate">Indeterminate</SelectItem><SelectItem value="Unknown">Unknown</SelectItem></SelectContent></Select></Field>
                       <Field id={`newborn-weight-${index}`} label="Birth Weight (kg)" required><Input id={`newborn-weight-${index}`} type="number" min="0" step="0.01" value={newborn.birthWeight} onChange={(event) => setNewborns((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, birthWeight: event.target.value } : item))} placeholder="e.g. 3.2" className={inputClass} /></Field>
                       <Field id={`newborn-status-${index}`} label="Status at Birth" required><Select value={newborn.status} onValueChange={(value) => setNewborns((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, status: value } : item))}><SelectTrigger id={`newborn-status-${index}`} className="h-8 w-full text-xs"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Alive">Alive</SelectItem><SelectItem value="Stillbirth">Stillbirth</SelectItem><SelectItem value="Referred">Referred</SelectItem></SelectContent></Select></Field>
                       <Field id={`newborn-apgar-${index}`} label="APGAR Score" required><Input id={`newborn-apgar-${index}`} type="number" min="0" max="10" value={newborn.apgar} onChange={(event) => setNewborns((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, apgar: event.target.value } : item))} placeholder="0–10" className={inputClass} /></Field>
