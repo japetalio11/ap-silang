@@ -267,7 +267,7 @@ export interface OfflineQueueItem {
     | "facility"
   action: "CREATE" | "UPDATE" | "DELETE" | "REASSIGN_STAFF" | "REASSIGN_MOTHER"
   endpoint: string
-  method: "POST" | "PUT" | "DELETE"
+  method: "POST" | "PUT" | "DELETE" | "PATCH"
   payload: any
   temp_id?: string
   blob_ids?: string[]

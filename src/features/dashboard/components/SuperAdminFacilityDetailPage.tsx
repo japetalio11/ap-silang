@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { useLocation, useNavigate, useParams } from "react-router-dom"
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom"
 import {
   AlertTriangle,
   ArrowLeft,
@@ -177,10 +177,15 @@ export function SuperAdminFacilityDetailPage() {
 
   const loadData = async () => {
     if (!session?.token || !facilityId) return
+    const effectiveFacilityId = await silangSyncEngine.resolveId(facilityId)
+    if (effectiveFacilityId !== facilityId) {
+      navigate(`/superadmin/facility/${effectiveFacilityId}`, { replace: true, state: location.state })
+      return
+    }
     setLoading(true)
     try {
       const [hub, facs] = await Promise.all([
-        fetchFacilityHubDetails(session.token, facilityId),
+        fetchFacilityHubDetails(session.token, effectiveFacilityId),
         fetchAllFacilities(session.token).catch(() => []),
       ])
       setData(hub)
@@ -193,8 +198,20 @@ export function SuperAdminFacilityDetailPage() {
         email: hub.email,
       })
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load facility info"
-      toast.error("Error loading facility hub", { description: message })
+      const fallbackHub = await fetchFacilityHubDetails(session.token, effectiveFacilityId).catch(() => null)
+      if (fallbackHub) {
+        setData(fallbackHub)
+        setEditForm({
+          facility_name: fallbackHub.facility_name,
+          type: normalizeFacilityType(fallbackHub.type),
+          address: fallbackHub.address,
+          contact_number: fallbackHub.contact_number,
+          email: fallbackHub.email,
+        })
+      } else {
+        const message = error instanceof Error ? error.message : "Failed to load facility info"
+        toast.error("Error loading facility hub", { description: message })
+      }
     } finally {
       setLoading(false)
     }
@@ -202,6 +219,19 @@ export function SuperAdminFacilityDetailPage() {
 
   useEffect(() => {
     loadData()
+    const handleStaffUpdated = () => {
+      void loadData()
+    }
+    window.addEventListener("silang:staff-updated", handleStaffUpdated)
+    const unsubscribe = silangSyncEngine.subscribe((status) => {
+      if (status.status === "idle" && status.pendingCount === 0) {
+        void loadData()
+      }
+    })
+    return () => {
+      window.removeEventListener("silang:staff-updated", handleStaffUpdated)
+      unsubscribe()
+    }
   }, [facilityId, session?.token])
 
   useEffect(() => {
@@ -281,23 +311,17 @@ export function SuperAdminFacilityDetailPage() {
 
   const handleToggleFacilityStatus = async () => {
     if (!session?.token || !facilityId || !data) return
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("Connectivity required", {
-        description: "Facility status updates require an active server connection to ensure clinical safety boundaries.",
-      })
-      return
-    }
     setSubmittingStatus(true)
     const newStatus = statusAction === "reactivate"
     try {
       await toggleFacilityStatus(session.token, facilityId, newStatus)
+      setData((prev) => (prev ? { ...prev, is_active: newStatus } : prev))
       toast.success(`Facility ${newStatus ? "reactivated" : "deactivated"} successfully`, {
         description: newStatus
           ? "Staff accounts can now log in and manage services for this facility."
           : "Staff access blocked and active mother enrollments unassigned.",
       })
       setStatusDialogOpen(false)
-      loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to change facility status"
       toast.error("Operation failed", { description: message })
@@ -318,7 +342,7 @@ export function SuperAdminFacilityDetailPage() {
     }
     setAddStaffSubmitting(true)
     try {
-      await createStaff(session.token, {
+      const res = await createStaff(session.token, {
         first_name: addStaffForm.first_name.trim(),
         middle_name: addStaffForm.middle_name.trim() || undefined,
         last_name: addStaffForm.last_name.trim(),
@@ -329,8 +353,39 @@ export function SuperAdminFacilityDetailPage() {
         address: addStaffForm.address.trim() || undefined,
         facility_id: facilityId,
       })
-      toast.success("Staff member created", {
-        description: `${addStaffForm.first_name} ${addStaffForm.last_name} (${addStaffForm.role}) can now log in to access this facility.`,
+      const newStaffItem: StaffItem = {
+        user_id: res.user?.user_id || `temp-staff-${crypto.randomUUID()}`,
+        facility_id: facilityId,
+        first_name: addStaffForm.first_name.trim(),
+        middle_name: addStaffForm.middle_name.trim() || undefined,
+        last_name: addStaffForm.last_name.trim(),
+        role: addStaffForm.role,
+        email: addStaffForm.email.trim().toLowerCase(),
+        phone_number: addStaffForm.phone_number.trim() || undefined,
+        address: addStaffForm.address.trim() || undefined,
+        is_active: true,
+        facility: {
+          facility_id: facilityId,
+          facility_name: data?.facility_name ?? "",
+          type: data?.type ?? "RHU",
+        },
+      }
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              users: [newStaffItem, ...prev.users.filter((u) => u.user_id !== newStaffItem.user_id)],
+              _count: {
+                ...prev._count,
+                users: prev.users.some((u) => u.user_id === newStaffItem.user_id)
+                  ? prev._count.users
+                  : prev._count.users + 1,
+              },
+            }
+          : prev
+      )
+      toast.success(res.offline ? "Staff created offline" : "Staff member created", {
+        description: `${addStaffForm.first_name} ${addStaffForm.last_name} (${addStaffForm.role}) can now access this facility.`,
       })
       setAddStaffOpen(false)
       setAddStaffForm({
@@ -343,7 +398,6 @@ export function SuperAdminFacilityDetailPage() {
         password: "",
         address: "",
       })
-      loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to create staff member"
       toast.error("Creation failed", { description: message })
@@ -357,11 +411,20 @@ export function SuperAdminFacilityDetailPage() {
     setSubmittingRole(true)
     try {
       await updateStaffRole(session.token, selectedStaff.user_id, newRole)
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              users: prev.users.map((u) =>
+                u.user_id === selectedStaff.user_id ? { ...u, role: newRole } : u
+              ),
+            }
+          : prev
+      )
       toast.success("Staff role updated", {
         description: `${selectedStaff.first_name} ${selectedStaff.last_name} is now ${newRole}`,
       })
       setRoleDialogOpen(false)
-      loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to change role"
       toast.error("Role update error", { description: message })
@@ -375,10 +438,19 @@ export function SuperAdminFacilityDetailPage() {
     const nextState = !staff.is_active
     try {
       await updateStaffActiveStatus(session.token, staff.user_id, nextState)
+      setData((prev) =>
+        prev
+          ? {
+              ...prev,
+              users: prev.users.map((u) =>
+                u.user_id === staff.user_id ? { ...u, is_active: nextState } : u
+              ),
+            }
+          : prev
+      )
       toast.success(nextState ? "Staff activated" : "Staff suspended", {
         description: `${staff.first_name} ${staff.last_name} account updated.`,
       })
-      loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update account status"
       toast.error("Status error", { description: message })
@@ -821,7 +893,7 @@ export function SuperAdminFacilityDetailPage() {
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 pt-1 sm:pt-0">
+          <div className="grid grid-cols-2 gap-2 pt-1 sm:flex sm:flex-wrap sm:items-center sm:pt-0">
             <div className="flex items-center gap-1.5 rounded-md border border-sidebar-border bg-muted/40 px-2.5 py-1 text-xs">
               <Users className="size-3.5 text-primary" />
               <span className="text-muted-foreground">Staff:</span>
@@ -929,7 +1001,7 @@ export function SuperAdminFacilityDetailPage() {
             </div>
           </div>
 
-          <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1079,6 +1151,139 @@ export function SuperAdminFacilityDetailPage() {
             </Table>
           </div>
 
+          <div className="space-y-2 md:hidden">
+            {paginatedStaff.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+                <Users className="mb-2 size-8 text-muted-foreground/50" />
+                <p className="font-medium text-foreground">No healthcare workers found</p>
+                <p className="mt-1">
+                  {staffQuery.trim().length > 0
+                    ? "No staff match your search or filter parameters."
+                    : `No personnel currently assigned to ${data.facility_name}. Add a staff member to enable login access.`}
+                </p>
+                <Button size="sm" className="mt-3 text-xs" onClick={() => setAddStaffOpen(true)}>
+                  <UserPlus className="mr-1.5 size-3.5" />
+                  Add Staff
+                </Button>
+              </div>
+            ) : (
+              paginatedStaff.map((staff) => {
+                const initials = `${staff.first_name?.[0] || ""}${staff.last_name?.[0] || ""}`.toUpperCase()
+                return (
+                  <article
+                    key={staff.user_id}
+                    className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <Avatar className="size-9 rounded-full border border-border shrink-0">
+                          {staff.profile_url && <AvatarImage src={staff.profile_url} />}
+                          <AvatarFallback className="text-xs font-medium">{initials || "ST"}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <Link
+                            to={`/superadmin/users/${staff.user_id}`}
+                            state={{
+                              returnTo: `/superadmin/facility/${facilityId}`,
+                              returnLabel: data.facility_name,
+                            }}
+                            className="truncate text-xs font-semibold text-foreground hover:underline block"
+                          >
+                            {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
+                          </Link>
+                          <p className="truncate text-[11px] text-muted-foreground">{staff.email || "No email"}</p>
+                        </div>
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                            <MoreVertical className="size-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="text-xs">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              navigate(`/superadmin/users/${staff.user_id}`, {
+                                state: {
+                                  returnTo: `/superadmin/facility/${facilityId}`,
+                                  returnLabel: data.facility_name,
+                                },
+                              })
+                            }
+                          >
+                            <ExternalLink className="mr-2 size-3.5" />
+                            View Staff Profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedStaff(staff)
+                              setNewRole(staff.role)
+                              setRoleDialogOpen(true)
+                            }}
+                          >
+                            <Shield className="mr-2 size-3.5" />
+                            Change Role
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedStaff(staff)
+                              setNewPassword("")
+                              setPasswordDialogOpen(true)
+                            }}
+                          >
+                            <KeyRound className="mr-2 size-3.5" />
+                            Reset Password
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedStaff(staff)
+                              setTargetStaffFacilityId("")
+                              setTransferStaffDialogOpen(true)
+                            }}
+                          >
+                            <ArrowRightLeft className="mr-2 size-3.5" />
+                            Transfer Facility
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className={
+                              staff.is_active
+                                ? "text-rose-600 focus:text-rose-700 dark:text-rose-400"
+                                : "text-emerald-600 focus:text-emerald-700 dark:text-emerald-400"
+                            }
+                            onClick={() => handleToggleStaffStatus(staff)}
+                          >
+                            {staff.is_active ? (
+                              <>
+                                <UserX className="mr-2 size-3.5" />
+                                Suspend Account
+                              </>
+                            ) : (
+                              <>
+                                <UserCheck className="mr-2 size-3.5" />
+                                Reactivate Account
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-[11px]">
+                      <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-medium">
+                        <Shield className="size-3 text-muted-foreground" />
+                        {staff.role}
+                      </span>
+                      <span className="text-muted-foreground">{staff.phone_number || "No contact"}</span>
+                      <StatusBadge status={staff.is_active ? "active" : "inactive"} />
+                    </div>
+                  </article>
+                )
+              })
+            )}
+          </div>
+
           <TablePaginationFooter
             rowCount={filteredStaff.length}
             page={staffPage}
@@ -1126,7 +1331,7 @@ export function SuperAdminFacilityDetailPage() {
             )}
           </div>
 
-          <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1249,6 +1454,117 @@ export function SuperAdminFacilityDetailPage() {
             </Table>
           </div>
 
+          <div className="space-y-2 md:hidden">
+            {paginatedMothers.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+                <Users className="mb-2 size-8 text-muted-foreground/50" />
+                <p className="font-medium text-foreground">No maternal profiles found</p>
+                <p className="mt-1">
+                  {motherQuery.trim().length > 0
+                    ? "No mothers match your search criteria."
+                    : "No pregnant mothers enrolled under this healthcare facility."}
+                </p>
+              </div>
+            ) : (
+              paginatedMothers.map((enrollment) => {
+                const mother = enrollment.mother
+                if (!mother) return null
+
+                const enrolled_at = enrollment.enrolled_at || enrollment.created_at || new Date().toISOString()
+                const status = enrollment.status
+                const isTransferred = status?.toLowerCase() === "transferred"
+                const birth = mother.date_of_birth ? new Date(mother.date_of_birth) : new Date()
+                const age =
+                  mother.date_of_birth && !isNaN(birth.getTime())
+                    ? Math.floor((Date.now() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+                    : 0
+                const name =
+                  mother.full_name ||
+                  (mother.user ? `${mother.user.first_name} ${mother.user.last_name}` : "Unknown")
+
+                return (
+                  <article
+                    key={enrollment.enrollment_id}
+                    className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <Link
+                            to={`/superadmin/mother/${mother.mother_id}`}
+                            state={{
+                              returnTo: `/superadmin/facility/${facilityId}`,
+                              returnLabel: data.facility_name,
+                            }}
+                            className="truncate text-xs font-semibold text-primary hover:underline"
+                          >
+                            {name}
+                          </Link>
+                          {mother.blood_type && (
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold">
+                              {mother.blood_type}
+                            </span>
+                          )}
+                        </div>
+                        <p className="font-mono text-[11px] text-muted-foreground">
+                          {mother.family_serial_no || "—"}
+                        </p>
+                      </div>
+
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                            <MoreVertical className="size-3.5" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="text-xs">
+                          <DropdownMenuItem
+                            onClick={() =>
+                              navigate(`/superadmin/mother/${mother.mother_id}`, {
+                                state: {
+                                  returnTo: `/superadmin/facility/${facilityId}`,
+                                  returnLabel: data.facility_name,
+                                },
+                              })
+                            }
+                          >
+                            <ExternalLink className="mr-2 size-3.5" />
+                            View Maternal Profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => {
+                              setSelectedMother(enrollment)
+                              setTargetMotherFacilityId("")
+                              setMotherTransferNotes("")
+                              setTransferMotherDialogOpen(true)
+                            }}
+                          >
+                            <ArrowRightLeft className="mr-2 size-3.5" />
+                            Transfer to Another Facility
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+
+                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-[11px] text-muted-foreground">
+                      <span>{birth.toLocaleDateString()} {age > 0 ? `(${age} yrs)` : ""}</span>
+                      <span>{mother.user?.phone_number || "No phone"}</span>
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          isTransferred
+                            ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                            : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                        }`}
+                      >
+                        {status || "Active"}
+                      </span>
+                    </div>
+                  </article>
+                )
+              })
+            )}
+          </div>
+
           <TablePaginationFooter
             rowCount={filteredMothers.length}
             page={motherPage}
@@ -1316,7 +1632,7 @@ export function SuperAdminFacilityDetailPage() {
             </div>
           </div>
 
-          <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1423,6 +1739,94 @@ export function SuperAdminFacilityDetailPage() {
             </Table>
           </div>
 
+          <div className="space-y-2 md:hidden">
+            {paginatedReferrals.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+                <ArrowRightLeft className="mb-2 size-8 text-muted-foreground/50" />
+                <p className="font-medium text-foreground">No referral records found</p>
+                <p className="mt-1">
+                  {referralQuery.trim().length > 0
+                    ? "No referrals match your search criteria."
+                    : "No inter-clinic transfers recorded for this facility."}
+                </p>
+              </div>
+            ) : (
+              paginatedReferrals.map((ref) => {
+                const isOutgoing = ref.direction === "outgoing"
+                const partnerFacility = isOutgoing
+                  ? ref.toFacility?.facility_name || ref.external_facility_name || "Apex Hospital / External Center"
+                  : ref.fromFacility?.facility_name || "Originating Station"
+                const patient = ref.pregnancy?.mother?.user
+                  ? `${ref.pregnancy.mother.user.first_name} ${ref.pregnancy.mother.user.last_name}`
+                  : "Patient Record"
+                const serial = ref.pregnancy?.mother?.family_serial_no || ""
+                const compactReason = ref.reason
+                  ? ref.reason
+                      .replace(/^Reason for referral:\s*/i, "")
+                      .split(/\r?\n/)[0]
+                      .slice(0, 90)
+                  : "Not specified"
+
+                return (
+                  <article
+                    key={`${ref.direction}-${ref.referral_id}`}
+                    className="cursor-pointer rounded-lg border border-sidebar-border bg-card p-3 shadow-xs hover:bg-muted/30"
+                    onClick={() => {
+                      setSelectedReferral(ref)
+                      setReferralDetailOpen(true)
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
+                              isOutgoing
+                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                            }`}
+                          >
+                            {isOutgoing ? "Sent" : "Received"}
+                          </span>
+                          <span className="truncate text-xs font-semibold text-foreground">
+                            {partnerFacility}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs font-medium text-foreground">
+                          {patient} {serial && <span className="font-mono text-[10px] text-muted-foreground">({serial})</span>}
+                        </p>
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setSelectedReferral(ref)
+                          setReferralDetailOpen(true)
+                        }}
+                      >
+                        <FileText className="size-3.5" />
+                      </Button>
+                    </div>
+
+                    <p className="mt-1.5 line-clamp-2 text-[11px] text-muted-foreground">
+                      {compactReason}
+                    </p>
+
+                    <div className="mt-2.5 flex items-center justify-between border-t border-sidebar-border pt-2 text-[11px] text-muted-foreground">
+                      <span>{new Date(ref.date_referred).toLocaleDateString()}</span>
+                      <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium uppercase text-foreground">
+                        {ref.status}
+                      </span>
+                    </div>
+                  </article>
+                )
+              })
+            )}
+          </div>
+
           <TablePaginationFooter
             rowCount={filteredReferrals.length}
             page={referralPage}
@@ -1433,7 +1837,7 @@ export function SuperAdminFacilityDetailPage() {
         </TabsContent>
 
         <TabsContent value="schedules" className="space-y-3 pt-1">
-          <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1479,6 +1883,48 @@ export function SuperAdminFacilityDetailPage() {
                 )}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="space-y-2 md:hidden">
+            {paginatedSchedules.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+                <CalendarDays className="mb-2 size-8 text-muted-foreground/50" />
+                <p className="font-medium text-foreground">No service slots configured</p>
+                <p className="mt-1">
+                  No clinical appointment schedules have been created for this facility.
+                </p>
+              </div>
+            ) : (
+              paginatedSchedules.map((slot) => (
+                <article
+                  key={slot.schedule_id}
+                  className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="text-xs font-semibold text-foreground">
+                        {new Date(slot.available_date).toLocaleDateString()}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {slot.available_time_slot || "Regular Clinical Hours (8:00 AM - 5:00 PM)"}
+                      </p>
+                    </div>
+                    <span
+                      className={`rounded px-2 py-0.5 text-[10px] font-medium ${
+                        slot.is_available
+                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                          : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
+                      }`}
+                    >
+                      {slot.is_available ? "Available" : "Full / Closed"}
+                    </span>
+                  </div>
+                  <div className="mt-2 border-t border-sidebar-border pt-1.5 text-[11px] text-muted-foreground font-mono">
+                    Booked: {slot.booked_slots} / {slot.max_slots}
+                  </div>
+                </article>
+              ))
+            )}
           </div>
 
           {data.schedules.length > 0 && (
@@ -1566,7 +2012,7 @@ export function SuperAdminFacilityDetailPage() {
       </Tabs>
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Edit Facility Details</DialogTitle>
             <DialogDescription className="text-xs">
@@ -1634,7 +2080,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Change Staff Role</DialogTitle>
             <DialogDescription className="text-xs">
@@ -1670,7 +2116,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Administrative Password Reset</DialogTitle>
             <DialogDescription className="text-xs">
@@ -1710,7 +2156,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={transferStaffDialogOpen} onOpenChange={setTransferStaffDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Transfer Staff to Another Facility</DialogTitle>
             <DialogDescription className="text-xs">
@@ -1755,7 +2201,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={confirmStaffTransferOpen} onOpenChange={setConfirmStaffTransferOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
@@ -1812,7 +2258,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={transferMotherDialogOpen} onOpenChange={setTransferMotherDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Transfer Mother to Another Facility</DialogTitle>
             <DialogDescription className="text-xs">
@@ -1866,7 +2312,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={confirmMotherTransferOpen} onOpenChange={setConfirmMotherTransferOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
@@ -1926,7 +2372,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={referralDetailOpen} onOpenChange={setReferralDetailOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Inter-Clinic Referral Handover</DialogTitle>
             <DialogDescription className="text-xs">
@@ -2010,7 +2456,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-2">
               {statusAction === "deactivate" ? (
@@ -2085,7 +2531,7 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={addStaffOpen} onOpenChange={setAddStaffOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <div className="flex items-center gap-2">
               <div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">

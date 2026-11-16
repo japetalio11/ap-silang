@@ -112,6 +112,12 @@ export class SilangSyncEngine {
           this.tempIdMap.set(p.id, p.pregnancy_id)
         }
       }
+      const facs = await db.facilities.toArray().catch(() => [])
+      for (const f of facs) {
+        if (f.id && f.facility_id && f.id !== f.facility_id && f.id.startsWith("temp-") && !f.facility_id.startsWith("temp-")) {
+          this.tempIdMap.set(f.id, f.facility_id)
+        }
+      }
     } catch {
       return
     }
@@ -167,7 +173,7 @@ export class SilangSyncEngine {
     if (currentIndex <= 0) return false
 
     const checkIds: string[] = []
-    for (const key of ["mother_id", "motherId", "pregnancy_id", "pregnancyId", "user_id"]) {
+    for (const key of ["mother_id", "motherId", "pregnancy_id", "pregnancyId", "user_id", "facility_id", "facilityId", "target_facility_id", "targetFacilityId"]) {
       const val = payload[key]
       if (typeof val === "string" && val.startsWith("temp-")) {
         if (!this.tempIdMap.has(val) && !this.tempUserIdMap.has(val)) {
@@ -223,6 +229,26 @@ export class SilangSyncEngine {
       }
     }
     return resolved
+  }
+
+  public getCanonicalId(tempId: string): string | undefined {
+    return this.tempIdMap.get(tempId) || this.tempUserIdMap.get(tempId)
+  }
+
+  public async resolveId(id: string): Promise<string> {
+    if (!id || !id.startsWith("temp-")) return id
+    const cached = this.getCanonicalId(id)
+    if (cached) return cached
+    const mapping = await db.idMappings.get(id).catch(() => null)
+    if (mapping?.canonical_id) {
+      this.tempIdMap.set(id, mapping.canonical_id)
+      return mapping.canonical_id
+    }
+    if (mapping?.canonical_user_id) {
+      this.tempUserIdMap.set(id, mapping.canonical_user_id)
+      return mapping.canonical_user_id
+    }
+    return id
   }
 
   public async cancelOfflineMutation(tempId: string): Promise<boolean> {
@@ -353,6 +379,8 @@ export class SilangSyncEngine {
       ["supplement_id", "supplementId"],
       ["screening_id", "screeningId"],
       ["visit_id", "visitId"],
+      ["facility_id", "facilityId"],
+      ["target_facility_id", "targetFacilityId"],
     ] as const
 
     for (const [snakeKey, camelKey] of entityIdKeys) {
@@ -469,6 +497,7 @@ export class SilangSyncEngine {
 
     try {
       const orderWeights: Record<string, number> = {
+        facility: 0,
         mother: 1,
         pregnancy: 2,
         prenatal_visit: 3,
@@ -481,7 +510,6 @@ export class SilangSyncEngine {
         staff: 10,
         profile: 11,
         user_profile: 11,
-        facility: 12,
       }
 
       const allItems = await db.offlineQueue
@@ -552,10 +580,10 @@ export class SilangSyncEngine {
               token,
               body: JSON.stringify(resolvedPayload),
             })
-          } else if (item.method === "PUT" || item.action === "UPDATE") {
+          } else if (item.method === "PUT" || item.method === "PATCH" || item.action === "UPDATE") {
             try {
               response = await apiRequest<Record<string, unknown>>(resolvedEndpoint, {
-                method: item.method,
+                method: item.method ?? "PUT",
                 token,
                 body: JSON.stringify(resolvedPayload),
               })
@@ -885,16 +913,44 @@ export class SilangSyncEngine {
               }
             }
           } else if (item.entity_type === "facility") {
-            const facId = String(resolvedPayload.facility_id || item.temp_id || "")
-            if (facId) {
-              const existing = await db.facilities.get(facId)
-              if (existing) {
-                await db.facilities.update(facId, {
-                  ...existing,
-                  ...resolvedPayload,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                })
+            if (item.action === "CREATE") {
+              const resFac = (response?.result ?? response?.facility ?? response?.data) as Record<string, any> | undefined
+              const serverFacilityId = (resFac?.facility_id || resFac?.id) as string | undefined
+              if (serverFacilityId && item.temp_id) {
+                await this.recordMapping(item.temp_id, serverFacilityId, "facility")
+                const localFac = await db.facilities.get(item.temp_id)
+                if (localFac) {
+                  await db.facilities.delete(item.temp_id)
+                  await db.facilities.put({
+                    ...localFac,
+                    id: serverFacilityId,
+                    facility_id: serverFacilityId,
+                    sync_status: "synced",
+                    updated_at: Date.now(),
+                  })
+                }
+                const pendingStaff = await db.staff.where("facility_id").equals(item.temp_id).toArray().catch(() => [])
+                for (const st of pendingStaff) {
+                  await db.staff.update(st.id, { facility_id: serverFacilityId, updated_at: Date.now() }).catch(() => {})
+                }
+                const pendingMothers = await db.mothers.where("facility_id").equals(item.temp_id).toArray().catch(() => [])
+                for (const m of pendingMothers) {
+                  await db.mothers.update(m.id, { facility_id: serverFacilityId, updated_at: Date.now() }).catch(() => {})
+                }
+              }
+            } else {
+              const rawFacId = String(resolvedPayload.facility_id || item.temp_id || "")
+              const facId = this.tempIdMap.get(rawFacId) || rawFacId
+              if (facId) {
+                const existing = await db.facilities.get(facId)
+                if (existing) {
+                  await db.facilities.update(facId, {
+                    ...existing,
+                    ...resolvedPayload,
+                    sync_status: "synced",
+                    updated_at: Date.now(),
+                  })
+                }
               }
             }
             if (item.action === "REASSIGN_STAFF") {

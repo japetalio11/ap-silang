@@ -4,6 +4,7 @@ import { AlertTriangle, ArrowLeft, ArrowRightLeft, Building2, CalendarDays, Chec
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import {
   Dialog,
   DialogContent,
@@ -84,12 +85,28 @@ export function SuperAdminStaffDetailPage() {
 
   const loadStaff = useCallback(async () => {
     if (!token || !staffId) return
+    const effectiveStaffId = await silangSyncEngine.resolveId(staffId)
+    if (effectiveStaffId !== staffId) {
+      navigate(`/superadmin/users/${effectiveStaffId}`, { replace: true, state: navState })
+      return
+    }
     setLoading(true)
     try {
       const [staffResult, activityResult, facList] = await Promise.allSettled([
-        getStaffById(token, staffId),
-        getStaffActivities(token, staffId),
-        fetchAllFacilities(token),
+        getStaffById(token, effectiveStaffId),
+        getStaffActivities(token, effectiveStaffId),
+        fetchAllFacilities(token).catch(async () => {
+          const localFacs = await db.facilities.toArray().catch(() => [])
+          return localFacs.map((f) => ({
+            facility_id: f.facility_id,
+            facility_name: f.facility_name,
+            type: f.type,
+            address: f.address,
+            contact_number: f.contact_number,
+            email: f.email,
+            is_active: f.is_active,
+          }))
+        }),
       ])
 
       if (staffResult.status === "rejected") throw staffResult.reason
@@ -102,13 +119,21 @@ export function SuperAdminStaffDetailPage() {
     } finally {
       setLoading(false)
     }
-  }, [token, staffId])
+  }, [token, staffId, navState, navigate])
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadStaff()
     }, 0)
-    return () => window.clearTimeout(timer)
+    const unsubscribe = silangSyncEngine.subscribe((status) => {
+      if (status.status === "idle" && status.pendingCount === 0) {
+        void loadStaff()
+      }
+    })
+    return () => {
+      window.clearTimeout(timer)
+      unsubscribe()
+    }
   }, [loadStaff])
 
   useEffect(() => {
@@ -255,7 +280,7 @@ export function SuperAdminStaffDetailPage() {
               : "Staff & Access Control"}
         </Button>
         {staff && !loading && (
-          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <Button
               variant="outline"
               onClick={() => setIsScheduleOpen(true)}
@@ -323,6 +348,8 @@ export function SuperAdminStaffDetailPage() {
         )}
       </div>
 
+      <CachedDataBanner message="Viewing cached staff profile. Administrative role and assignment changes will queue offline and synchronize once connection is restored." />
+
       {loading ? (
         <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[1fr_1fr]" aria-label="Loading staff profile" aria-busy="true">
           <div className="flex flex-col gap-4">
@@ -387,7 +414,7 @@ export function SuperAdminStaffDetailPage() {
       )}
 
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Administrative Password Reset</DialogTitle>
             <DialogDescription className="text-xs">
@@ -427,7 +454,7 @@ export function SuperAdminStaffDetailPage() {
       </Dialog>
 
       <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Reassign Staff to Another Facility</DialogTitle>
             <DialogDescription className="text-xs">
@@ -503,7 +530,7 @@ export function SuperAdminStaffDetailPage() {
       </Dialog>
 
       <Dialog open={confirmTransferOpen} onOpenChange={setConfirmTransferOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
@@ -560,7 +587,7 @@ export function SuperAdminStaffDetailPage() {
       </Dialog>
 
       <Dialog open={deactivateDialogOpen} onOpenChange={setDeactivateDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950/60">

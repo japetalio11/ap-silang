@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Link, useNavigate } from "react-router-dom"
 import {
   ExternalLink,
   KeyRound,
@@ -16,6 +16,7 @@ import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import {
   Dialog,
   DialogContent,
@@ -38,6 +39,7 @@ import { StatusBadge } from "@/components/ui/status-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { db } from "@/lib/db/silangDatabase"
 import {
   adminResetStaffPassword,
   fetchAllFacilities,
@@ -80,7 +82,18 @@ export function SuperAdminStaffPage() {
           role: roleFilter,
           is_active: statusFilter,
         }),
-        fetchAllFacilities(session.token).catch(() => []),
+        fetchAllFacilities(session.token).catch(async () => {
+          const localFacs = await db.facilities.toArray().catch(() => [])
+          return localFacs.map((f) => ({
+            facility_id: f.facility_id,
+            facility_name: f.facility_name,
+            type: f.type,
+            address: f.address,
+            contact_number: f.contact_number,
+            email: f.email,
+            is_active: f.is_active,
+          }))
+        }),
       ])
       setStaffList(members)
       setFacilities(facs)
@@ -122,11 +135,13 @@ export function SuperAdminStaffPage() {
     setSubmittingRole(true)
     try {
       await updateStaffRole(session.token, selectedStaff.user_id, newRole)
+      setStaffList((prev) =>
+        prev.map((s) => (s.user_id === selectedStaff.user_id ? { ...s, role: newRole } : s))
+      )
       toast.success("Role updated", {
         description: `${selectedStaff.first_name} ${selectedStaff.last_name}'s role changed to ${newRole}`,
       })
       setRoleDialogOpen(false)
-      loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to update role"
       toast.error("Error updating role", { description: message })
@@ -140,10 +155,12 @@ export function SuperAdminStaffPage() {
     const nextState = !staff.is_active
     try {
       await updateStaffActiveStatus(session.token, staff.user_id, nextState)
+      setStaffList((prev) =>
+        prev.map((s) => (s.user_id === staff.user_id ? { ...s, is_active: nextState } : s))
+      )
       toast.success(nextState ? "Account activated" : "Account suspended", {
         description: `${staff.first_name} ${staff.last_name} is now ${nextState ? "Active" : "Deactivated"}`,
       })
-      loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to change account status"
       toast.error("Status update error", { description: message })
@@ -201,6 +218,8 @@ export function SuperAdminStaffPage() {
         </Button>
       </div>
 
+      <CachedDataBanner message="Viewing cached municipal personnel directory. Offline role modifications and account toggles will queue and synchronize once connection is restored." />
+
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card className="border-sidebar-border bg-card">
           <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
@@ -236,7 +255,7 @@ export function SuperAdminStaffPage() {
         </Card>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
         <div className="relative w-full sm:w-[260px]">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -248,7 +267,7 @@ export function SuperAdminStaffPage() {
         </div>
 
         <Select value={facilityFilter} onValueChange={setFacilityFilter}>
-          <SelectTrigger className="h-8 w-[180px] text-xs">
+          <SelectTrigger className="h-8 w-full text-xs sm:w-[180px]">
             <SelectValue placeholder="All Facilities" />
           </SelectTrigger>
           <SelectContent>
@@ -262,7 +281,7 @@ export function SuperAdminStaffPage() {
         </Select>
 
         <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="h-8 w-[140px] text-xs">
+          <SelectTrigger className="h-8 w-full text-xs sm:w-[140px]">
             <SelectValue placeholder="All Roles" />
           </SelectTrigger>
           <SelectContent>
@@ -276,7 +295,7 @@ export function SuperAdminStaffPage() {
         </Select>
 
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-8 w-[130px] text-xs">
+          <SelectTrigger className="h-8 w-full text-xs sm:w-[130px]">
             <SelectValue placeholder="All Status" />
           </SelectTrigger>
           <SelectContent>
@@ -303,7 +322,7 @@ export function SuperAdminStaffPage() {
         )}
       </div>
 
-      <div className="w-full overflow-hidden rounded-lg border border-sidebar-border bg-card">
+      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -441,6 +460,123 @@ export function SuperAdminStaffPage() {
         </Table>
       </div>
 
+      <div className="space-y-2 md:hidden">
+        {loading ? (
+          <div className="flex h-32 items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+            Loading municipal personnel directory...
+          </div>
+        ) : filteredStaff.length === 0 ? (
+          <div className="flex h-32 items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+            No personnel matching search or filter parameters.
+          </div>
+        ) : (
+          paginatedStaff.map((staff) => {
+            const initials = `${staff.first_name?.[0] || ""}${staff.last_name?.[0] || ""}`.toUpperCase()
+            return (
+              <article
+                key={staff.user_id}
+                className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Avatar className="size-9 rounded-full border border-border shrink-0">
+                      {staff.profile_url && <AvatarImage src={staff.profile_url} />}
+                      <AvatarFallback className="text-xs font-medium">{initials || "ST"}</AvatarFallback>
+                    </Avatar>
+                    <div className="min-w-0">
+                      <Link
+                        to={`/superadmin/users/${staff.user_id}`}
+                        state={{ returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" }}
+                        className="truncate text-xs font-semibold text-foreground hover:underline block"
+                      >
+                        {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
+                      </Link>
+                      <p className="truncate text-[11px] text-muted-foreground">{staff.email || "No email"}</p>
+                    </div>
+                  </div>
+
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                        <MoreVertical className="size-3.5" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="text-xs">
+                      <DropdownMenuItem
+                        onClick={() =>
+                          navigate(`/superadmin/users/${staff.user_id}`, {
+                            state: { returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" },
+                          })
+                        }
+                      >
+                        <ExternalLink className="mr-2 size-3.5" />
+                        View Staff Profile
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSelectedStaff(staff)
+                          setNewRole(staff.role)
+                          setRoleDialogOpen(true)
+                        }}
+                      >
+                        <Shield className="mr-2 size-3.5" />
+                        Change Role
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setSelectedStaff(staff)
+                          setNewPassword("")
+                          setPasswordDialogOpen(true)
+                        }}
+                      >
+                        <KeyRound className="mr-2 size-3.5" />
+                        Reset Password
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        className={
+                          staff.is_active
+                            ? "text-rose-600 focus:text-rose-700 dark:text-rose-400"
+                            : "text-emerald-600 focus:text-emerald-700 dark:text-emerald-400"
+                        }
+                        onClick={() => handleToggleStatus(staff)}
+                      >
+                        {staff.is_active ? (
+                          <>
+                            <UserX className="mr-2 size-3.5" />
+                            Suspend Account
+                          </>
+                        ) : (
+                          <>
+                            <UserCheck className="mr-2 size-3.5" />
+                            Reactivate Account
+                          </>
+                        )}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+
+                <div className="mt-2 text-xs">
+                  <span className="text-muted-foreground">Facility: </span>
+                  <span className="font-medium text-foreground">{staff.facility?.facility_name || "Unassigned"}</span>
+                  <span className="text-[11px] text-muted-foreground"> ({staff.facility?.type || "Central"})</span>
+                </div>
+
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-[11px]">
+                  <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-medium">
+                    <Shield className="size-3 text-muted-foreground" />
+                    {staff.role}
+                  </span>
+                  <span className="text-muted-foreground">{staff.phone_number || "No contact"}</span>
+                  <StatusBadge status={staff.is_active ? "active" : "inactive"} />
+                </div>
+              </article>
+            )
+          })
+        )}
+      </div>
+
       <TablePaginationFooter
         rowCount={filteredStaff.length}
         page={page}
@@ -450,7 +586,7 @@ export function SuperAdminStaffPage() {
       />
 
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Change Personnel Role</DialogTitle>
             <DialogDescription className="text-xs">
@@ -486,7 +622,7 @@ export function SuperAdminStaffPage() {
       </Dialog>
 
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle className="text-base font-semibold">Administrative Password Reset</DialogTitle>
             <DialogDescription className="text-xs">

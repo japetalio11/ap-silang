@@ -41,6 +41,31 @@ export async function warmSuperAdminOfflineData(token: string, userId: string) {
       ? (facResponse.value as { result?: FacilityCacheRecord[] }).result ?? []
       : []
 
+    const staffResponse = adminReads[6]
+    const staffRaw = staffResponse?.status === "fulfilled"
+      ? (staffResponse.value as { result?: any[]; data?: any[] })?.result ?? (staffResponse.value as { result?: any[]; data?: any[] })?.data ?? (Array.isArray(staffResponse.value) ? staffResponse.value : [])
+      : []
+
+    if (Array.isArray(staffRaw) && staffRaw.length > 0) {
+      await db.staff.bulkPut(
+        staffRaw.map((s: any) => ({
+          id: s.user_id,
+          user_id: s.user_id,
+          facility_id: s.facility_id || null,
+          first_name: s.first_name,
+          middle_name: s.middle_name || null,
+          last_name: s.last_name,
+          role: s.role,
+          phone_number: s.phone_number || null,
+          email: s.email || null,
+          profile_url: s.profile_url || null,
+          is_active: s.is_active !== undefined ? s.is_active : true,
+          sync_status: "synced",
+          updated_at: Date.now(),
+        }))
+      ).catch(() => {})
+    }
+
     if (facilities.length > 0) {
       await db.facilities.bulkPut(
         facilities.map((f) => ({
@@ -56,9 +81,28 @@ export async function warmSuperAdminOfflineData(token: string, userId: string) {
         }))
       ).catch(() => {})
 
-      await runWithLimit(facilities, 3, (fac) =>
-        apiRequest(`/facility/${encodeURIComponent(fac.facility_id)}/hub`, { token })
-      )
+      await runWithLimit(facilities, 3, async (fac) => {
+        const hubRes = await apiRequest<{ result?: any }>(`/facility/${encodeURIComponent(fac.facility_id)}/hub`, { token }).catch(() => null)
+        if (hubRes?.result?.users && Array.isArray(hubRes.result.users)) {
+          await db.staff.bulkPut(
+            hubRes.result.users.map((s: any) => ({
+              id: s.user_id,
+              user_id: s.user_id,
+              facility_id: s.facility_id || fac.facility_id,
+              first_name: s.first_name,
+              middle_name: s.middle_name || null,
+              last_name: s.last_name,
+              role: s.role,
+              phone_number: s.phone_number || null,
+              email: s.email || null,
+              profile_url: s.profile_url || null,
+              is_active: s.is_active !== undefined ? s.is_active : true,
+              sync_status: "synced",
+              updated_at: Date.now(),
+            }))
+          ).catch(() => {})
+        }
+      })
     }
   } finally {
     warmingScopes.delete(warmKey)

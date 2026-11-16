@@ -94,13 +94,19 @@ export async function getFacilityStaff(token: string): Promise<StaffRecord[]> {
 }
 
 export async function getStaffById(token: string, id: string) {
+  const effectiveId = await silangSyncEngine.resolveId(id)
+
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const local = await db.staff.get(id) || await db.staff.where("user_id").equals(id).first()
+    const local =
+      (await db.staff.get(effectiveId)) ||
+      (await db.staff.where("user_id").equals(effectiveId).first()) ||
+      (await db.staff.get(id)) ||
+      (await db.staff.where("user_id").equals(id).first())
     if (local) return mapStaffRecord(local as any)
   }
 
   try {
-    const response = await apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(id)}`, { token })
+    const response = await apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(effectiveId)}`, { token })
     if (response?.result) {
       const s = response.result
       await db.staff.put({
@@ -122,14 +128,19 @@ export async function getStaffById(token: string, id: string) {
     }
     return mapStaffRecord(response.result)
   } catch (error) {
-    const local = await db.staff.get(id) || await db.staff.where("user_id").equals(id).first()
+    const local =
+      (await db.staff.get(effectiveId)) ||
+      (await db.staff.where("user_id").equals(effectiveId).first()) ||
+      (await db.staff.get(id)) ||
+      (await db.staff.where("user_id").equals(id).first())
     if (local) return mapStaffRecord(local as any)
     throw error
   }
 }
 
 export async function getStaffActivities(token: string, id: string) {
-  const response = await apiRequest<{ result: { activities: StaffActivity[] } }>(`/user/${encodeURIComponent(id)}/activities?limit=50`, { token })
+  const effectiveId = await silangSyncEngine.resolveId(id)
+  const response = await apiRequest<{ result: { activities: StaffActivity[] } }>(`/user/${encodeURIComponent(effectiveId)}/activities?limit=50`, { token })
   return response.result?.activities ?? []
 }
 

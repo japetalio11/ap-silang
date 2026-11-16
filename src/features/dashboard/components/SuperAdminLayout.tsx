@@ -228,16 +228,16 @@ export function SuperAdminLayout() {
               <SidebarTrigger aria-label="Toggle sidebar" className="-ml-1" />
               <span className="h-4 w-px bg-border" />
               <Breadcrumb>
-                <BreadcrumbList className="text-xs">
+                <BreadcrumbList className="text-xs flex-wrap sm:flex-nowrap">
                   <BreadcrumbItem>
-                    <BreadcrumbPage className="text-xs text-muted-foreground">Administration</BreadcrumbPage>
+                    <BreadcrumbPage className="text-xs text-muted-foreground hidden sm:inline">Administration</BreadcrumbPage>
                   </BreadcrumbItem>
-                  <BreadcrumbSeparator />
+                  <BreadcrumbSeparator className="hidden sm:inline" />
                   {isFacilityPage ? (
                     <>
                       <BreadcrumbItem>
                         <BreadcrumbPage
-                          className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                          className="max-w-[120px] truncate text-xs text-muted-foreground cursor-pointer hover:underline sm:max-w-none"
                           onClick={() => navigate("/superadmin/rhu-management")}
                         >
                           Facilities
@@ -245,14 +245,14 @@ export function SuperAdminLayout() {
                       </BreadcrumbItem>
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
-                        <BreadcrumbPage className="text-xs">Facility Info Hub</BreadcrumbPage>
+                        <BreadcrumbPage className="max-w-[140px] truncate text-xs sm:max-w-none">Facility Info Hub</BreadcrumbPage>
                       </BreadcrumbItem>
                     </>
                   ) : isStaffProfilePage ? (
                     <>
                       <BreadcrumbItem>
                         <BreadcrumbPage
-                          className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                          className="max-w-[120px] truncate text-xs text-muted-foreground cursor-pointer hover:underline sm:max-w-none"
                           onClick={() => {
                             if (locationState?.returnTo) {
                               navigate(locationState.returnTo)
@@ -266,14 +266,14 @@ export function SuperAdminLayout() {
                       </BreadcrumbItem>
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
-                        <BreadcrumbPage className="text-xs">Staff Profile</BreadcrumbPage>
+                        <BreadcrumbPage className="max-w-[140px] truncate text-xs sm:max-w-none">Staff Profile</BreadcrumbPage>
                       </BreadcrumbItem>
                     </>
                   ) : isMotherPage ? (
                     <>
                       <BreadcrumbItem>
                         <BreadcrumbPage
-                          className="text-xs text-muted-foreground cursor-pointer hover:underline"
+                          className="max-w-[120px] truncate text-xs text-muted-foreground cursor-pointer hover:underline sm:max-w-none"
                           onClick={() => {
                             if (locationState?.returnTo) {
                               navigate(locationState.returnTo)
@@ -287,12 +287,12 @@ export function SuperAdminLayout() {
                       </BreadcrumbItem>
                       <BreadcrumbSeparator />
                       <BreadcrumbItem>
-                        <BreadcrumbPage className="text-xs">Mother Profile</BreadcrumbPage>
+                        <BreadcrumbPage className="max-w-[140px] truncate text-xs sm:max-w-none">Mother Profile</BreadcrumbPage>
                       </BreadcrumbItem>
                     </>
                   ) : (
                     <BreadcrumbItem>
-                      <BreadcrumbPage className="text-xs">{activeSection.label}</BreadcrumbPage>
+                      <BreadcrumbPage className="max-w-[160px] truncate text-xs sm:max-w-none">{activeSection.label}</BreadcrumbPage>
                     </BreadcrumbItem>
                   )}
                 </BreadcrumbList>

@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { apiRequest } from "@/lib/api"
 import { requestPersistentStorage, warmOfflineData, warmSuperAdminOfflineData } from "@/lib/offline-prefetch"
+import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { toast } from "sonner"
 
 const SESSION_KEY = "silang.auth.session"
@@ -200,8 +201,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     const facilityId = session.user.facility_id
     const warm = () => {
       if (isTokenExpired(session.token)) return
-      const normalizedRole = session.user.role?.toLowerCase()
-      if (normalizedRole === "superadmin" || normalizedRole === "systemadmin") {
+      if (isUserSuperAdmin(session.user.role)) {
         void warmSuperAdminOfflineData(session.token, session.user.user_id)
       } else {
         void warmOfflineData(session.token, session.user.user_id, facilityId)

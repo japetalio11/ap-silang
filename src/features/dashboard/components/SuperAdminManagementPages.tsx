@@ -99,8 +99,13 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         setFacilityStaffCounts(counts)
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load facilities"
-      toast.error("Error loading facilities", { description: message })
+      const local = await db.facilities.toArray().catch(() => [])
+      if (local.length > 0) {
+        setFacilities(local as FacilityItem[])
+      } else {
+        const message = error instanceof Error ? error.message : "Failed to load facilities"
+        toast.error("Error loading facilities", { description: message })
+      }
     } finally {
       setLoading(false)
     }
@@ -221,7 +226,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         await db.facilities.put({
           ...updatedFacility,
           id: updatedFacility.facility_id,
-          sync_status: "pending_update",
+          sync_status: editing.facility_id.startsWith("temp-") ? "pending_create" : "pending_update",
           updated_at: Date.now(),
         }).catch(() => {})
         await silangSyncEngine.enqueue({
@@ -238,6 +243,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             contact_number: form.contact_number.trim(),
             email: form.email.trim(),
           },
+          temp_id: editing.facility_id,
         })
         setFacilities((prev) =>
           prev.map((f) => (f.facility_id === editing.facility_id ? updatedFacility : f))
@@ -248,9 +254,45 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         setDialogOpen(false)
         return
       }
-      toast.error("Registration requires connectivity", {
-        description: "Registering a new health facility on the municipal registry requires an active internet connection.",
+
+      const tempFacilityId = `temp-fac-${crypto.randomUUID()}`
+      const newFacility: FacilityItem = {
+        facility_id: tempFacilityId,
+        facility_name: form.facility_name.trim(),
+        type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+        address: form.address.trim(),
+        contact_number: form.contact_number.trim(),
+        email: form.email.trim(),
+        is_active: true,
+      }
+      await db.facilities.put({
+        ...newFacility,
+        id: tempFacilityId,
+        sync_status: "pending_create",
+        updated_at: Date.now(),
+      }).catch(() => {})
+
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "CREATE",
+        endpoint: "/facility/register",
+        method: "POST",
+        payload: {
+          facility_name: form.facility_name.trim(),
+          type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+          address: form.address.trim(),
+          contact_number: form.contact_number.trim(),
+          email: form.email.trim(),
+        },
+        temp_id: tempFacilityId,
       })
+
+      setFacilities((prev) => [newFacility, ...prev])
+      toast.success(`${singular} registered offline`, {
+        description: "Facility saved to device memory and will register with municipal server when back online.",
+      })
+      setDialogOpen(false)
       return
     }
 
@@ -288,16 +330,13 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
 
   const handleToggleStatus = async () => {
     if (!statusTarget || !session?.token || !statusAction) return
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      toast.error("Connectivity required", {
-        description: "Facility status updates require an active server connection to ensure clinical safety boundaries.",
-      })
-      return
-    }
     setStatusSubmitting(true)
     const newStatus = statusAction === "reactivate"
     try {
       await toggleFacilityStatus(session.token, statusTarget.facility_id, newStatus)
+      setFacilities((prev) =>
+        prev.map((f) => (f.facility_id === statusTarget.facility_id ? { ...f, is_active: newStatus } : f))
+      )
       toast.success(`${singular} ${newStatus ? "reactivated" : "deactivated"} successfully`, {
         description: newStatus
           ? "Staff accounts can now log in and manage services for this facility."
@@ -305,7 +344,6 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       })
       setStatusTarget(null)
       setStatusAction(null)
-      await loadData()
     } catch (error) {
       const message = error instanceof Error ? error.message : "Failed to change facility status"
       toast.error("Operation failed", { description: message })
@@ -633,7 +671,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{editing ? `Edit ${singular}` : `Register ${singular}`}</DialogTitle>
             <DialogDescription>Maintain facility registry details for the Silang municipal health network.</DialogDescription>
@@ -699,7 +737,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       </Dialog>
 
       <Dialog open={!!statusTarget && !!statusAction} onOpenChange={(open) => !open && setStatusTarget(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <div className="flex items-center gap-2">
               {statusAction === "deactivate" ? (
@@ -749,7 +787,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
 
           {typeof navigator !== "undefined" && !navigator.onLine && (
             <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-              Facility status updates require an active internet connection to ensure clinical safety boundaries.
+              Offline mode: Status change will be saved to device memory and synchronized when reconnected.
             </div>
           )}
 
@@ -759,7 +797,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             </Button>
             <Button
               variant={statusAction === "deactivate" ? "destructive" : "default"}
-              disabled={statusSubmitting || (typeof navigator !== "undefined" && !navigator.onLine)}
+              disabled={statusSubmitting}
               onClick={handleToggleStatus}
             >
               {statusSubmitting
