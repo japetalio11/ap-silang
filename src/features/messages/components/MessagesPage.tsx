@@ -46,6 +46,7 @@ import {
 import { toast } from "sonner"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { useSocket } from "@/context/SocketContext"
 import {
   createMessage,
   getMessageMothers,
@@ -191,6 +192,7 @@ export function MessagesPage() {
   const { session } = useAuthSession()
   const sessionToken = session?.token
   const currentUserId = session?.user.user_id
+  const { socket } = useSocket()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedId, setSelectedId] = useState("")
   const [search, setSearch] = useState("")
@@ -211,6 +213,11 @@ export function MessagesPage() {
   const inboxRequestRef = useRef(false)
   const readRequestsRef = useRef<Set<string>>(new Set())
   const inFlightMessagesRef = useRef<Set<string>>(new Set())
+  const selectedIdRef = useRef(selectedId)
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
 
   const loadInbox = useCallback(async () => {
     if (!sessionToken || !currentUserId) {
@@ -269,32 +276,9 @@ export function MessagesPage() {
           .map((message) => toChatMessage(message, currentUserId))
       }
 
-      const newlyReceived = hasLoadedInboxRef.current
-        ? sortedMessages.filter(
-            (message) =>
-              message.receiver_id === currentUserId &&
-              !seenMessageIdsRef.current.has(message.message_id)
-          )
-        : []
       seenMessageIdsRef.current = new Set(
         sortedMessages.map((message) => message.message_id)
       )
-      if (newlyReceived.length) {
-        const senderNames = new Map(
-          nextConversations.map((conversation) => [
-            conversation.id,
-            conversation.name,
-          ])
-        )
-        const notifiedSenders = new Set<string>()
-        for (const message of newlyReceived) {
-          if (notifiedSenders.has(message.sender_id)) continue
-          notifiedSenders.add(message.sender_id)
-          toast.info(
-            `${senderNames.get(message.sender_id) ?? "A patient"} sent you a message`
-          )
-        }
-      }
       hasLoadedInboxRef.current = true
       inboxErrorShownRef.current = false
       setConversations(nextConversations)
@@ -335,8 +319,140 @@ export function MessagesPage() {
   }, [sessionToken, currentUserId])
 
   useEffect(() => {
+    if (!socket) return
+
+    const handleNewMessage = (newMsg: MessagePayload) => {
+      if (!newMsg || !newMsg.message_id || !currentUserId) return
+
+      const isCurrentSender = newMsg.sender_id === currentUserId
+      const partnerId = isCurrentSender ? newMsg.receiver_id : newMsg.sender_id
+      if (!partnerId) return
+
+      seenMessageIdsRef.current.add(newMsg.message_id)
+
+      setThreads((current) => {
+        const existingMessages = current[partnerId] ?? []
+        if (existingMessages.some((m) => m.id === newMsg.message_id)) {
+          return current
+        }
+
+        const optimisticIndex = isCurrentSender
+          ? existingMessages.findIndex(
+              (m) =>
+                m.status === "sending" &&
+                (m.text === newMsg.message_content ||
+                  (m.kind !== "text" && m.id.startsWith("temp-")))
+            )
+          : -1
+
+        const chatMsg = toChatMessage(newMsg, currentUserId)
+        if (optimisticIndex !== -1) {
+          const updated = [...existingMessages]
+          updated[optimisticIndex] = chatMsg
+          return {
+            ...current,
+            [partnerId]: updated,
+          }
+        }
+
+        return {
+          ...current,
+          [partnerId]: [...existingMessages, chatMsg],
+        }
+      })
+
+      const previewText = messagePreview(newMsg)
+      const messageTime = formatMessageTime(newMsg.message_date)
+      const activityTime = newMsg.message_date
+        ? new Date(newMsg.message_date).getTime()
+        : Date.now()
+      const isViewingThisThread = selectedIdRef.current === partnerId
+
+      setConversations((current) => {
+        const targetIndex = current.findIndex((c) => c.id === partnerId)
+        if (targetIndex === -1) {
+          void loadInbox()
+          return current
+        }
+
+        const updated = current.map((c) => {
+          if (c.id !== partnerId) return c
+          const incrementUnread = !isCurrentSender && !isViewingThisThread
+          return {
+            ...c,
+            preview: previewText,
+            time: messageTime,
+            activity: activityTime,
+            unread: incrementUnread ? c.unread + 1 : 0,
+          }
+        })
+
+        return updated.sort(
+          (a, b) => b.activity - a.activity || a.name.localeCompare(b.name)
+        )
+      })
+
+      if (isViewingThisThread) {
+        setTimeout(() => {
+          threadEndRef.current?.scrollIntoView({ behavior: "smooth" })
+        }, 50)
+
+        if (!isCurrentSender && sessionToken) {
+          markMessagesRead(sessionToken, {
+            sender_id: partnerId,
+            receiver_id: currentUserId,
+          }).catch(() => {})
+        }
+      }
+    }
+
+    const handleMessageRead = (data: { message_id: string; reader_id: string }) => {
+      if (!data?.message_id) return
+      setThreads((current) => {
+        let changed = false
+        const next: Record<string, ChatMessage[]> = {}
+        for (const [id, msgs] of Object.entries(current)) {
+          const updatedMsgs = msgs.map((m) => {
+            if (m.id === data.message_id && !m.isRead) {
+              changed = true
+              return { ...m, isRead: true }
+            }
+            return m
+          })
+          next[id] = updatedMsgs
+        }
+        return changed ? next : current
+      })
+    }
+
+    const handleMessageReadAll = (data: { reader_id: string }) => {
+      if (!data?.reader_id) return
+      setThreads((current) => {
+        const msgs = current[data.reader_id]
+        if (!msgs) return current
+        return {
+          ...current,
+          [data.reader_id]: msgs.map((m) =>
+            m.from === "staff" ? { ...m, isRead: true } : m
+          ),
+        }
+      })
+    }
+
+    socket.on("message:new", handleNewMessage)
+    socket.on("message:read", handleMessageRead)
+    socket.on("message:read_all", handleMessageReadAll)
+
+    return () => {
+      socket.off("message:new", handleNewMessage)
+      socket.off("message:read", handleMessageRead)
+      socket.off("message:read_all", handleMessageReadAll)
+    }
+  }, [socket, currentUserId, sessionToken, loadInbox])
+
+  useEffect(() => {
     const initialLoad = window.setTimeout(() => void loadInbox(), 0)
-    const interval = window.setInterval(() => void loadInbox(), 15000)
+    const interval = window.setInterval(() => void loadInbox(), 20000)
     return () => {
       window.clearTimeout(initialLoad)
       window.clearInterval(interval)

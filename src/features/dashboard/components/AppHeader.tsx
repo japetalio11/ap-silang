@@ -43,6 +43,7 @@ import { InviteTeamMemberModal } from "@/features/team/components/InviteTeamMemb
 import { ResponsiveModal } from "@/components/ui/responsive-modal"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getUserNotifications, markAllNotificationsRead, markNotificationRead, type NotificationRecord } from "@/features/dashboard/api/notifications"
+import { useSocket } from "@/context/SocketContext"
 import { toast } from "sonner"
 
 export function AppHeader() {
@@ -52,6 +53,7 @@ export function AppHeader() {
   const { session } = useAuthSession()
   const sessionToken = session?.token
   const sessionUserId = session?.user.user_id
+  const { socket } = useSocket()
 
   const [notifications, setNotifications] = useState<NotificationRecord[]>([])
   const [notificationsLoading, setNotificationsLoading] = useState(false)
@@ -113,6 +115,26 @@ export function AppHeader() {
       .catch(() => undefined)
     return () => { active = false }
   }, [sessionToken, sessionUserId])
+
+  useEffect(() => {
+    if (!socket || !sessionToken || !sessionUserId) return
+    const handleNewNotification = (item: NotificationRecord) => {
+      if (!item) return
+      setNotifications((current) => {
+        if (current.some((n) => n.notification_id === item.notification_id)) return current
+        return [item, ...current]
+      })
+    }
+    const handleReadAll = () => {
+      setNotifications((current) => current.map((n) => ({ ...n, is_read: true })))
+    }
+    socket.on("notification:new", handleNewNotification)
+    socket.on("notification:read_all", handleReadAll)
+    return () => {
+      socket.off("notification:new", handleNewNotification)
+      socket.off("notification:read_all", handleReadAll)
+    }
+  }, [socket, sessionToken, sessionUserId])
 
   const meaningfulNotifications = useMemo(() => {
     return notifications.filter((item) => {

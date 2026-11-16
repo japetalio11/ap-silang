@@ -83,6 +83,7 @@ import {
   type FacilityItem,
   type StaffItem,
 } from "../api/superadmin-api"
+import { FacilitySearchSelect } from "./FacilitySearchSelect"
 
 function normalizeFacilityType(rawType?: string): "RHU" | "BHS" {
   if (!rawType) return "RHU"
@@ -2164,22 +2165,15 @@ export function SuperAdminFacilityDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label className="text-xs">Destination Facility</Label>
-              <Select value={targetStaffFacilityId} onValueChange={setTargetStaffFacilityId}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select destination clinic" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allFacilities
-                    .filter((f) => f.facility_id !== facilityId)
-                    .map((f) => (
-                      <SelectItem key={f.facility_id} value={f.facility_id}>
-                        {f.facility_name} ({f.type})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <FacilitySearchSelect
+                facilities={allFacilities}
+                value={targetStaffFacilityId}
+                onValueChange={setTargetStaffFacilityId}
+                currentFacilityId={facilityId}
+                placeholder="Search clinic or health station..."
+              />
             </div>
           </div>
           <DialogFooter className="gap-3 sm:gap-3">
@@ -2266,22 +2260,15 @@ export function SuperAdminFacilityDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               <Label className="text-xs">Destination Facility</Label>
-              <Select value={targetMotherFacilityId} onValueChange={setTargetMotherFacilityId}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select destination clinic" />
-                </SelectTrigger>
-                <SelectContent>
-                  {allFacilities
-                    .filter((f) => f.facility_id !== facilityId)
-                    .map((f) => (
-                      <SelectItem key={f.facility_id} value={f.facility_id}>
-                        {f.facility_name} ({f.type})
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+              <FacilitySearchSelect
+                facilities={allFacilities}
+                value={targetMotherFacilityId}
+                onValueChange={setTargetMotherFacilityId}
+                currentFacilityId={facilityId}
+                placeholder="Search clinic or health station..."
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-xs">Administrative Transfer Reason / Notes (Optional)</Label>

@@ -35,6 +35,7 @@ import { SuperAdminReportsPage } from "@/features/dashboard/components/SuperAdmi
 import { SuperAdminDatabasePage } from "@/features/dashboard/components/SuperAdminDatabasePage"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthSessionProvider, useAuthSession } from "@/features/auth/auth-session"
+import { SocketProvider } from "@/context/SocketContext"
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, session } = useAuthSession()
@@ -128,8 +129,10 @@ createRoot(document.getElementById("root")!).render(
     <ThemeProvider>
       <BrowserRouter>
         <AuthSessionProvider>
-          <AppRoutes />
-          <Toaster position="bottom-right" />
+          <SocketProvider>
+            <AppRoutes />
+            <Toaster position="bottom-right" />
+          </SocketProvider>
         </AuthSessionProvider>
       </BrowserRouter>
     </ThemeProvider>
