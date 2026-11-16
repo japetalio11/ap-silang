@@ -437,24 +437,24 @@ export function ReferralGatewayPage() {
 
   return <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
     <Sheet open={isMobileTransferOpen} onOpenChange={setIsMobileTransferOpen}>
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-stretch justify-between border-b bg-white dark:bg-black print:hidden">
-      <div className="flex min-w-0 flex-1 items-center px-4">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b bg-white dark:bg-black px-3 sm:px-4 print:hidden">
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent">
             <img src={silangLogo} alt="Silang Logo" className="size-full object-contain" />
           </div>
           <div className="flex h-8 items-center overflow-hidden">
-            <span className="translate-y-0.5 whitespace-nowrap text-2xl font-semibold leading-none tracking-tight text-[#003f2c] dark:text-[#fffe8c]" style={{ fontFamily: "'Etna', sans-serif" }}>Silang</span>
+            <span className="translate-y-0.5 whitespace-nowrap text-xl sm:text-2xl font-semibold leading-none tracking-tight text-[#003f2c] dark:text-[#fffe8c]" style={{ fontFamily: "'Etna', sans-serif" }}>Silang</span>
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} />
-          <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Export referral" title="Export referral" onClick={exportReferral}><Download className="size-3.5" /></Button>
-          <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Refresh referral" title="Refresh referral" disabled={isRefreshing} onClick={() => void refreshReferral()}><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
+          <Button type="button" variant="outline" size="icon" className="hidden sm:inline-flex size-8" aria-label="Export referral" title="Export referral" onClick={exportReferral}><Download className="size-3.5" /></Button>
+          <Button type="button" variant="outline" size="icon" className="hidden sm:inline-flex size-8" aria-label="Refresh referral" title="Refresh referral" disabled={isRefreshing} onClick={() => void refreshReferral()}><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
           <SheetTrigger asChild>
-            <Button type="button" className="h-8 gap-1.5 px-3 text-xs lg:hidden">
-              <ShieldCheck className="size-3.5" />
-              Finalize Transfer
+            <Button type="button" size="sm" className="h-8 gap-1.5 px-2.5 text-xs font-medium lg:hidden">
+              <ShieldCheck className="size-3.5 shrink-0" />
+              <span>Transfer</span>
             </Button>
           </SheetTrigger>
           <DropdownMenu>
@@ -462,7 +462,18 @@ export function ReferralGatewayPage() {
               <Button type="button" variant="outline" size="icon" className="size-8" aria-label="More handover actions" title="More actions"><Ellipsis className="size-4" /></Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem onSelect={() => window.print()}><Printer className="mr-2 size-4" />Print Transfer Form</DropdownMenuItem>
+              <DropdownMenuItem className="sm:hidden" onSelect={() => void refreshReferral()} disabled={isRefreshing}>
+                <RefreshCw className={`mr-2 size-4 ${isRefreshing ? "animate-spin" : ""}`} />
+                <span>Refresh Referral</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="sm:hidden" onSelect={exportReferral}>
+                <Download className="mr-2 size-4" />
+                <span>Export Referral</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => window.print()}>
+                <Printer className="mr-2 size-4" />
+                <span>Print Transfer Form</span>
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -490,12 +501,12 @@ export function ReferralGatewayPage() {
           <TabsContent value="summary" className="mt-4 min-w-0">
             <div className="space-y-6">
               <section aria-labelledby="handover-clinical-summary">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
                     <h2 id="handover-clinical-summary" className="text-sm font-semibold text-foreground">Clinical summary</h2>
-                    <p className="mt-1 text-xs text-muted-foreground">Patient information shared for this transfer.</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">Patient information shared for this transfer.</p>
                   </div>
-                  <StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} />
+                  <StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} className="shrink-0" />
                 </div>
                 <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
                   <ClinicalField label="Patient" value={patientName} />
