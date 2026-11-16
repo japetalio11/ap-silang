@@ -15,13 +15,14 @@ import {
 } from "@/components/ui/sidebar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ArrowLeftRight, Building2, CalendarDays, ChevronsUpDown, FolderHeart, LayoutDashboard, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, ChevronsUpDown, Download, FolderHeart, LayoutDashboard, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog } from "lucide-react"
 import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { backendAssetUrl } from "@/lib/api"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { StaffAvatar } from "@/features/team/components/StaffAvatar"
 import { db } from "@/lib/db/silangDatabase"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
 
 const navigationGroups = [
   {
@@ -62,6 +63,7 @@ export function AppSidebar() {
   const location = useLocation()
   const { setOpenMobile } = useSidebar()
   const { session, logout } = useAuthSession()
+  const { isInstallable, install } = usePwaInstall()
   const signedInName = session?.user
     ? [session.user.first_name, session.user.middle_name, session.user.last_name].filter(Boolean).join(" ")
     : "Staff member"
@@ -196,6 +198,18 @@ export function AppSidebar() {
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" className="w-[--radix-dropdown-menu-trigger-width]">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                {isInstallable && (
+                  <>
+                    <DropdownMenuItem
+                      onClick={install}
+                      className="cursor-pointer text-primary focus:text-primary font-medium"
+                    >
+                      <Download className="mr-2 size-4" />
+                      Install Web App
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 {isUserSuperAdmin(session?.user.role) && (
                   <>
                     <DropdownMenuItem

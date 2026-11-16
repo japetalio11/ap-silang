@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { useNavigate } from "react-router-dom"
-import { ArrowRight, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react"
+import { ArrowRight, Download, Eye, EyeOff, Loader2, ShieldCheck } from "lucide-react"
 import silangLogo from "@/assets/silang.svg"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,10 +9,12 @@ import { toast } from "sonner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { AuthLegalModal, type LegalModalTab } from "@/features/auth/components/AuthLegalModal"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
 
 export function SuperAdminLoginPage() {
   const navigate = useNavigate()
   const { session, isAuthenticated, login, logout } = useAuthSession()
+  const { isInstallable, install } = usePwaInstall()
   const [identifier, setIdentifier] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
@@ -86,6 +88,21 @@ export function SuperAdminLoginPage() {
                 Sign in to manage Silang facilities, clinical networks, and staff.
               </p>
             </header>
+
+            {isInstallable && (
+              <div className="mb-4 flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={install}
+                  className="h-7 gap-1.5 rounded-full border-primary/30 bg-primary/5 px-3 text-[11px] font-medium text-primary hover:bg-primary/10"
+                >
+                  <Download className="size-3" />
+                  Install Web App
+                </Button>
+              </div>
+            )}
 
             <form onSubmit={handleSignIn} noValidate className="space-y-3">
               <div className="flex flex-col gap-1.5">

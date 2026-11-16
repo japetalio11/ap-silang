@@ -18,7 +18,7 @@ import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { db } from "@/lib/db/silangDatabase"
 import { toast } from "sonner"
 import { z } from "zod"
-import { getClosedDates, removeClosedDate, type ClosedDateRecord } from "@/features/calendar/closed-dates"
+import { fetchClosedDates, getClosedDates, removeClosedDate, type ClosedDateRecord } from "@/features/calendar/closed-dates"
 
 import { AddDate } from "./add-date"
 
@@ -104,10 +104,13 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
 
   useEffect(() => {
     refreshClosedDates()
+    if (facilityId && token) {
+      fetchClosedDates(facilityId, token).catch(() => {})
+    }
     const handleUpdate = () => refreshClosedDates()
     window.addEventListener("silang:closed-dates-updated", handleUpdate)
     return () => window.removeEventListener("silang:closed-dates-updated", handleUpdate)
-  }, [refreshClosedDates])
+  }, [refreshClosedDates, facilityId, token])
 
   useEffect(() => {
     const handleFacilityUpdated = (event: Event) => {

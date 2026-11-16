@@ -32,6 +32,7 @@ import {
   reassignStaffFacility,
   type FacilityItem,
 } from "../api/superadmin-api"
+import { FacilitySearchSelect } from "./FacilitySearchSelect"
 import { StaffProfileContent } from "@/features/team/components/StaffProfileContent"
 import { StaffScheduleDialog } from "@/features/team/components/StaffScheduleDialog"
 
@@ -66,22 +67,10 @@ export function SuperAdminStaffDetailPage() {
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
   const [confirmTransferOpen, setConfirmTransferOpen] = useState(false)
   const [targetFacilityId, setTargetFacilityId] = useState("")
-  const [facilitySearch, setFacilitySearch] = useState("")
   const [submittingTransfer, setSubmittingTransfer] = useState(false)
 
   const [deactivateDialogOpen, setDeactivateDialogOpen] = useState(false)
   const [submittingDeactivation, setSubmittingDeactivation] = useState(false)
-
-  const filteredTransferFacilities = useMemo(() => {
-    const available = facilities.filter((f) => f.facility_id !== staff?.facilityId)
-    const query = facilitySearch.trim().toLowerCase()
-    if (!query) return available
-    return available.filter(
-      (f) =>
-        f.facility_name.toLowerCase().includes(query) ||
-        f.type.toLowerCase().includes(query)
-    )
-  }, [facilities, staff?.facilityId, facilitySearch])
 
   const loadStaff = useCallback(async () => {
     if (!token || !staffId) return
@@ -462,53 +451,15 @@ export function SuperAdminStaffDetailPage() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <Label className="text-xs">Destination Facility</Label>
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-                <Input
-                  type="text"
-                  placeholder="Search clinic or health station..."
-                  value={facilitySearch}
-                  onChange={(e) => setFacilitySearch(e.target.value)}
-                  className="h-8 pl-8 text-xs"
-                />
-              </div>
-
-              <div className="max-h-52 overflow-y-auto rounded-md border border-border p-1 space-y-1">
-                {filteredTransferFacilities.length === 0 ? (
-                  <div className="py-6 text-center text-xs text-muted-foreground">
-                    No matching facilities found
-                  </div>
-                ) : (
-                  filteredTransferFacilities.map((f) => {
-                    const isSelected = targetFacilityId === f.facility_id
-                    return (
-                      <button
-                        key={f.facility_id}
-                        type="button"
-                        onClick={() => setTargetFacilityId(f.facility_id)}
-                        className={`flex w-full items-center justify-between rounded px-2.5 py-2 text-left text-xs transition-colors ${
-                          isSelected
-                            ? "bg-primary text-primary-foreground font-medium"
-                            : "hover:bg-muted text-foreground"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Building2 className={`size-3.5 shrink-0 ${isSelected ? "text-primary-foreground" : "text-muted-foreground"}`} />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium">{f.facility_name}</p>
-                            <p className={`text-[10px] ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
-                              {f.type}
-                            </p>
-                          </div>
-                        </div>
-                        {isSelected && <Check className="size-3.5 shrink-0" />}
-                      </button>
-                    )
-                  })
-                )}
-              </div>
+              <FacilitySearchSelect
+                facilities={facilities}
+                value={targetFacilityId}
+                onValueChange={setTargetFacilityId}
+                currentFacilityId={staff?.facilityId}
+                placeholder="Search clinic or health station..."
+              />
             </div>
           </div>
           <DialogFooter className="gap-3 sm:gap-3">

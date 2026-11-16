@@ -4,6 +4,7 @@ import {
   BarChart3,
   Building2,
   Database,
+  Download,
   FileText,
   Hospital,
   LayoutDashboard,
@@ -54,6 +55,7 @@ import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { StaffAvatar } from "@/features/team/components/StaffAvatar"
 import { db } from "@/lib/db/silangDatabase"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
 
 const superAdminNavigation = [
   { label: "Municipal Overview", path: "/superadmin/overview", icon: LayoutDashboard },
@@ -70,6 +72,7 @@ export function SuperAdminLayout() {
   const navigate = useNavigate()
   const { session, logout } = useAuthSession()
   const { theme, setTheme } = useTheme()
+  const { isInstallable, install } = usePwaInstall()
   const [syncOpen, setSyncOpen] = useState(false)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
 
@@ -207,6 +210,15 @@ export function SuperAdminLayout() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="top" align="start" className="w-[--radix-dropdown-menu-trigger-width]">
                     <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    {isInstallable && (
+                      <>
+                        <DropdownMenuItem onClick={install} className="cursor-pointer text-primary focus:text-primary font-medium">
+                          <Download className="mr-2 size-4" />
+                          Install Web App
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                      </>
+                    )}
                     <DropdownMenuItem onClick={() => navigate("/dashboard")} className="cursor-pointer">
                       <LayoutDashboard className="mr-2 size-4" />
                       Clinic Dashboard

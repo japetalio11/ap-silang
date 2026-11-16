@@ -23,7 +23,7 @@ import { verifyCurrentUserPassword } from "@/features/auth/password-verification
 import { getMaternalRecords } from "@/features/maternal-records/api"
 import { toast } from "sonner"
 import { appointmentToEvent, cancelAppointment, createAppointment, deleteAppointment, getAppointments, maternalRecordToAppointmentOption } from "../api"
-import { getClosedDates, type ClosedDateRecord } from "../closed-dates"
+import { fetchClosedDates, getClosedDates, type ClosedDateRecord } from "../closed-dates"
 import type { AppointmentFormValues, AppointmentMotherOption } from "./CreateAppointmentModal"
 
 import "react-big-calendar/lib/css/react-big-calendar.css"
@@ -54,9 +54,12 @@ export function CalendarPage() {
   React.useEffect(() => {
     const syncClosedDates = () => setClosedDates(getClosedDates(session?.user?.facility_id))
     syncClosedDates()
+    if (session?.user?.facility_id && session?.token) {
+      fetchClosedDates(session.user.facility_id, session.token).catch(() => {})
+    }
     window.addEventListener("silang:closed-dates-updated", syncClosedDates)
     return () => window.removeEventListener("silang:closed-dates-updated", syncClosedDates)
-  }, [session?.user?.facility_id])
+  }, [session?.user?.facility_id, session?.token])
 
   const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number} | null>(null)
   const [touchEndPos, setTouchEndPos] = useState<{x: number, y: number} | null>(null)
