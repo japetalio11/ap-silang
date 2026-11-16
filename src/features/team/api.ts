@@ -275,7 +275,7 @@ export async function uploadStaffProfilePhoto(
 
 export async function createStaff(
   token: string,
-  payload: { first_name: string; last_name: string; middle_name?: string; role: string; phone_number?: string; email?: string; password: string; facility_id?: string }
+  payload: { first_name: string; last_name: string; middle_name?: string; role: string; phone_number?: string; email?: string; password: string; address?: string; facility_id?: string }
 ): Promise<{ message: string; user: StaffApiRecord; offline?: boolean }> {
   const isOffline = typeof navigator !== "undefined" && !navigator.onLine
 
@@ -291,6 +291,7 @@ export async function createStaff(
       role: payload.role,
       phone_number: payload.phone_number || null,
       email: payload.email || null,
+      address: payload.address || null,
       is_active: true,
       sync_status: "pending_create",
       updated_at: Date.now(),

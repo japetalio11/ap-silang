@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X, AlertTriangle, PowerOff, ShieldAlert } from "lucide-react"
+import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Wifi, ShieldCheck, Bell, Database, X, AlertTriangle, PowerOff, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -23,7 +23,6 @@ import {
   fetchAllFacilities,
   createFacilityRecord,
   updateFacilityRecord,
-  deleteFacilityRecord,
   toggleFacilityStatus,
   fetchMunicipalOverview,
   type FacilityItem,
@@ -505,7 +504,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 <TableCell>
                   <StatusBadge
                     status={facility.is_active === false ? "inactive" : "active"}
-                    text={facility.is_active === false ? "Deactivated" : "Active"}
+                    label={facility.is_active === false ? "Deactivated" : "Active"}
                   />
                 </TableCell>
                 <TableCell>
@@ -647,7 +646,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
               <div className="flex items-center gap-2">
                 <StatusBadge
                   status={facility.is_active === false ? "inactive" : "active"}
-                  text={facility.is_active === false ? "Deactivated" : "Active"}
+                  label={facility.is_active === false ? "Deactivated" : "Active"}
                 />
                 <span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span>
               </div>

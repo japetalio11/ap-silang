@@ -225,7 +225,7 @@ export function SuperAdminFacilityDetailPage() {
     }
     window.addEventListener("silang:staff-updated", handleStaffUpdated)
     const unsubscribe = silangSyncEngine.subscribe((status) => {
-      if (status.status === "idle" && status.pendingCount === 0) {
+      if (!status.isSyncing && status.pendingCount === 0) {
         void loadData()
       }
     })
@@ -871,7 +871,7 @@ export function SuperAdminFacilityDetailPage() {
               </span>
               <StatusBadge
                 status={data.is_active === false ? "inactive" : "active"}
-                text={data.is_active === false ? "Deactivated" : "Active"}
+                label={data.is_active === false ? "Deactivated" : "Active"}
               />
             </div>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -1471,17 +1471,15 @@ export function SuperAdminFacilityDetailPage() {
                 const mother = enrollment.mother
                 if (!mother) return null
 
-                const enrolled_at = enrollment.enrolled_at || enrollment.created_at || new Date().toISOString()
                 const status = enrollment.status
                 const isTransferred = status?.toLowerCase() === "transferred"
-                const birth = mother.date_of_birth ? new Date(mother.date_of_birth) : new Date()
+                const birth = mother.birth_date ? new Date(mother.birth_date) : new Date()
                 const age =
-                  mother.date_of_birth && !isNaN(birth.getTime())
+                  mother.birth_date && !isNaN(birth.getTime())
                     ? Math.floor((Date.now() - birth.getTime()) / (365.25 * 24 * 60 * 60 * 1000))
                     : 0
                 const name =
-                  mother.full_name ||
-                  (mother.user ? `${mother.user.first_name} ${mother.user.last_name}` : "Unknown")
+                  mother.user ? `${mother.user.first_name} ${mother.user.last_name}` : "Unknown"
 
                 return (
                   <article

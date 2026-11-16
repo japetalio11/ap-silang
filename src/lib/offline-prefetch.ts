@@ -1,8 +1,7 @@
 import { apiRequest } from "@/lib/api"
 import type { MaternalRecord } from "@/features/maternal-records/api"
-import { db } from "@/lib/db/silangDatabase"
+import { db, type LocalMother, type SyncStatus } from "@/lib/db/silangDatabase"
 
-type StaffCacheRecord = { user_id?: string }
 type FacilityCacheRecord = { facility_id: string; facility_name: string; type: string; address?: string; contact_number?: string; email?: string }
 
 const warmingScopes = new Set<string>()
@@ -134,7 +133,7 @@ export async function warmOfflineData(token: string, userId: string, facilityId?
       : []
 
     if (mothers.length > 0) {
-      const mothersToStore = mothers.map((mother) => ({
+      const mothersToStore: LocalMother[] = mothers.map((mother) => ({
         ...mother,
         id: mother.mother_id,
         first_name: mother.user?.first_name,
@@ -143,7 +142,7 @@ export async function warmOfflineData(token: string, userId: string, facilityId?
         phone_number: mother.user?.phone_number,
         email: mother.user?.email,
         address: mother.user?.address,
-        sync_status: "synced",
+        sync_status: (mother.sync_status as SyncStatus) || "synced",
         updated_at: Date.now(),
       }))
       await db.mothers.bulkPut(mothersToStore).catch(() => {})

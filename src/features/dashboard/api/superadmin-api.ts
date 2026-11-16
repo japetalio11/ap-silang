@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api"
-import { db } from "@/lib/db/silangDatabase"
+import { db, type LocalStaff, type LocalMother } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 
 export type FacilityItem = {
@@ -556,13 +556,13 @@ export async function fetchFacilityHubDetails(token: string, facilityId: string)
       (await db.facilities.get(facilityId).catch(() => null)) ||
       (await db.facilities.where("facility_id").equals(facilityId).first().catch(() => null))
     if (!fac) return null
-    const staffList =
+    const staffList: LocalStaff[] =
       (await db.staff.where("facility_id").equals(effectiveId).toArray().catch(() => [])) || []
     if (staffList.length === 0 && effectiveId !== facilityId) {
       const fallbackStaff = await db.staff.where("facility_id").equals(facilityId).toArray().catch(() => [])
       staffList.push(...fallbackStaff)
     }
-    const motherList =
+    const motherList: LocalMother[] =
       (await db.mothers.where("facility_id").equals(effectiveId).toArray().catch(() => [])) || []
     if (motherList.length === 0 && effectiveId !== facilityId) {
       const fallbackMothers = await db.mothers.where("facility_id").equals(facilityId).toArray().catch(() => [])

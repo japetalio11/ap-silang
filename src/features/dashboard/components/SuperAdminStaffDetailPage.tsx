@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
-import { AlertTriangle, ArrowLeft, ArrowRightLeft, Building2, CalendarDays, Check, KeyRound, RefreshCw, Search, UserCheck, UserX } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, CalendarDays, KeyRound, RefreshCw, UserCheck, UserX } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -115,7 +115,7 @@ export function SuperAdminStaffDetailPage() {
       void loadStaff()
     }, 0)
     const unsubscribe = silangSyncEngine.subscribe((status) => {
-      if (status.status === "idle" && status.pendingCount === 0) {
+      if (!status.isSyncing && status.pendingCount === 0) {
         void loadStaff()
       }
     })
@@ -282,7 +282,6 @@ export function SuperAdminStaffDetailPage() {
               variant="outline"
               onClick={() => {
                 setTargetFacilityId("")
-                setFacilitySearch("")
                 setTransferDialogOpen(true)
               }}
               className="h-8 gap-1.5 px-2.5 text-xs"
