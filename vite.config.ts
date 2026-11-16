@@ -26,7 +26,14 @@ export default defineConfig(({ mode }) => {
     tailwindcss(),
     VitePWA({
       registerType: "autoUpdate",
-      includeAssets: ["silang.svg", "fonts/*.otf"],
+      includeAssets: [
+        "silang.svg",
+        "pwa-192x192.png",
+        "pwa-512x512.png",
+        "pwa-maskable-512x512.png",
+        "apple-touch-icon.png",
+        "fonts/*.otf",
+      ],
       manifest: {
         name: "Silang — Maternal & Birth Monitoring System",
         short_name: "Silang",
@@ -34,8 +41,35 @@ export default defineConfig(({ mode }) => {
         theme_color: "#003f2c",
         background_color: "#ffffff",
         display: "standalone",
+        orientation: "portrait-primary",
         start_url: "/",
-        icons: [{ src: "/silang.svg", sizes: "any", type: "image/svg+xml", purpose: "any maskable" }],
+        scope: "/",
+        icons: [
+          {
+            src: "/pwa-192x192.png",
+            sizes: "192x192",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "any",
+          },
+          {
+            src: "/pwa-maskable-512x512.png",
+            sizes: "512x512",
+            type: "image/png",
+            purpose: "maskable",
+          },
+          {
+            src: "/silang.svg",
+            sizes: "any",
+            type: "image/svg+xml",
+            purpose: "any",
+          },
+        ],
       },
       workbox: {
         cleanupOutdatedCaches: true,
@@ -71,7 +105,7 @@ export default defineConfig(({ mode }) => {
         ],
       },
       devOptions: {
-        enabled: false,
+        enabled: true,
         type: "module",
         navigateFallbackAllowlist: [/^\/.*$/],
       },

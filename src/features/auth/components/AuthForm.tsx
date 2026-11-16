@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import {
   ArrowRight,
+  Download,
   Eye,
   EyeOff,
   LoaderCircle,
@@ -19,6 +20,7 @@ import { ApiError } from "@/lib/api"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { toast } from "sonner"
+import { usePwaInstall } from "@/hooks/use-pwa-install"
 
 type GoogleTokenResult = { access_token?: string; error?: string }
 
@@ -56,6 +58,7 @@ export function AuthForm() {
   const [openPolicy, setOpenPolicy] = useState<LegalModalTab | null>(null)
   const navigate = useNavigate()
   const { login, loginWithGoogle, unlockOffline, isAuthenticated, session } = useAuthSession()
+  const { isInstallable, install } = usePwaInstall()
   const savedOfflineUserStr = typeof window !== "undefined" ? window.localStorage.getItem("silang.auth.offline-user") : null
   const savedOfflineUser = savedOfflineUserStr ? JSON.parse(savedOfflineUserStr) : null
 
@@ -204,6 +207,21 @@ export function AuthForm() {
               <h1 className="text-2xl font-semibold tracking-tight text-foreground">Welcome to Silang</h1>
               <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">Sign in to access your community health workspace.</p>
             </header>
+
+            {isInstallable && (
+              <div className="mb-4 flex justify-center">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={install}
+                  className="h-7 gap-1.5 rounded-full border-primary/30 bg-primary/5 px-3 text-[11px] font-medium text-primary hover:bg-primary/10"
+                >
+                  <Download className="size-3" />
+                  Install Web App
+                </Button>
+              </div>
+            )}
 
             {isOffline && savedOfflineUser && (
               <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs">

@@ -551,7 +551,7 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
 
   return (
     <Dialog open={open} onOpenChange={close}>
-      <DialogContent className="max-h-[92dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-4 text-foreground sm:max-w-md">
+      <DialogContent className="max-h-[92dvh] w-[calc(100%-2rem)] sm:w-full max-w-md gap-4 overflow-y-auto overflow-x-hidden rounded-xl border-sidebar-border bg-background p-4 text-foreground sm:max-w-md">
         <DialogHeader className="gap-1">
           <DialogTitle className="text-base font-semibold">Add Health Record</DialogTitle>
           <DialogDescription className="text-xs">Add a clinical document or screening record to this mother’s health record.</DialogDescription>
@@ -565,7 +565,7 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
         </div>
 
         {step === 1 ? (
-          <div className="flex flex-col gap-3">
+          <div className="flex w-full min-w-0 max-w-full flex-col gap-3 overflow-hidden">
             <input ref={inputRef} type="file" accept=".png,.jpg,.jpeg,.pdf,image/png,image/jpeg,application/pdf" multiple className="sr-only" onChange={(event: ChangeEvent<HTMLInputElement>) => { addFiles(event.target.files); event.target.value = "" }} />
             <div
               onDragOver={(event) => { event.preventDefault(); setIsDragging(true) }}
@@ -581,11 +581,11 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
               <span className="text-xs"><span className="font-medium text-primary">Click to upload</span> or drag and drop</span>
               <span className="text-xs text-muted-foreground">PNG, JPG, or PDF</span>
             </div>
-            {files.length > 0 && <div className="flex flex-col gap-1.5">
+            {files.length > 0 && <div className="flex w-full min-w-0 max-w-full flex-col gap-1.5 overflow-hidden">
               <p className="text-xs font-medium">{files.length} file{files.length === 1 ? "" : "s"} selected</p>
-              {files.map((file, index) => <div key={`${file.name}-${index}`} className="flex items-center gap-2 rounded-md border border-sidebar-border px-2.5 py-2">
+              {files.map((file, index) => <div key={`${file.name}-${index}`} className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md border border-sidebar-border px-2.5 py-2">
                 {file.type.startsWith("image/") ? <Image className="size-4 shrink-0 text-muted-foreground" /> : <FileText className="size-4 shrink-0 text-muted-foreground" />}
-                <span className="min-w-0 flex-1 truncate text-xs font-medium">{file.name}</span>
+                <span className="min-w-0 flex-1 truncate text-xs font-medium" title={file.name}>{file.name}</span>
                 <span className="shrink-0 text-xs text-muted-foreground">{(file.size / 1024).toFixed(0)} KB</span>
                 <TooltipProvider delayDuration={500}><Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={`Remove ${file.name}`} className="size-7 shrink-0" onClick={(event) => { event.stopPropagation(); setFiles((current) => current.filter((_, fileIndex) => fileIndex !== index)) }}><X className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Remove {file.name}</TooltipContent></Tooltip></TooltipProvider>
               </div>)}
@@ -596,8 +596,8 @@ export function LaboratoryRecordDialog({ open, onOpenChange, pregnancies, onSave
             </DialogFooter>
           </div>
         ) : (
-          <form onSubmit={save} className="flex flex-col gap-4">
-            {files.length > 0 && <div className="flex items-center gap-2 rounded-md bg-muted/50 px-2.5 py-2 text-xs dark:bg-muted/30"><FileText className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate">{files.length === 1 ? files[0].name : `${files.length} files attached`}</span><Button type="button" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setStep(1)}>Change</Button></div>}
+          <form onSubmit={save} className="flex w-full min-w-0 max-w-full flex-col gap-4 overflow-hidden">
+            {files.length > 0 && <div className="flex w-full min-w-0 max-w-full items-center gap-2 overflow-hidden rounded-md bg-muted/50 px-2.5 py-2 text-xs dark:bg-muted/30"><FileText className="size-4 shrink-0 text-muted-foreground" /><span className="min-w-0 flex-1 truncate" title={files.length === 1 ? files[0].name : undefined}>{files.length === 1 ? files[0].name : `${files.length} files attached`}</span><Button type="button" variant="ghost" className="h-7 shrink-0 px-2 text-xs" onClick={() => setStep(1)}>Change</Button></div>}
             <section className="flex flex-col gap-3">
               <h3 className="text-xs font-semibold">Encounter Association</h3>
               <div className="grid gap-3 sm:grid-cols-2">

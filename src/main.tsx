@@ -4,16 +4,7 @@ import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate, type 
 import { registerSW } from "virtual:pwa-register"
 import { requestPersistentStorage } from "@/lib/offline-prefetch"
 
-// Vite's development server serves the app shell dynamically, so Workbox's
-// production navigation fallback can reject deep links while offline or during
-// HMR. Keep the service worker for built deployments only.
-if (import.meta.env.PROD) {
-  registerSW({ immediate: true })
-} else if ("serviceWorker" in navigator) {
-  void navigator.serviceWorker.getRegistrations().then((registrations) => {
-    registrations.forEach((registration) => void registration.unregister())
-  })
-}
+registerSW({ immediate: true })
 void requestPersistentStorage()
 
 import "./index.css"
