@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { CalendarDays, PlusCircle, Trash2 } from "lucide-react"
 import { z } from "zod"
 import { toast } from "sonner"
@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { apiRequest } from "@/lib/api"
 import type { StaffRecord } from "../api"
 
 const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
@@ -48,6 +49,28 @@ export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boole
   const [schedule, setSchedule] = useState<StaffSchedule>(() => readSchedule(staff.id))
   const { days, intervals } = schedule
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => {
+    if (!open || !staff?.id) return
+    setSchedule(readSchedule(staff.id))
+    if (!session?.token) return
+    apiRequest<{ schedule?: StaffSchedule; data?: StaffSchedule }>(`/user/${staff.id}/schedule`, {
+      token: session.token,
+    })
+      .then((res) => {
+        const fetched = res?.schedule || res?.data
+        if (fetched && Array.isArray(fetched.days)) {
+          const resolved: StaffSchedule = {
+            days: fetched.days,
+            intervals: fetched.intervals?.length ? fetched.intervals : [{ start: "08:00", end: "17:00" }],
+          }
+          setSchedule(resolved)
+          localStorage.setItem(`silang:staff-schedule:${staff.id}`, JSON.stringify(resolved))
+        }
+      })
+      .catch(() => {})
+  }, [open, staff?.id, session?.token])
 
   const toggleDay = (day: string) => {
     if (!isAdminOrAbove) return
@@ -59,7 +82,7 @@ export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boole
     setErrors((current) => ({ ...current, [`interval-${index}`]: "" }))
   }
 
-  const saveSchedule = () => {
+  const saveSchedule = async () => {
     if (!isAdminOrAbove) {
       toast.error("Only administrators can edit staff availability.")
       return
@@ -74,10 +97,26 @@ export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boole
       setErrors(nextErrors)
       return
     }
+
+    setSaving(true)
     localStorage.setItem(`silang:staff-schedule:${staff.id}`, JSON.stringify(result.data))
     window.dispatchEvent(new CustomEvent("silang:staff-schedule-updated", { detail: { staffId: staff.id, ...result.data } }))
-    toast.success("Staff availability saved on this device")
-    onOpenChange(false)
+
+    try {
+      if (session?.token) {
+        await apiRequest(`/user/${staff.id}/schedule`, {
+          method: "PUT",
+          token: session.token,
+          body: JSON.stringify(result.data),
+        })
+      }
+      toast.success("Staff availability saved successfully")
+      onOpenChange(false)
+    } catch (err: any) {
+      toast.error(err?.message || "Failed to update staff availability on server")
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -140,7 +179,11 @@ export function StaffScheduleDialog({ open, onOpenChange, staff }: { open: boole
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground"><CalendarDays className="size-3.5" />Repeats weekly</div>
           <div className="flex gap-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{isAdminOrAbove ? "Cancel" : "Close"}</Button>
-            {isAdminOrAbove && <Button type="button" onClick={saveSchedule}>Save Availability</Button>}
+            {isAdminOrAbove && (
+              <Button type="button" disabled={saving} onClick={saveSchedule}>
+                {saving ? "Saving…" : "Save Availability"}
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>
