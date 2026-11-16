@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { format } from "date-fns"
-import { Activity, CalendarClock, HeartPulse, ShieldAlert } from "lucide-react"
+import { CalendarClock, HeartPulse, ShieldAlert } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DateInput } from "@/components/ui/date-input"

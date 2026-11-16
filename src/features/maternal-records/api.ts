@@ -1,5 +1,5 @@
 import { apiRequest } from "@/lib/api"
-import { db, type LocalMother, type LocalPregnancy, type LocalPrenatalVisit, type LocalLabScreening, type LocalDeliveryOutcome } from "@/lib/db/silangDatabase"
+import { db, type LocalMother, type LocalPregnancy, type LocalPrenatalVisit, type LocalLabScreening, type LocalDeliveryOutcome, type SyncStatus } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getPendingMotherUpdates, isNetworkFailure, enqueueMotherProfileUpdate } from "@/features/dashboard/offline-maternal-sync"
 import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
@@ -27,11 +27,14 @@ export type MaternalPrenatalVisit = {
   has_pallor?: boolean
   has_edema?: boolean
   has_fever?: boolean
+  version?: number
   healthWorker?: { first_name?: string; last_name?: string; role?: string }
 }
 
 export type MaternalPregnancy = {
   pregnancy_id: string
+  mother_id?: string
+  date_of_registration?: string | null
   lmp_date?: string | null
   edd_date?: string | null
   gravida?: number | null
@@ -41,6 +44,23 @@ export type MaternalPregnancy = {
   height_cm?: number | string | null
   bmi_1st_trimester?: number | string | null
   bmi_category?: string | null
+  completed_8anc?: boolean
+  prev_caesarean?: boolean
+  consecutive_miscarriages?: boolean
+  stillbirth_history?: boolean
+  pph_history?: boolean
+  previous_delivery_history?: string | null
+  has_heart_disease?: boolean
+  has_diabetes?: boolean
+  has_tb?: boolean
+  has_asthma?: boolean
+  has_goiter?: boolean
+  co_morbidities?: string | null
+  deworming_given?: boolean
+  deworming_date?: string | null
+  version?: number
+  updated_at?: string | number
+  sync_status?: string
   prenatalVisits?: MaternalPrenatalVisit[]
   labScreenings?: Array<MaternalLabRecord>
   deliveryOutcomes?: Array<MaternalDelivery>
@@ -98,6 +118,7 @@ export type MaternalAppointment = {
   appointment_type?: string | null
   reason?: string | null
   status?: string | null
+  version?: number
 }
 
 export type MaternalSupplement = {
@@ -108,6 +129,8 @@ export type MaternalSupplement = {
   tablets_given_count?: number
   date_given?: string
   is_completed?: boolean
+  version?: number
+  healthWorker?: { first_name?: string; last_name?: string; role?: string } | null
 }
 
 export type MaternalStaff = {
@@ -130,9 +153,30 @@ export type MaternalRecord = {
   civil_status?: string | null
   blood_type?: string | null
   assigned_worker_id?: string | null
+  created_by_id?: string | null
+  facility_id?: string | null
   assignedWorker?: MaternalStaff | null
+  facility?: {
+    facility_id?: string
+    facility_name?: string
+    address?: string
+  } | null
+  facilityEnrollments?: Array<{
+    enrollment_id?: string
+    mother_id?: string
+    facility_id?: string
+    status?: string
+    facility?: {
+      facility_id: string
+      facility_name: string
+      address?: string
+    }
+    enrolled_at?: string
+    created_at?: string
+  }>
   user?: {
     user_id?: string | null
+    facility_id?: string | null
     version?: number
     first_name?: string | null
     middle_name?: string | null
@@ -340,7 +384,7 @@ async function persistActiveMothersBatch(mothers: MaternalRecord[]) {
 
 async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
   const now = Date.now()
-  const motherRecord = {
+  const motherRecord: LocalMother = {
     ...result,
     id: result.mother_id,
     first_name: result.user?.first_name,
@@ -351,7 +395,7 @@ async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
     address: result.user?.address,
     profile_url: result.user?.profile_url || result.profile_url,
     photo_url: result.user?.profile_url || result.photo_url || result.profile_url,
-    sync_status: "synced",
+    sync_status: (result.sync_status as SyncStatus) || "synced",
     updated_at: now,
   }
 
@@ -1263,6 +1307,7 @@ export const overrideMaternalRisk = (token: string, visitId: string | undefined,
 export type RegisterPrenatalVisitInput = {
   pregnancy_id: string
   health_worker_id?: string
+  visit_date?: string | null
   trimester: number
   visit_number: number
   age_of_gestation_weeks: number
@@ -1958,6 +2003,12 @@ export type UpdateDeliveryOutcomeInput = {
   blood_loss_ml?: number | null
   delivery_complications?: string
   version?: number
+  newborns?: Array<{
+    sex: string
+    birth_weight_kg: number
+    status_at_birth: string
+    apgar_score: number
+  }>
 }
 
 export const updateDeliveryOutcome = async (token: string, deliveryId: string, input: UpdateDeliveryOutcomeInput) => {
