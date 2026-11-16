@@ -1,8 +1,6 @@
-import { useEffect, useState } from "react"
+import { AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 
 type ConfirmSensitiveActionDialogProps = {
   open: boolean
@@ -11,6 +9,7 @@ type ConfirmSensitiveActionDialogProps = {
   description: string
   confirmLabel: string
   onConfirm: () => void
+  consequence?: string
 }
 
 export function ConfirmSensitiveActionDialog({
@@ -20,47 +19,38 @@ export function ConfirmSensitiveActionDialog({
   description,
   confirmLabel,
   onConfirm,
+  consequence,
 }: ConfirmSensitiveActionDialogProps) {
-  const [password, setPassword] = useState("")
-
-  useEffect(() => {
-    if (!open) setPassword("")
-  }, [open])
-
   const confirm = () => {
-    if (!password.trim()) return
     onConfirm()
     onOpenChange(false)
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[calc(100%-2rem)] gap-5 p-5 sm:max-w-lg sm:p-6">
+      <DialogContent className="max-w-[calc(100%-2rem)] gap-4 p-5 sm:max-w-lg sm:p-6">
         <DialogHeader className="gap-2 pr-6">
-          <DialogTitle className="text-base font-semibold leading-snug">{title}</DialogTitle>
-          <DialogDescription className="text-sm leading-relaxed">{description}</DialogDescription>
-          <p className="text-sm text-muted-foreground">This action cannot be undone.</p>
+          <div className="flex items-center gap-2.5">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle className="size-4.5" />
+            </div>
+            <DialogTitle className="text-base font-semibold leading-snug text-foreground">{title}</DialogTitle>
+          </div>
+          <DialogDescription className="text-xs leading-relaxed text-muted-foreground">{description}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-2">
-          <Label htmlFor="sensitive-action-password" className="text-sm font-medium">Enter your password</Label>
-          <Input
-            id="sensitive-action-password"
-            type="password"
-            autoComplete="current-password"
-            placeholder="Enter your password"
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && password.trim()) confirm()
-            }}
-            className="h-10 text-sm"
-          />
+        <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3.5 text-xs text-foreground dark:border-destructive/30 dark:bg-destructive/10">
+          <p className="font-semibold text-destructive">Warning: Irreversible Consequence</p>
+          <p className="mt-1 leading-relaxed text-muted-foreground">
+            {consequence ?? "This action cannot be undone. Any linked clinical records, attachments, or history will be permanently deleted or deactivated."}
+          </p>
         </div>
 
-        <DialogFooter className="flex-row items-center justify-end gap-3">
-          <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button type="button" variant="destructive" disabled={!password.trim()} onClick={confirm} className="h-10 px-4">
+        <DialogFooter className="flex-row items-center justify-end gap-2.5 pt-1">
+          <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="h-9 px-4 text-xs">
+            Cancel
+          </Button>
+          <Button type="button" variant="destructive" onClick={confirm} className="h-9 px-4 text-xs font-medium">
             {confirmLabel}
           </Button>
         </DialogFooter>

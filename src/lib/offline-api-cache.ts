@@ -10,8 +10,11 @@ const DATABASE_NAME = "silang-offline-data"
 const DATABASE_VERSION = 1
 const STORE_NAME = "api-responses"
 
+let activeDbPromise: Promise<IDBDatabase> | null = null
+
 function openDatabase() {
-  return new Promise<IDBDatabase>((resolve, reject) => {
+  if (activeDbPromise) return activeDbPromise
+  activeDbPromise = new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
@@ -20,29 +23,37 @@ function openDatabase() {
         store.createIndex("scope", "scope", { unique: false })
       }
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => reject(request.error ?? new Error("Could not open offline data storage"))
+    request.onsuccess = () => {
+      const db = request.result
+      db.onclose = () => { activeDbPromise = null }
+      db.onerror = () => { activeDbPromise = null }
+      resolve(db)
+    }
+    request.onerror = () => {
+      activeDbPromise = null
+      reject(request.error ?? new Error("Could not open offline data storage"))
+    }
   })
+  return activeDbPromise
 }
 
 async function transact<T>(mode: IDBTransactionMode, action: (store: IDBObjectStore) => IDBRequest<T>) {
   const db = await openDatabase()
-  try {
-    return await new Promise<T>((resolve, reject) => {
+  return await new Promise<T>((resolve, reject) => {
+    try {
       const transaction = db.transaction(STORE_NAME, mode)
       const request = action(transaction.objectStore(STORE_NAME))
       let result!: T
       request.onsuccess = () => { result = request.result }
       request.onerror = () => reject(request.error ?? new Error("Could not access offline data storage"))
-      // Resolve writes only after IndexedDB confirms the transaction committed.
-      // Otherwise a fast refresh can race the cache write and lose the latest read.
       transaction.oncomplete = () => resolve(result)
       transaction.onerror = () => reject(transaction.error ?? new Error("Offline data storage transaction failed"))
       transaction.onabort = () => reject(transaction.error ?? new Error("Offline data storage transaction failed"))
-    })
-  } finally {
-    db.close()
-  }
+    } catch (err) {
+      activeDbPromise = null
+      reject(err)
+    }
+  })
 }
 
 export async function getApiCacheScope(token?: string | null) {

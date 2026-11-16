@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { Activity, Baby, CalendarClock, CalendarDays, ClipboardList, FileText, HeartPulse, Scale, ShieldCheck, Thermometer, UserRound, X, type LucideIcon } from "lucide-react"
+import { Activity, Baby, Ban, CalendarClock, CalendarDays, ClipboardList, FileText, HeartPulse, Pencil, Scale, ShieldCheck, Thermometer, Trash2, UserRound, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { DrawerHeading } from "@/components/ui/drawer-heading"
 import type { MaternalAppointment, MaternalPregnancy, MaternalSupplement } from "../api"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 function DetailRow({ label, icon: Icon, children, className }: { label: string; icon: LucideIcon; children: ReactNode; className?: string }) {
   return <div className={`grid min-w-0 grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-start gap-3 py-2 text-xs ${className ?? ""}`}>
@@ -57,11 +58,50 @@ function PrescriptionTable({ supplements }: { supplements: MaternalSupplement[] 
   </div></>
 }
 
-export function AppointmentDetailsDialog({ open, onOpenChange, patientName, appointment, pregnancy, consultation, supplements }: { open: boolean; onOpenChange: (open: boolean) => void; patientName: string; appointment?: MaternalAppointment; pregnancy?: MaternalPregnancy; consultation?: NonNullable<MaternalPregnancy["prenatalVisits"]>[number]; supplements: MaternalSupplement[] }) {
+export function AppointmentDetailsDialog({
+  open,
+  onOpenChange,
+  patientName,
+  appointment,
+  pregnancy,
+  consultation,
+  supplements,
+  onEdit,
+  onDelete,
+  onCancel,
+  readOnly = false,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  patientName: string
+  appointment?: MaternalAppointment
+  pregnancy?: MaternalPregnancy
+  consultation?: NonNullable<MaternalPregnancy["prenatalVisits"]>[number]
+  supplements: MaternalSupplement[]
+  onEdit?: () => void
+  onDelete?: () => void
+  onCancel?: () => void
+  readOnly?: boolean
+}) {
   const appointmentDate = appointment?.appointment_date ? new Date(appointment.appointment_date) : null
   const appointmentDateLabel = appointmentDate && !Number.isNaN(appointmentDate.getTime()) ? `${appointmentDate.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}${appointment?.appointment_time ? ` at ${appointment.appointment_time}` : ""}` : "Date not recorded"
   const visitDateLabel = consultation?.visit_date ? new Date(consultation.visit_date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "Date not recorded"
-  const riskLabel = consultation?.risk_level_assessed ?? "Not assessed"
+  const evaluatedRisk = consultation ? evaluateLocalVisitRisk({
+    vitals: {
+      bp_systolic: consultation.bp_systolic,
+      bp_diastolic: consultation.bp_diastolic,
+      pulse_rate_bpm: consultation.pulse_rate_bpm,
+      temperature_celsius: consultation.temperature_celsius,
+      has_vaginal_bleeding: Boolean(consultation.has_vaginal_bleeding),
+      has_fever: Boolean(consultation.has_fever),
+      has_edema: Boolean(consultation.has_edema),
+      has_pallor: Boolean(consultation.has_pallor),
+      danger_signs_observed: consultation.danger_signs_observed,
+    },
+    pregnancy,
+    overrideRiskLevel: consultation.risk_level_assessed,
+  }) : null
+  const riskLabel = consultation?.risk_level_assessed ?? evaluatedRisk?.risk_level_label ?? "Not assessed"
   const dangerSigns = [
     consultation?.has_vaginal_bleeding && "Vaginal bleeding",
     consultation?.has_fever && "Maternal fever",
@@ -142,6 +182,46 @@ export function AppointmentDetailsDialog({ open, onOpenChange, patientName, appo
           </section>
         </TabsContent>
       </Tabs>
+
+      {!readOnly && (appointment || consultation) && (onEdit || onDelete || onCancel) && (
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-background/95 px-5 py-3 backdrop-blur-sm">
+          {onDelete && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onDelete}
+              className="h-8 gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+              {appointment ? "Delete Appointment" : "Delete Consultation"}
+            </Button>
+          )}
+          {onCancel && appointment && appointment.status?.toLowerCase() !== "cancelled" && appointment.status?.toLowerCase() !== "completed" && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onCancel}
+              className="h-8 gap-1.5 text-xs"
+            >
+              <Ban className="size-3.5" />
+              Cancel Appointment
+            </Button>
+          )}
+          {onEdit && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onEdit}
+              className="h-8 gap-1.5 text-xs"
+            >
+              <Pencil className="size-3.5" />
+              {appointment && consultation ? "Edit Appointment & Vitals" : appointment ? "Edit Appointment" : "Edit Consultation"}
+            </Button>
+          )}
+        </div>
+      )}
     </SheetContent>
   </Sheet>
 }

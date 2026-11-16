@@ -2,6 +2,7 @@ import { apiRequest } from "@/lib/api"
 import { db, type LocalMother, type LocalPregnancy, type LocalPrenatalVisit, type LocalLabScreening, type LocalDeliveryOutcome } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getPendingMotherUpdates, isNetworkFailure, enqueueMotherProfileUpdate } from "@/features/dashboard/offline-maternal-sync"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 export type MaternalPrenatalVisit = {
   visit_id?: string
@@ -243,6 +244,262 @@ function applyMotherProfileChanges<T extends MaternalRecord>(record: T, changes:
   return next
 }
 
+async function persistActiveMothersBatch(mothers: MaternalRecord[]) {
+  const mothersToPut: any[] = []
+  const pregsToPut: any[] = []
+  const visitsToPut: any[] = []
+  const deliveriesToPut: any[] = []
+  const labsToPut: any[] = []
+
+  const now = Date.now()
+  for (const mother of mothers) {
+    mothersToPut.push({
+      ...mother,
+      id: mother.mother_id,
+      first_name: mother.user?.first_name,
+      middle_name: mother.user?.middle_name,
+      last_name: mother.user?.last_name,
+      phone_number: mother.user?.phone_number,
+      email: mother.user?.email,
+      address: mother.user?.address,
+      sync_status: "synced",
+      updated_at: now,
+    })
+
+    if (Array.isArray(mother.pregnancies)) {
+      for (const p of mother.pregnancies) {
+        pregsToPut.push({
+          ...p,
+          id: p.pregnancy_id,
+          mother_id: mother.mother_id,
+          sync_status: "synced",
+          updated_at: now,
+        })
+
+        if (Array.isArray(p.prenatalVisits)) {
+          for (const v of p.prenatalVisits) {
+            if (v.visit_id) {
+              visitsToPut.push({
+                ...v,
+                id: v.visit_id,
+                visit_id: v.visit_id,
+                pregnancy_id: p.pregnancy_id,
+                mother_id: mother.mother_id,
+                sync_status: "synced",
+                updated_at: now,
+              })
+            }
+          }
+        }
+
+        if (Array.isArray(p.deliveryOutcomes)) {
+          for (const d of p.deliveryOutcomes) {
+            if (d.delivery_id) {
+              deliveriesToPut.push({
+                ...d,
+                id: d.delivery_id,
+                delivery_id: d.delivery_id,
+                pregnancy_id: p.pregnancy_id,
+                mother_id: mother.mother_id,
+                sync_status: "synced",
+                updated_at: now,
+              })
+            }
+          }
+        }
+
+        if (Array.isArray(p.labScreenings)) {
+          for (const l of p.labScreenings) {
+            if (l.screening_id) {
+              labsToPut.push({
+                ...l,
+                id: l.screening_id,
+                screening_id: l.screening_id,
+                pregnancy_id: p.pregnancy_id,
+                mother_id: mother.mother_id,
+                screening_type: l.screening_type || "Lab Screening",
+                date_of_screening: l.date_of_screening || new Date().toISOString(),
+                sync_status: "synced",
+                updated_at: now,
+              })
+            }
+          }
+        }
+      }
+    }
+  }
+
+  await db.transaction("rw", [db.mothers, db.pregnancies, db.prenatalVisits, db.deliveryOutcomes, db.labScreenings], async () => {
+    if (mothersToPut.length > 0) await db.mothers.bulkPut(mothersToPut)
+    if (pregsToPut.length > 0) await db.pregnancies.bulkPut(pregsToPut)
+    if (visitsToPut.length > 0) await db.prenatalVisits.bulkPut(visitsToPut)
+    if (deliveriesToPut.length > 0) await db.deliveryOutcomes.bulkPut(deliveriesToPut)
+    if (labsToPut.length > 0) await db.labScreenings.bulkPut(labsToPut)
+  }).catch(() => {})
+}
+
+async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
+  const now = Date.now()
+  const motherRecord = {
+    ...result,
+    id: result.mother_id,
+    first_name: result.user?.first_name,
+    middle_name: result.user?.middle_name,
+    last_name: result.user?.last_name,
+    phone_number: result.user?.phone_number,
+    email: result.user?.email,
+    address: result.user?.address,
+    profile_url: result.user?.profile_url || result.profile_url,
+    photo_url: result.user?.profile_url || result.photo_url || result.profile_url,
+    sync_status: "synced",
+    updated_at: now,
+  }
+
+  const pregsToPut: any[] = []
+  const visitsToPut: any[] = []
+  const deliveriesToPut: any[] = []
+  const labsToPut: any[] = []
+  const apptsToPut: any[] = []
+  const prescsToPut: any[] = []
+
+  if (Array.isArray(result.pregnancies)) {
+    for (const p of result.pregnancies) {
+      pregsToPut.push({
+        ...p,
+        id: p.pregnancy_id,
+        mother_id: result.mother_id,
+        sync_status: "synced",
+        updated_at: now,
+      })
+      if (Array.isArray(p.prenatalVisits)) {
+        for (const v of p.prenatalVisits) {
+          if (v.visit_id) {
+            visitsToPut.push({
+              ...v,
+              id: v.visit_id,
+              visit_id: v.visit_id,
+              pregnancy_id: p.pregnancy_id,
+              mother_id: result.mother_id,
+              sync_status: "synced",
+              updated_at: now,
+            })
+          }
+        }
+      }
+      if (Array.isArray(p.deliveryOutcomes)) {
+        for (const d of p.deliveryOutcomes) {
+          if (d.delivery_id) {
+            deliveriesToPut.push({
+              ...d,
+              id: d.delivery_id,
+              pregnancy_id: p.pregnancy_id,
+              mother_id: result.mother_id,
+              sync_status: "synced",
+              updated_at: now,
+            })
+          }
+        }
+      }
+      if (Array.isArray(p.labScreenings)) {
+        for (const l of p.labScreenings) {
+          if (l.screening_id) {
+            labsToPut.push({
+              ...l,
+              id: l.screening_id,
+              screening_type: l.screening_type || "Lab screening",
+              date_of_screening: l.date_of_screening || new Date().toISOString(),
+              pregnancy_id: p.pregnancy_id,
+              mother_id: result.mother_id,
+              sync_status: "synced",
+              updated_at: now,
+            })
+          }
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(result.appointments)) {
+    for (const a of result.appointments) {
+      if (a.appointment_id) {
+        apptsToPut.push({
+          ...a,
+          id: a.appointment_id,
+          mother_id: result.mother_id,
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  if (Array.isArray(result.labRecords)) {
+    for (const l of result.labRecords) {
+      if (l.screening_id) {
+        labsToPut.push({
+          ...l,
+          id: l.screening_id,
+          screening_type: l.screening_type || "Lab screening",
+          date_of_screening: l.date_of_screening || new Date().toISOString(),
+          mother_id: result.mother_id,
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  if (Array.isArray(result.deliveries)) {
+    for (const d of result.deliveries) {
+      if (d.delivery_id) {
+        deliveriesToPut.push({
+          ...d,
+          id: d.delivery_id,
+          mother_id: result.mother_id,
+          pregnancy_id: (d as any).pregnancy_id || "",
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  if (Array.isArray(result.supplements)) {
+    for (const pr of result.supplements) {
+      const supId = pr.supplement_id || (pr as any).prescription_id
+      if (supId) {
+        prescsToPut.push({
+          id: supId,
+          prescription_id: supId,
+          supplement_id: supId,
+          mother_id: result.mother_id,
+          pregnancy_id: pr.pregnancy_id,
+          visit_id: pr.visit_id,
+          supplement_type: pr.supplement_type,
+          tablets_given_count: pr.tablets_given_count,
+          date_given: pr.date_given,
+          medication_name: pr.supplement_type || "Supplement",
+          dosage: `${pr.tablets_given_count ?? 1} tablets`,
+          frequency: "Daily",
+          prescribed_date: pr.date_given || new Date().toISOString(),
+          sync_status: "synced",
+          updated_at: now,
+        })
+      }
+    }
+  }
+
+  await db.transaction("rw", [db.mothers, db.pregnancies, db.prenatalVisits, db.deliveryOutcomes, db.labScreenings, db.appointments, db.prescriptions], async () => {
+    await db.mothers.put(motherRecord)
+    if (pregsToPut.length > 0) await db.pregnancies.bulkPut(pregsToPut)
+    if (visitsToPut.length > 0) await db.prenatalVisits.bulkPut(visitsToPut)
+    if (deliveriesToPut.length > 0) await db.deliveryOutcomes.bulkPut(deliveriesToPut)
+    if (labsToPut.length > 0) await db.labScreenings.bulkPut(labsToPut)
+    if (apptsToPut.length > 0) await db.appointments.bulkPut(apptsToPut)
+    if (prescsToPut.length > 0) await db.prescriptions.bulkPut(prescsToPut)
+  }).catch(() => {})
+}
+
 export async function getMaternalRecords(token: string): Promise<MaternalListResponse> {
   const pendingMothers = await db.mothers.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
 
@@ -278,82 +535,7 @@ export async function getMaternalRecords(token: string): Promise<MaternalListRes
   try {
     const response = await apiRequest<MaternalListResponse>("/mother/active", { token })
     if (Array.isArray(response.result)) {
-      for (const mother of response.result) {
-        await db.mothers.put({
-          ...mother,
-          id: mother.mother_id,
-          first_name: mother.user?.first_name,
-          middle_name: mother.user?.middle_name,
-          last_name: mother.user?.last_name,
-          phone_number: mother.user?.phone_number,
-          email: mother.user?.email,
-          address: mother.user?.address,
-          sync_status: "synced",
-          updated_at: Date.now(),
-        }).catch(() => {})
-
-        if (Array.isArray(mother.pregnancies)) {
-          for (const p of mother.pregnancies) {
-            await db.pregnancies.put({
-              ...p,
-              id: p.pregnancy_id,
-              mother_id: mother.mother_id,
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-
-            if (Array.isArray(p.prenatalVisits)) {
-              for (const v of p.prenatalVisits) {
-                if (v.visit_id) {
-                  await db.prenatalVisits.put({
-                    ...v,
-                    id: v.visit_id,
-                    visit_id: v.visit_id,
-                    pregnancy_id: p.pregnancy_id,
-                    mother_id: mother.mother_id,
-                    sync_status: "synced",
-                    updated_at: Date.now(),
-                  }).catch(() => {})
-                }
-              }
-            }
-
-            if (Array.isArray(p.deliveryOutcomes)) {
-              for (const d of p.deliveryOutcomes) {
-                if (d.delivery_id) {
-                  await db.deliveryOutcomes.put({
-                    ...d,
-                    id: d.delivery_id,
-                    delivery_id: d.delivery_id,
-                    pregnancy_id: p.pregnancy_id,
-                    mother_id: mother.mother_id,
-                    sync_status: "synced",
-                    updated_at: Date.now(),
-                  }).catch(() => {})
-                }
-              }
-            }
-
-            if (Array.isArray(p.labScreenings)) {
-              for (const l of p.labScreenings) {
-                if (l.screening_id) {
-                  await db.labScreenings.put({
-                    ...l,
-                    id: l.screening_id,
-                    screening_id: l.screening_id,
-                    pregnancy_id: p.pregnancy_id,
-                    mother_id: mother.mother_id,
-                    screening_type: l.screening_type || "Lab Screening",
-                    date_of_screening: l.date_of_screening || new Date().toISOString(),
-                    sync_status: "synced",
-                    updated_at: Date.now(),
-                  }).catch(() => {})
-                }
-              }
-            }
-          }
-        }
-      }
+      await persistActiveMothersBatch(response.result)
     }
 
     const pendingUpdates = await getPendingMotherUpdates().catch(() => [])
@@ -532,142 +714,7 @@ export async function getMaternalProfile(token: string, motherId: string): Promi
     const response = await apiRequest<{ result: MaternalCompositeRecord }>(`/mother/composite/${encodeURIComponent(motherId)}`, { token })
     const result = response.result
     if (result) {
-      await db.mothers.put({
-        ...result,
-        id: result.mother_id,
-        first_name: result.user?.first_name,
-        middle_name: result.user?.middle_name,
-        last_name: result.user?.last_name,
-        phone_number: result.user?.phone_number,
-        email: result.user?.email,
-        address: result.user?.address,
-        profile_url: result.user?.profile_url || result.profile_url,
-        photo_url: result.user?.profile_url || result.photo_url || result.profile_url,
-        sync_status: "synced",
-        updated_at: Date.now(),
-      }).catch(() => {})
-      if (Array.isArray(result.pregnancies)) {
-        for (const p of result.pregnancies) {
-          await db.pregnancies.put({
-            ...p,
-            id: p.pregnancy_id,
-            mother_id: result.mother_id,
-            sync_status: "synced",
-            updated_at: Date.now(),
-          }).catch(() => {})
-          if (Array.isArray(p.prenatalVisits)) {
-            for (const v of p.prenatalVisits) {
-              if (v.visit_id) {
-                await db.prenatalVisits.put({
-                  ...v,
-                  id: v.visit_id,
-                  visit_id: v.visit_id,
-                  pregnancy_id: p.pregnancy_id,
-                  mother_id: result.mother_id,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                }).catch(() => {})
-              }
-            }
-          }
-          if (Array.isArray(p.deliveryOutcomes)) {
-            for (const d of p.deliveryOutcomes) {
-              if (d.delivery_id) {
-                await db.deliveryOutcomes.put({
-                  ...d,
-                  id: d.delivery_id,
-                  pregnancy_id: p.pregnancy_id,
-                  mother_id: result.mother_id,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                }).catch(() => {})
-              }
-            }
-          }
-          if (Array.isArray(p.labScreenings)) {
-            for (const l of p.labScreenings) {
-              if (l.screening_id) {
-                await db.labScreenings.put({
-                  ...l,
-                  id: l.screening_id,
-                  screening_type: l.screening_type || "Lab screening",
-                  date_of_screening: l.date_of_screening || new Date().toISOString(),
-                  pregnancy_id: p.pregnancy_id,
-                  mother_id: result.mother_id,
-                  sync_status: "synced",
-                  updated_at: Date.now(),
-                }).catch(() => {})
-              }
-            }
-          }
-        }
-      }
-      if (Array.isArray(result.appointments)) {
-        for (const a of result.appointments) {
-          if (a.appointment_id) {
-            await db.appointments.put({
-              ...a,
-              id: a.appointment_id,
-              mother_id: result.mother_id,
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
-      if (Array.isArray(result.labRecords)) {
-        for (const l of result.labRecords) {
-          if (l.screening_id) {
-            await db.labScreenings.put({
-              ...l,
-              id: l.screening_id,
-              screening_type: l.screening_type || "Lab screening",
-              date_of_screening: l.date_of_screening || new Date().toISOString(),
-              mother_id: result.mother_id,
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
-      if (Array.isArray(result.deliveries)) {
-        for (const d of result.deliveries) {
-          if (d.delivery_id) {
-            await db.deliveryOutcomes.put({
-              ...d,
-              id: d.delivery_id,
-              mother_id: result.mother_id,
-              pregnancy_id: (d as any).pregnancy_id || "",
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
-      if (Array.isArray(result.supplements)) {
-        for (const pr of result.supplements) {
-          const supId = pr.supplement_id || (pr as any).prescription_id
-          if (supId) {
-            await db.prescriptions.put({
-              id: supId,
-              prescription_id: supId,
-              supplement_id: supId,
-              mother_id: result.mother_id,
-              pregnancy_id: pr.pregnancy_id,
-              visit_id: pr.visit_id,
-              supplement_type: pr.supplement_type,
-              tablets_given_count: pr.tablets_given_count,
-              date_given: pr.date_given,
-              medication_name: pr.supplement_type || "Supplement",
-              dosage: `${pr.tablets_given_count ?? 1} tablets`,
-              frequency: "Daily",
-              prescribed_date: pr.date_given || new Date().toISOString(),
-              sync_status: "synced",
-              updated_at: Date.now(),
-            }).catch(() => {})
-          }
-        }
-      }
+      await persistCompositeProfileBatch(result)
     }
     return { result }
   } catch (error) {
@@ -1256,11 +1303,27 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
 
   if (isOffline) {
     const tempVisitId = `temp-v-${crypto.randomUUID()}`
+    const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
+    const mother = preg?.mother_id ? await db.mothers.get(preg.mother_id).catch(() => null) : null
+    const baselineVisit = await db.prenatalVisits
+      .where("pregnancy_id")
+      .equals(input.pregnancy_id)
+      .filter((v) => v.trimester === 1)
+      .first()
+      .catch(() => null)
+
+    const cdssResult = evaluateLocalVisitRisk({
+      vitals: input,
+      mother,
+      pregnancy: preg,
+      baselineVisit,
+    })
+
     const localVisit: LocalPrenatalVisit = {
       id: tempVisitId,
       visit_id: tempVisitId,
       pregnancy_id: input.pregnancy_id,
-      mother_id: "",
+      mother_id: preg?.mother_id || "",
       health_worker_id: input.health_worker_id,
       trimester: input.trimester,
       visit_number: input.visit_number,
@@ -1279,21 +1342,41 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
       has_pallor: input.has_pallor,
       has_edema: input.has_edema,
       has_fever: input.has_fever,
+      risk_level_assessed: cdssResult.risk_level_label,
+      tews_score: cdssResult.tews_score,
+      triggers: cdssResult.triggers,
+      protocols: cdssResult.protocols,
       visit_date: new Date().toISOString(),
       sync_status: "pending_create",
       updated_at: Date.now(),
     }
-    const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
-    if (preg) localVisit.mother_id = preg.mother_id
 
     await db.prenatalVisits.put(localVisit)
+    if (preg) {
+      await db.pregnancies.update(preg.id, {
+        risk_level: cdssResult.risk_level_label,
+        updated_at: Date.now(),
+      }).catch(() => {})
+      if (preg.mother_id) {
+        await db.mothers.update(preg.mother_id, {
+          risk_level: cdssResult.risk_level_label,
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+    }
+
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "prenatal_visit",
       action: "CREATE",
       endpoint: "/prenatal-visit/register",
       method: "POST",
-      payload: { ...input, mother_id: (input as any).mother_id || preg?.mother_id },
+      payload: {
+        ...input,
+        mother_id: (input as any).mother_id || preg?.mother_id,
+        risk_level_assessed: cdssResult.risk_level_label,
+        tews_score: cdssResult.tews_score,
+      },
       temp_id: tempVisitId,
     })
     return {
@@ -1325,11 +1408,27 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
   } catch (error: any) {
     if (error instanceof TypeError || !navigator.onLine) {
       const tempVisitId = `temp-v-${crypto.randomUUID()}`
+      const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
+      const mother = preg?.mother_id ? await db.mothers.get(preg.mother_id).catch(() => null) : null
+      const baselineVisit = await db.prenatalVisits
+        .where("pregnancy_id")
+        .equals(input.pregnancy_id)
+        .filter((v) => v.trimester === 1)
+        .first()
+        .catch(() => null)
+
+      const cdssResult = evaluateLocalVisitRisk({
+        vitals: input,
+        mother,
+        pregnancy: preg,
+        baselineVisit,
+      })
+
       const localVisit: LocalPrenatalVisit = {
         id: tempVisitId,
         visit_id: tempVisitId,
         pregnancy_id: input.pregnancy_id,
-        mother_id: "",
+        mother_id: preg?.mother_id || "",
         health_worker_id: input.health_worker_id,
         trimester: input.trimester,
         visit_number: input.visit_number,
@@ -1348,20 +1447,41 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
         has_pallor: input.has_pallor,
         has_edema: input.has_edema,
         has_fever: input.has_fever,
+        risk_level_assessed: cdssResult.risk_level_label,
+        tews_score: cdssResult.tews_score,
+        triggers: cdssResult.triggers,
+        protocols: cdssResult.protocols,
         visit_date: new Date().toISOString(),
         sync_status: "pending_create",
         updated_at: Date.now(),
       }
-      const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
-      if (preg) localVisit.mother_id = preg.mother_id
+
       await db.prenatalVisits.put(localVisit)
+      if (preg) {
+        await db.pregnancies.update(preg.id, {
+          risk_level: cdssResult.risk_level_label,
+          updated_at: Date.now(),
+        }).catch(() => {})
+        if (preg.mother_id) {
+          await db.mothers.update(preg.mother_id, {
+            risk_level: cdssResult.risk_level_label,
+            updated_at: Date.now(),
+          }).catch(() => {})
+        }
+      }
+
       await silangSyncEngine.enqueue({
         client_mutation_id: crypto.randomUUID(),
         entity_type: "prenatal_visit",
         action: "CREATE",
         endpoint: "/prenatal-visit/register",
         method: "POST",
-        payload: { ...input, mother_id: (input as any).mother_id || preg?.mother_id },
+        payload: {
+          ...input,
+          mother_id: (input as any).mother_id || preg?.mother_id,
+          risk_level_assessed: cdssResult.risk_level_label,
+          tews_score: cdssResult.tews_score,
+        },
         temp_id: tempVisitId,
       })
       return {
@@ -1369,6 +1489,157 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
         prenatalVisit: localVisit as any,
         offline: true,
       }
+    }
+    throw error
+  }
+}
+
+export type UpdatePrenatalVisitInput = {
+  pregnancy_id?: string
+  visit_number?: number
+  age_of_gestation_weeks?: number
+  trimester?: number
+  bp_systolic?: number
+  bp_diastolic?: number
+  weight_kg?: number
+  pulse_rate_bpm?: number
+  temperature_celsius?: number
+  fundic_height_cm?: number | null
+  fetal_heart_tone_bpm?: number | null
+  fetal_presentation?: string | null
+  chief_complaint?: string | null
+  danger_signs_observed?: string | null
+  has_vaginal_bleeding?: boolean
+  has_fever?: boolean
+  has_edema?: boolean
+  has_pallor?: boolean
+  visit_date?: string
+  version?: number
+}
+
+export const updatePrenatalVisit = async (
+  token: string,
+  visitId: string,
+  input: UpdatePrenatalVisitInput
+) => {
+  const existingVisit = await db.prenatalVisits.get(visitId).catch(() => null)
+  let cdssUpdates: { risk_level_assessed?: string; tews_score?: number } = {}
+  if (existingVisit) {
+    const pregId = input.pregnancy_id || existingVisit.pregnancy_id
+    const preg = pregId ? await db.pregnancies.get(pregId).catch(() => null) : null
+    const mother = preg?.mother_id ? await db.mothers.get(preg.mother_id).catch(() => null) : null
+    const baselineVisit = pregId
+      ? await db.prenatalVisits
+          .where("pregnancy_id")
+          .equals(pregId)
+          .filter((v) => v.trimester === 1 && v.id !== visitId)
+          .first()
+          .catch(() => null)
+      : null
+
+    const cdssResult = evaluateLocalVisitRisk({
+      vitals: { ...existingVisit, ...input },
+      mother,
+      pregnancy: preg,
+      baselineVisit,
+    })
+    cdssUpdates = {
+      risk_level_assessed: cdssResult.risk_level_label,
+      tews_score: cdssResult.tews_score,
+    }
+  }
+
+  await db.prenatalVisits.update(visitId, {
+    ...input,
+    ...cdssUpdates,
+    sync_status: "pending_update",
+    updated_at: Date.now(),
+  }).catch(() => {})
+
+  const mapping = visitId.startsWith("temp-") ? await db.idMappings.get(visitId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || visitId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prenatal_visit",
+      action: "UPDATE",
+      endpoint: `/prenatal-visit/update/${encodeURIComponent(targetId)}`,
+      method: "PUT",
+      payload: { ...input, ...cdssUpdates },
+      temp_id: targetId,
+    })
+    return { message: "Prenatal visit updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; result?: MaternalPrenatalVisit }>(
+      `/prenatal-visit/update/${encodeURIComponent(targetId)}`,
+      {
+        method: "PUT",
+        token,
+        body: JSON.stringify(input),
+      }
+    )
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prenatal_visit",
+        action: "UPDATE",
+        endpoint: `/prenatal-visit/update/${encodeURIComponent(targetId)}`,
+        method: "PUT",
+        payload: { ...input, ...cdssUpdates },
+        temp_id: targetId,
+      })
+      return { message: "Prenatal visit updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deletePrenatalVisit = async (token: string, visitId: string) => {
+  await db.prenatalVisits.delete(visitId).catch(() => {})
+  if (visitId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(visitId)
+    if (cancelled) {
+      return { message: "Prenatal visit deleted offline", offline: true }
+    }
+  }
+  const mapping = visitId.startsWith("temp-") ? await db.idMappings.get(visitId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || visitId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prenatal_visit",
+      action: "DELETE",
+      endpoint: `/prenatal-visit/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Prenatal visit deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(
+      `/prenatal-visit/delete/${encodeURIComponent(targetId)}`,
+      {
+        method: "DELETE",
+        token,
+      }
+    )
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prenatal_visit",
+        action: "DELETE",
+        endpoint: `/prenatal-visit/delete/${encodeURIComponent(targetId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: targetId,
+      })
+      return { message: "Prenatal visit deleted offline", offline: true }
     }
     throw error
   }
@@ -1540,22 +1811,447 @@ export const registerMaternalLabScreening = async (token: string, input: Registe
   }
 }
 
-export const deleteMaternalLabScreening = (token: string, screeningId: string) =>
-  apiRequest<{ message?: string }>(`/lab-screening/delete/${encodeURIComponent(screeningId)}`, { method: "DELETE", token })
+export const deleteMaternalLabScreening = async (token: string, screeningId: string) => {
+  await db.labScreenings.delete(screeningId).catch(() => {})
+  if (screeningId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(screeningId)
+    if (cancelled) {
+      return { message: "Lab screening deleted offline", offline: true }
+    }
+  }
+  const mapping = screeningId.startsWith("temp-") ? await db.idMappings.get(screeningId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || screeningId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "lab_screening",
+      action: "DELETE",
+      endpoint: `/lab-screening/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Lab screening deleted offline", offline: true }
+  }
+  return apiRequest<{ message?: string }>(`/lab-screening/delete/${encodeURIComponent(targetId)}`, { method: "DELETE", token })
+}
 
 export const cancelMaternalAppointment = async (token: string, appointmentId: string) => {
   await db.appointments.update(appointmentId, { status: "Cancelled", sync_status: "pending_update" }).catch(() => {})
+  if (appointmentId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(appointmentId)
+    if (cancelled) {
+      await db.appointments.delete(appointmentId).catch(() => {})
+      return { message: "Appointment cancelled offline", offline: true }
+    }
+  }
+  const mapping = appointmentId.startsWith("temp-") ? await db.idMappings.get(appointmentId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || appointmentId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "appointment",
       action: "UPDATE",
-      endpoint: `/appointment/cancel/${encodeURIComponent(appointmentId)}`,
+      endpoint: `/appointment/cancel/${encodeURIComponent(targetId)}`,
       method: "PUT",
       payload: {},
-      temp_id: appointmentId,
+      temp_id: targetId,
     })
-    return { message: "Appointment cancelled offline" }
+    return { message: "Appointment cancelled offline", offline: true }
   }
-  return apiRequest<{ message?: string }>(`/appointment/cancel/${encodeURIComponent(appointmentId)}`, { method: "PUT", token, body: JSON.stringify({}) })
+  return apiRequest<{ message?: string }>(`/appointment/cancel/${encodeURIComponent(targetId)}`, { method: "PUT", token, body: JSON.stringify({}) })
+}
+
+export type UpdateMaternalAppointmentInput = {
+  appointment_date?: string
+  appointment_time?: string
+  appointment_type?: string
+  status?: string
+  reason?: string | null
+  version?: number
+}
+
+export const updateMaternalAppointment = async (
+  token: string,
+  appointmentId: string,
+  input: UpdateMaternalAppointmentInput
+) => {
+  await db.appointments
+    .update(appointmentId, {
+      ...(input.appointment_date ? { appointment_date: input.appointment_date } : {}),
+      ...(input.appointment_time ? { appointment_time: input.appointment_time } : {}),
+      ...(input.appointment_type ? { appointment_type: input.appointment_type } : {}),
+      ...(input.status ? { status: input.status } : {}),
+      ...(input.reason !== undefined ? { reason: input.reason } : {}),
+      sync_status: "pending_update",
+    })
+    .catch(() => {})
+
+  const mapping = appointmentId.startsWith("temp-") ? await db.idMappings.get(appointmentId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || appointmentId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "appointment",
+      action: "UPDATE",
+      endpoint: `/appointment/update/${encodeURIComponent(targetId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: targetId,
+    })
+    return { message: "Appointment updated offline", offline: true }
+  }
+  return apiRequest<{ message?: string; data?: MaternalAppointment }>(
+    `/appointment/update/${encodeURIComponent(targetId)}`,
+    {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    }
+  )
+}
+
+export const deleteMaternalAppointment = async (token: string, appointmentId: string) => {
+  await db.appointments.delete(appointmentId).catch(() => {})
+  if (appointmentId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(appointmentId)
+    if (cancelled) {
+      return { message: "Appointment deleted offline", offline: true }
+    }
+  }
+  const mapping = appointmentId.startsWith("temp-") ? await db.idMappings.get(appointmentId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || appointmentId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "appointment",
+      action: "DELETE",
+      endpoint: `/appointment/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Appointment deleted offline", offline: true }
+  }
+  return apiRequest<{ message?: string }>(
+    `/appointment/delete/${encodeURIComponent(targetId)}`,
+    {
+      method: "DELETE",
+      token,
+    }
+  )
+}
+
+export type UpdateDeliveryOutcomeInput = {
+  pregnancy_id?: string
+  delivery_date?: string
+  place_of_delivery?: string
+  mode_of_delivery?: string
+  birth_attendant?: string
+  maternal_outcome?: string
+  immediate_breastfeeding?: boolean
+  duration_of_labor_hours?: number | null
+  blood_loss_ml?: number | null
+  delivery_complications?: string
+  version?: number
+}
+
+export const updateDeliveryOutcome = async (token: string, deliveryId: string, input: UpdateDeliveryOutcomeInput) => {
+  await db.deliveryOutcomes.update(deliveryId, { ...input, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
+  const mapping = deliveryId.startsWith("temp-") ? await db.idMappings.get(deliveryId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || deliveryId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "delivery_outcome",
+      action: "UPDATE",
+      endpoint: `/delivery-outcome/update/${encodeURIComponent(targetId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: targetId,
+    })
+    return { message: "Delivery outcome updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; data?: MaternalDelivery }>(`/delivery-outcome/update/${encodeURIComponent(targetId)}`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "delivery_outcome",
+        action: "UPDATE",
+        endpoint: `/delivery-outcome/update/${encodeURIComponent(targetId)}`,
+        method: "PUT",
+        payload: input,
+        temp_id: targetId,
+      })
+      return { message: "Delivery outcome updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deleteDeliveryOutcome = async (token: string, deliveryId: string) => {
+  await db.deliveryOutcomes.delete(deliveryId).catch(() => {})
+  if (deliveryId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(deliveryId)
+    if (cancelled) {
+      return { message: "Delivery outcome deleted offline", offline: true }
+    }
+  }
+  const mapping = deliveryId.startsWith("temp-") ? await db.idMappings.get(deliveryId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || deliveryId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "delivery_outcome",
+      action: "DELETE",
+      endpoint: `/delivery-outcome/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Delivery outcome deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(`/delivery-outcome/delete/${encodeURIComponent(targetId)}`, {
+      method: "DELETE",
+      token,
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "delivery_outcome",
+        action: "DELETE",
+        endpoint: `/delivery-outcome/delete/${encodeURIComponent(targetId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: targetId,
+      })
+      return { message: "Delivery outcome deleted offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export type UpdatePregnancyInput = {
+  gravida?: number
+  parity?: number
+  lmp_date?: string
+  edd_date?: string
+  pregnancy_status?: string
+  age_group?: string
+  height_cm?: number | null
+  bmi_1st_trimester?: number | null
+  previous_delivery_history?: string
+  co_morbidities?: string
+  prev_caesarean?: boolean
+  consecutive_miscarriages?: boolean
+  stillbirth_history?: boolean
+  pph_history?: boolean
+  has_tb?: boolean
+  has_heart_disease?: boolean
+  has_diabetes?: boolean
+  has_asthma?: boolean
+  has_goiter?: boolean
+  deworming_given?: boolean
+  deworming_date?: string | null
+  completed_8anc?: boolean
+  version?: number
+}
+
+export const updatePregnancy = async (token: string, pregnancyId: string, input: UpdatePregnancyInput) => {
+  await db.pregnancies.update(pregnancyId, { ...input, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
+  const mapping = pregnancyId.startsWith("temp-") ? await db.idMappings.get(pregnancyId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || pregnancyId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "pregnancy",
+      action: "UPDATE",
+      endpoint: `/pregnancy/update/${encodeURIComponent(targetId)}`,
+      method: "PUT",
+      payload: input,
+      temp_id: targetId,
+    })
+    return { message: "Pregnancy updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; pregnancy?: MaternalPregnancy }>(`/pregnancy/update/${encodeURIComponent(targetId)}`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify(input),
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "pregnancy",
+        action: "UPDATE",
+        endpoint: `/pregnancy/update/${encodeURIComponent(targetId)}`,
+        method: "PUT",
+        payload: input,
+        temp_id: targetId,
+      })
+      return { message: "Pregnancy updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deletePregnancy = async (token: string, pregnancyId: string) => {
+  await db.pregnancies.delete(pregnancyId).catch(() => {})
+  if (pregnancyId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(pregnancyId)
+    if (cancelled) {
+      return { message: "Pregnancy deleted offline", offline: true }
+    }
+  }
+  const mapping = pregnancyId.startsWith("temp-") ? await db.idMappings.get(pregnancyId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || pregnancyId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "pregnancy",
+      action: "DELETE",
+      endpoint: `/pregnancy/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Pregnancy deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(`/pregnancy/delete/${encodeURIComponent(targetId)}`, {
+      method: "DELETE",
+      token,
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "pregnancy",
+        action: "DELETE",
+        endpoint: `/pregnancy/delete/${encodeURIComponent(targetId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: targetId,
+      })
+      return { message: "Pregnancy deleted offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export type UpdateMaternalSupplementInput = {
+  supplement_id: string
+  pregnancy_id?: string
+  supplement_type?: string
+  tablets_given_count?: number
+  date_given?: string
+  version?: number
+}
+
+export const updateMaternalSupplement = async (token: string, input: UpdateMaternalSupplementInput) => {
+  await db.prescriptions.update(input.supplement_id, {
+    medication_name: input.supplement_type,
+    tablets_given_count: input.tablets_given_count,
+    prescribed_date: input.date_given,
+    sync_status: "pending_update",
+    updated_at: Date.now(),
+  }).catch(() => {})
+  const mapping = input.supplement_id.startsWith("temp-") ? await db.idMappings.get(input.supplement_id).catch(() => null) : null
+  const targetId = mapping?.canonical_id || input.supplement_id
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prescription",
+      action: "UPDATE",
+      endpoint: "/supplement/update",
+      method: "PUT",
+      payload: { ...input, supplement_id: targetId },
+      temp_id: targetId,
+    })
+    return { message: "Supplement record updated offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string; supplement_record?: MaternalSupplement }>("/supplement/update", {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ ...input, supplement_id: targetId }),
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prescription",
+        action: "UPDATE",
+        endpoint: "/supplement/update",
+        method: "PUT",
+        payload: { ...input, supplement_id: targetId },
+        temp_id: targetId,
+      })
+      return { message: "Supplement record updated offline", offline: true }
+    }
+    throw error
+  }
+}
+
+export const deleteMaternalSupplement = async (token: string, supplementId: string) => {
+  await db.prescriptions.delete(supplementId).catch(() => {})
+  if (supplementId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(supplementId)
+    if (cancelled) {
+      return { message: "Supplement record deleted offline", offline: true }
+    }
+  }
+  const mapping = supplementId.startsWith("temp-") ? await db.idMappings.get(supplementId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || supplementId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "prescription",
+      action: "DELETE",
+      endpoint: `/supplement/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Supplement record deleted offline", offline: true }
+  }
+  try {
+    return await apiRequest<{ message?: string }>(`/supplement/delete/${encodeURIComponent(targetId)}`, {
+      method: "DELETE",
+      token,
+    })
+  } catch (error) {
+    if (isNetworkFailure(error)) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "prescription",
+        action: "DELETE",
+        endpoint: `/supplement/delete/${encodeURIComponent(targetId)}`,
+        method: "DELETE",
+        payload: {},
+        temp_id: targetId,
+      })
+      return { message: "Supplement record deleted offline", offline: true }
+    }
+    throw error
+  }
 }

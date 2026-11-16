@@ -8,6 +8,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { DrawerHeading } from "@/components/ui/drawer-heading"
 import { toast } from "sonner"
 import type { MaternalPregnancy, MaternalPrenatalVisit } from "../api"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 function formatDate(value?: string | null) {
   if (!value) return "Date not recorded"
@@ -51,6 +52,25 @@ export function VitalDetailsDrawer({
 }) {
   if (!visit) return null
 
+  const evaluatedCdss = evaluateLocalVisitRisk({
+    vitals: {
+      bp_systolic: visit.bp_systolic,
+      bp_diastolic: visit.bp_diastolic,
+      pulse_rate_bpm: visit.pulse_rate_bpm,
+      temperature_celsius: visit.temperature_celsius,
+      has_vaginal_bleeding: Boolean(visit.has_vaginal_bleeding),
+      has_fever: Boolean(visit.has_fever),
+      has_edema: Boolean(visit.has_edema),
+      has_pallor: Boolean(visit.has_pallor),
+      danger_signs_observed: visit.danger_signs_observed,
+    },
+    pregnancy,
+    overrideRiskLevel: visit.risk_level_assessed,
+  })
+
+  const effectiveRiskLevel = visit.risk_level_assessed || evaluatedCdss.risk_level_label
+  const effectiveTews = visit.tews_score ?? evaluatedCdss.tews_score
+
   const bpStatus = classifyBloodPressure(visit.bp_systolic, visit.bp_diastolic)
   const dangerFlags = [
     visit.has_vaginal_bleeding && "Vaginal Bleeding",
@@ -73,7 +93,7 @@ export function VitalDetailsDrawer({
       `Weight: ${visit.weight_kg ?? "—"} kg`,
       `Fundic Height: ${visit.fundic_height_cm ?? "—"} cm`,
       `Fetal Heart Tone: ${visit.fetal_heart_tone_bpm ?? "—"} bpm (${visit.fetal_presentation || "Not specified"})`,
-      `Risk Level: ${visit.risk_level_assessed || "Low Risk"}`,
+      `Risk Level: ${effectiveRiskLevel}`,
       `Danger Signs: ${hasDangerSigns ? dangerFlags.concat(visit.danger_signs_observed ? [visit.danger_signs_observed] : []).join(", ") : "None"}`,
       `Chief Complaint / Notes: ${visit.chief_complaint || "None"}`,
     ]
@@ -102,7 +122,7 @@ export function VitalDetailsDrawer({
           description={`Visit #${visit.visit_number ?? "—"} · ${formatDate(visit.visit_date)} · ${visit.age_of_gestation_weeks ? `${visit.age_of_gestation_weeks}w AOG` : "Gestation not set"}`}
           trailing={
             <>
-              <StatusBadge status={visit.risk_level_assessed || "Low Risk"} />
+              <StatusBadge status={effectiveRiskLevel} />
               <TooltipProvider delayDuration={500}>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -237,8 +257,8 @@ export function VitalDetailsDrawer({
               <dl className="mt-4 grid grid-cols-1 gap-x-8 divide-y divide-border/70 sm:grid-cols-2 sm:divide-y-0">
                 <DetailRow label="Risk stratification" icon={ShieldAlert}>
                   <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={visit.risk_level_assessed || "Low Risk"} />
-                    {visit.tews_score != null && <span className="text-muted-foreground">TEWS Score {visit.tews_score}</span>}
+                    <StatusBadge status={effectiveRiskLevel} />
+                    <span className="text-muted-foreground">TEWS Score {effectiveTews}</span>
                   </div>
                 </DetailRow>
                 <DetailRow label="Trimester" icon={CalendarDays}>

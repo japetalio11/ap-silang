@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { Building2, Download, Edit2, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X } from "lucide-react"
+import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Trash2, Wifi, ShieldCheck, Bell, Database, X, AlertTriangle, PowerOff, ShieldAlert } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -9,6 +9,7 @@ import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
@@ -16,11 +17,14 @@ import { TableRowActions } from "@/components/ui/table-row-actions"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { db } from "@/lib/db/silangDatabase"
+import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import {
   fetchAllFacilities,
   createFacilityRecord,
   updateFacilityRecord,
   deleteFacilityRecord,
+  toggleFacilityStatus,
   fetchMunicipalOverview,
   type FacilityItem,
 } from "../api/superadmin-api"
@@ -36,6 +40,15 @@ function exportCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(link.href)
 }
 
+function normalizeFacilityType(rawType?: string, defaultType = "RHU"): string {
+  if (!rawType) return defaultType
+  const lower = rawType.toLowerCase()
+  if (lower.includes("bhs") || lower.includes("barangay") || lower.includes("station")) {
+    return "BHS"
+  }
+  return "RHU"
+}
+
 function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   const isRhu = kind === "rhu"
   const location = useLocation()
@@ -48,11 +61,14 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   const [tab, setTab] = useState("all")
   const [query, setQuery] = useState("")
   const [selected, setSelected] = useState<string[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [editing, setEditing] = useState<FacilityItem | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<FacilityItem | null>(null)
-  const [deleting, setDeleting] = useState(false)
+  const [statusTarget, setStatusTarget] = useState<FacilityItem | null>(null)
+  const [statusAction, setStatusAction] = useState<"deactivate" | "reactivate" | null>(null)
+  const [statusSubmitting, setStatusSubmitting] = useState(false)
 
   const [form, setForm] = useState({
     facility_name: "",
@@ -83,8 +99,13 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         setFacilityStaffCounts(counts)
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to load facilities"
-      toast.error("Error loading facilities", { description: message })
+      const local = await db.facilities.toArray().catch(() => [])
+      if (local.length > 0) {
+        setFacilities(local as FacilityItem[])
+      } else {
+        const message = error instanceof Error ? error.message : "Failed to load facilities"
+        toast.error("Error loading facilities", { description: message })
+      }
     } finally {
       setLoading(false)
     }
@@ -126,8 +147,17 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
     })
   }, [facilities, isRhu])
 
+  const counts = useMemo(() => {
+    const total = kindFiltered.length
+    const active = kindFiltered.filter((f) => f.is_active !== false).length
+    const deactivated = kindFiltered.filter((f) => f.is_active === false).length
+    return { total, active, deactivated }
+  }, [kindFiltered])
+
   const filtered = useMemo(() => {
     return kindFiltered.filter((facility) => {
+      if (tab === "active" && facility.is_active === false) return false
+      if (tab === "deactivated" && facility.is_active !== false) return false
       const term = query.trim().toLowerCase()
       const matchesSearch =
         !term ||
@@ -136,14 +166,23 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         )
       return matchesSearch
     })
-  }, [kindFiltered, query])
+  }, [kindFiltered, query, tab])
+
+  useEffect(() => {
+    setPage(1)
+  }, [query, tab])
+
+  const paginatedFacilities = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filtered.slice(start, start + pageSize)
+  }, [filtered, page, pageSize])
 
   const openCreate = (facility?: FacilityItem) => {
     if (facility) {
       setEditing(facility)
       setForm({
         facility_name: facility.facility_name,
-        type: facility.type,
+        type: normalizeFacilityType(facility.type, isRhu ? "RHU" : "BHS"),
         address: facility.address,
         contact_number: facility.contact_number,
         email: facility.email,
@@ -162,13 +201,98 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   }
 
   const saveFacility = async () => {
-    if (!form.facility_name.trim() || !form.address.trim()) {
-      toast.error("Validation error", { description: "Please enter the facility name and address." })
+    if (!form.facility_name.trim() || !form.address.trim() || !form.type.trim()) {
+      toast.error("Validation error", { description: "Please enter the facility name, type, and address." })
       return
     }
 
     if (!session?.token) {
       toast.error("Session expired", { description: "Please sign in again." })
+      return
+    }
+
+    const isOffline = typeof navigator !== "undefined" && !navigator.onLine
+
+    if (isOffline) {
+      if (editing) {
+        const updatedFacility: FacilityItem = {
+          ...editing,
+          facility_name: form.facility_name.trim(),
+          type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+          address: form.address.trim(),
+          contact_number: form.contact_number.trim(),
+          email: form.email.trim(),
+        }
+        await db.facilities.put({
+          ...updatedFacility,
+          id: updatedFacility.facility_id,
+          sync_status: editing.facility_id.startsWith("temp-") ? "pending_create" : "pending_update",
+          updated_at: Date.now(),
+        }).catch(() => {})
+        await silangSyncEngine.enqueue({
+          client_mutation_id: crypto.randomUUID(),
+          entity_type: "facility",
+          action: "UPDATE",
+          endpoint: "/facility/update",
+          method: "PUT",
+          payload: {
+            facility_id: editing.facility_id,
+            facility_name: form.facility_name.trim(),
+            type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+            address: form.address.trim(),
+            contact_number: form.contact_number.trim(),
+            email: form.email.trim(),
+          },
+          temp_id: editing.facility_id,
+        })
+        setFacilities((prev) =>
+          prev.map((f) => (f.facility_id === editing.facility_id ? updatedFacility : f))
+        )
+        toast.success(`${singular} updated offline`, {
+          description: "Changes saved to device memory and will sync when online.",
+        })
+        setDialogOpen(false)
+        return
+      }
+
+      const tempFacilityId = `temp-fac-${crypto.randomUUID()}`
+      const newFacility: FacilityItem = {
+        facility_id: tempFacilityId,
+        facility_name: form.facility_name.trim(),
+        type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+        address: form.address.trim(),
+        contact_number: form.contact_number.trim(),
+        email: form.email.trim(),
+        is_active: true,
+      }
+      await db.facilities.put({
+        ...newFacility,
+        id: tempFacilityId,
+        sync_status: "pending_create",
+        updated_at: Date.now(),
+      }).catch(() => {})
+
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "facility",
+        action: "CREATE",
+        endpoint: "/facility/register",
+        method: "POST",
+        payload: {
+          facility_name: form.facility_name.trim(),
+          type: form.type.trim() || (isRhu ? "RHU" : "BHS"),
+          address: form.address.trim(),
+          contact_number: form.contact_number.trim(),
+          email: form.email.trim(),
+        },
+        temp_id: tempFacilityId,
+      })
+
+      setFacilities((prev) => [newFacility, ...prev])
+      toast.success(`${singular} registered offline`, {
+        description: "Facility saved to device memory and will register with municipal server when back online.",
+      })
+      setDialogOpen(false)
       return
     }
 
@@ -204,29 +328,44 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
     }
   }
 
-  const handleDelete = async () => {
-    if (!deleteTarget || !session?.token) return
-    setDeleting(true)
+  const handleToggleStatus = async () => {
+    if (!statusTarget || !session?.token || !statusAction) return
+    setStatusSubmitting(true)
+    const newStatus = statusAction === "reactivate"
     try {
-      await deleteFacilityRecord(session.token, deleteTarget.facility_id)
-      toast.success(`${singular} removed`)
-      setDeleteTarget(null)
-      await loadData()
+      await toggleFacilityStatus(session.token, statusTarget.facility_id, newStatus)
+      setFacilities((prev) =>
+        prev.map((f) => (f.facility_id === statusTarget.facility_id ? { ...f, is_active: newStatus } : f))
+      )
+      toast.success(`${singular} ${newStatus ? "reactivated" : "deactivated"} successfully`, {
+        description: newStatus
+          ? "Staff accounts can now log in and manage services for this facility."
+          : "Staff access blocked and active mother enrollments unassigned.",
+      })
+      setStatusTarget(null)
+      setStatusAction(null)
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to delete facility"
-      toast.error("Cannot delete facility", { description: message })
+      const message = error instanceof Error ? error.message : "Failed to change facility status"
+      toast.error("Operation failed", { description: message })
     } finally {
-      setDeleting(false)
+      setStatusSubmitting(false)
     }
   }
 
   return (
     <section className="w-full space-y-3 px-4 py-4">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
             <TabsTrigger value="all">
-              All {isRhu ? "RHUs" : "BHSs"} ({kindFiltered.length})
+              All {isRhu ? "RHUs" : "BHSs"} ({counts.total})
+            </TabsTrigger>
+            <TabsTrigger value="active">
+              Active ({counts.active})
+            </TabsTrigger>
+            <TabsTrigger value="deactivated">
+              Deactivated ({counts.deactivated})
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -319,10 +458,21 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {filtered.map((facility) => (
+            {paginatedFacilities.map((facility) => (
               <TableRow
                 key={facility.facility_id}
                 data-state={selected.includes(facility.facility_id) ? "selected" : undefined}
+                className="cursor-pointer hover:bg-muted/50"
+                onClick={(e) => {
+                  const target = e.target as HTMLElement
+                  if (target.closest("button") || target.closest("input") || target.closest("[role='checkbox']")) return
+                  navigate(`/superadmin/facility/${facility.facility_id}`, {
+                    state: {
+                      returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                      returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                    },
+                  })
+                }}
               >
                 <TableCell className="px-3">
                   <Checkbox
@@ -336,7 +486,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                   />
                 </TableCell>
                 <TableCell>
-                  <div className="font-medium text-foreground">{facility.facility_name}</div>
+                  <div className="font-medium text-foreground hover:underline">{facility.facility_name}</div>
                   <div className="font-mono text-[11px] text-muted-foreground">{facility.facility_id.slice(0, 8)}...</div>
                 </TableCell>
                 <TableCell>
@@ -353,21 +503,53 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                   {facilityStaffCounts[facility.facility_id] ?? 0}
                 </TableCell>
                 <TableCell>
-                  <StatusBadge status="Active" />
+                  <StatusBadge
+                    status={facility.is_active === false ? "inactive" : "active"}
+                    text={facility.is_active === false ? "Deactivated" : "Active"}
+                  />
                 </TableCell>
                 <TableCell>
                   <TableRowActions label={`Actions for ${facility.facility_name}`}>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        navigate(`/superadmin/facility/${facility.facility_id}`, {
+                          state: {
+                            returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                            returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                          },
+                        })
+                      }
+                    >
+                      <ExternalLink className="mr-2 size-4" />
+                      View Facility Hub
+                    </DropdownMenuItem>
                     <DropdownMenuItem onClick={() => openCreate(facility)}>
                       <Edit2 className="mr-2 size-4" />
                       Edit details
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onClick={() => setDeleteTarget(facility)}
-                    >
-                      <Trash2 className="mr-2 size-4" />
-                      Delete facility
-                    </DropdownMenuItem>
+                    {facility.is_active === false ? (
+                      <DropdownMenuItem
+                        className="text-emerald-600 focus:text-emerald-700 dark:text-emerald-400"
+                        onClick={() => {
+                          setStatusTarget(facility)
+                          setStatusAction("reactivate")
+                        }}
+                      >
+                        <ShieldCheck className="mr-2 size-4 text-emerald-600 dark:text-emerald-400" />
+                        Reactivate facility
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem
+                        className="text-amber-600 focus:text-amber-700 dark:text-amber-400"
+                        onClick={() => {
+                          setStatusTarget(facility)
+                          setStatusAction("deactivate")
+                        }}
+                      >
+                        <PowerOff className="mr-2 size-4 text-amber-600 dark:text-amber-400" />
+                        Deactivate facility
+                      </DropdownMenuItem>
+                    )}
                   </TableRowActions>
                 </TableCell>
               </TableRow>
@@ -397,17 +579,99 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       </div>
 
       <div className="grid gap-3 md:hidden">
-        {filtered.map((facility) => <article key={facility.facility_id} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
-          <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h3 className="truncate text-sm font-semibold text-foreground">{facility.facility_name}</h3><p className="mt-1 text-muted-foreground">{facility.type} · {facility.address || "Address not recorded"}</p></div><TableRowActions label={`Actions for ${facility.facility_name}`}><DropdownMenuItem onClick={() => openCreate(facility)}>Edit details</DropdownMenuItem><DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(facility)}>Delete facility</DropdownMenuItem></TableRowActions></div>
-          <div className="mt-3 flex items-center justify-between gap-2"><span className="text-muted-foreground">{facility.contact_number || facility.email || "No contact recorded"}</span><span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span></div>
-        </article>)}
-        {filtered.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No facilities in this view.</div>}
+        {paginatedFacilities.map((facility) => (
+          <article
+            key={facility.facility_id}
+            className="cursor-pointer rounded-md border border-sidebar-border bg-card p-4 text-xs transition-colors hover:bg-muted/50"
+            onClick={(e) => {
+              const target = e.target as HTMLElement
+              if (target.closest("button") || target.closest("[role='menuitem']")) return
+              navigate(`/superadmin/facility/${facility.facility_id}`, {
+                state: {
+                  returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                  returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                },
+              })
+            }}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-semibold text-foreground">{facility.facility_name}</h3>
+                <p className="mt-1 text-muted-foreground">{facility.type} · {facility.address || "Address not recorded"}</p>
+              </div>
+              <TableRowActions label={`Actions for ${facility.facility_name}`}>
+                <DropdownMenuItem
+                  onClick={() =>
+                    navigate(`/superadmin/facility/${facility.facility_id}`, {
+                      state: {
+                        returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
+                        returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                      },
+                    })
+                  }
+                >
+                  <ExternalLink className="mr-2 size-4" />
+                  View Facility Hub
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => openCreate(facility)}>
+                  <Edit2 className="mr-2 size-4" />
+                  Edit details
+                </DropdownMenuItem>
+                {facility.is_active === false ? (
+                  <DropdownMenuItem
+                    className="text-emerald-600 focus:text-emerald-700 dark:text-emerald-400"
+                    onClick={() => {
+                      setStatusTarget(facility)
+                      setStatusAction("reactivate")
+                    }}
+                  >
+                    <ShieldCheck className="mr-2 size-4 text-emerald-600 dark:text-emerald-400" />
+                    Reactivate facility
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    className="text-amber-600 focus:text-amber-700 dark:text-amber-400"
+                    onClick={() => {
+                      setStatusTarget(facility)
+                      setStatusAction("deactivate")
+                    }}
+                  >
+                    <PowerOff className="mr-2 size-4 text-amber-600 dark:text-amber-400" />
+                    Deactivate facility
+                  </DropdownMenuItem>
+                )}
+              </TableRowActions>
+            </div>
+            <div className="mt-3 flex items-center justify-between gap-2">
+              <span className="text-muted-foreground">{facility.contact_number || facility.email || "No contact recorded"}</span>
+              <div className="flex items-center gap-2">
+                <StatusBadge
+                  status={facility.is_active === false ? "inactive" : "active"}
+                  text={facility.is_active === false ? "Deactivated" : "Active"}
+                />
+                <span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span>
+              </div>
+            </div>
+          </article>
+        ))}
+        {filtered.length === 0 && (
+          <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">
+            No facilities in this view.
+          </div>
+        )}
       </div>
 
-      <TablePaginationFooter rowCount={filtered.length} selectedCount={selected.length} />
+      <TablePaginationFooter
+        rowCount={filtered.length}
+        selectedCount={selected.length}
+        page={page}
+        pageSize={pageSize}
+        onPageChange={setPage}
+        onPageSizeChange={setPageSize}
+      />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-xl">
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>{editing ? `Edit ${singular}` : `Register ${singular}`}</DialogTitle>
             <DialogDescription>Maintain facility registry details for the Silang municipal health network.</DialogDescription>
@@ -472,21 +736,75 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={!!statusTarget && !!statusAction} onOpenChange={(open) => !open && setStatusTarget(null)}>
+        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Delete {singular.toLowerCase()}?</DialogTitle>
-            <DialogDescription>
-              This will remove {deleteTarget?.facility_name} from the central municipal database. This action cannot be
-              undone if there are no linked clinical records.
+            <div className="flex items-center gap-2">
+              {statusAction === "deactivate" ? (
+                <div className="flex size-9 items-center justify-center rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <AlertTriangle className="size-5" />
+                </div>
+              ) : (
+                <div className="flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                  <ShieldCheck className="size-5" />
+                </div>
+              )}
+              <DialogTitle>
+                {statusAction === "deactivate"
+                  ? `Deactivate ${statusTarget?.facility_name}?`
+                  : `Reactivate ${statusTarget?.facility_name}?`}
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs leading-relaxed">
+              {statusAction === "deactivate"
+                ? "Deactivating this facility enforces institutional safeguards across the municipal health network:"
+                : "Reactivating this facility will restore institutional access and allow staff members to log in and resume clinical care services."}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" disabled={deleting} onClick={() => setDeleteTarget(null)}>
+
+          {statusAction === "deactivate" && statusTarget && (
+            <div className="space-y-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-300">
+              <div className="flex items-start gap-2">
+                <PowerOff className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  <strong>Staff Access Locked:</strong> All staff assigned to this facility ({facilityStaffCounts[statusTarget.facility_id] ?? 0} staff) will immediately be prevented from logging in.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                <span>
+                  <strong>Maternal Care Unassigned:</strong> Any mothers currently assigned or enrolled at this facility will be unassigned so their care can be safely transferred.
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  <strong>Data Preservation:</strong> All historical clinical checkups, birth records, and audit logs remain securely preserved.
+                </span>
+              </div>
+            </div>
+          )}
+
+          {typeof navigator !== "undefined" && !navigator.onLine && (
+            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+              Offline mode: Status change will be saved to device memory and synchronized when reconnected.
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-3">
+            <Button variant="outline" disabled={statusSubmitting} onClick={() => setStatusTarget(null)}>
               Cancel
             </Button>
-            <Button variant="destructive" disabled={deleting} onClick={handleDelete}>
-              {deleting ? "Deleting..." : "Delete facility"}
+            <Button
+              variant={statusAction === "deactivate" ? "destructive" : "default"}
+              disabled={statusSubmitting}
+              onClick={handleToggleStatus}
+            >
+              {statusSubmitting
+                ? "Processing..."
+                : statusAction === "deactivate"
+                ? "Confirm Deactivation"
+                : "Confirm Reactivation"}
             </Button>
           </DialogFooter>
         </DialogContent>

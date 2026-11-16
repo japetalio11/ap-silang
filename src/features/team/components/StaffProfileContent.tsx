@@ -1,7 +1,11 @@
-import { AlertTriangle, Building2, Clock3, Mail, type LucideIcon } from "lucide-react"
+import { useState, useEffect } from "react"
+import { AlertTriangle, Building2, Camera, ChevronLeft, ChevronRight, Clock3, Mail, type LucideIcon } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { StaffAvatar } from "./StaffAvatar"
+import { UploadStaffAvatarDialog } from "./UploadStaffAvatarDialog"
 import type { StaffActivity, StaffRecord } from "../api"
 
 type RoleId = "midwife" | "nurse" | "admin"
@@ -57,6 +61,8 @@ const permissionModules: {
   },
 ]
 
+const ACTIVITIES_PER_PAGE = 10
+
 function roleForStaff(role: string): RoleId {
   const normalized = role.toLowerCase()
   if (normalized.includes("admin")) return "admin"
@@ -82,7 +88,24 @@ function Detail({ label, value, icon: Icon }: { label: string; value: string; ic
   )
 }
 
-export function StaffProfileContent({ staff, activities, onRoleChange }: { staff: StaffRecord; activities: StaffActivity[]; onRoleChange: (role: string) => Promise<boolean> }) {
+export function StaffProfileContent({
+  staff,
+  activities,
+  onRoleChange,
+  onAvatarUpdated,
+}: {
+  staff: StaffRecord
+  activities: StaffActivity[]
+  onRoleChange: (role: string) => Promise<boolean>
+  onAvatarUpdated?: (newAvatarUrl: string) => void
+}) {
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
+  const [activityPage, setActivityPage] = useState(1)
+
+  useEffect(() => {
+    setActivityPage(1)
+  }, [staff.id, activities.length])
+
   const assignedRole = roleForStaff(staff.role)
   const permissions = permissionsForRole(assignedRole)
 
@@ -95,6 +118,12 @@ export function StaffProfileContent({ staff, activities, onRoleChange }: { staff
     await onRoleChange(roleValue)
   }
 
+  const totalActivities = activities.length
+  const totalPages = Math.max(1, Math.ceil(totalActivities / ACTIVITIES_PER_PAGE))
+  const safePage = Math.min(Math.max(1, activityPage), totalPages)
+  const startIndex = (safePage - 1) * ACTIVITIES_PER_PAGE
+  const paginatedActivities = activities.slice(startIndex, startIndex + ACTIVITIES_PER_PAGE)
+
   return (
     <div className="text-foreground">
       <div className="min-h-0">
@@ -102,12 +131,21 @@ export function StaffProfileContent({ staff, activities, onRoleChange }: { staff
           <div className="flex min-w-0 flex-col gap-4">
             <section className="rounded-md border border-sidebar-border bg-card p-4 md:p-5" aria-label="Staff identity">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-                <div className="size-24 shrink-0 overflow-hidden rounded-full bg-muted dark:bg-[#222]">
-                  {staff.avatar ? (
-                    <img src={staff.avatar} alt="" className="size-full object-cover" />
-                  ) : (
-                    <div className="flex size-full items-center justify-center text-xl font-semibold text-muted-foreground">{staff.name.charAt(0)}</div>
-                  )}
+                <div className="group relative size-24 shrink-0">
+                  <StaffAvatar
+                    src={staff.avatar}
+                    name={staff.name}
+                    className="size-24 border-2 border-sidebar-border text-xl"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setIsUploadDialogOpen(true)}
+                    title="Upload profile photo"
+                    aria-label="Upload profile photo"
+                    className="absolute bottom-0 right-0 flex size-7 items-center justify-center rounded-full border border-sidebar-border bg-background text-foreground shadow-sm transition-transform hover:scale-105 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Camera className="size-3.5" />
+                  </button>
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="mb-2"><StatusBadge status={staff.status} /></div>
@@ -125,9 +163,72 @@ export function StaffProfileContent({ staff, activities, onRoleChange }: { staff
             </section>
 
             <section className="min-h-56 flex-1 rounded-md border border-sidebar-border bg-card p-4 md:p-5" aria-labelledby="staff-activity-heading">
-              <h2 id="staff-activity-heading" className="text-sm font-semibold text-foreground">Activity Log</h2>
-              <p className="mt-1 text-xs text-muted-foreground">Recent actions performed by this user.</p>
-              {activities.length > 0 ? <div className="mt-5 space-y-4">{activities.map((activity) => <div key={activity.id} className="flex gap-3"><span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" /><div className="min-w-0"><p className="text-xs font-medium">{activity.title}</p><p className="mt-0.5 text-xs text-muted-foreground">{activity.subtitle}</p>{activity.details && <p className="mt-1 text-xs text-muted-foreground">{activity.details}</p>}<p className="mt-1.5 text-xs text-muted-foreground">{new Date(activity.timestamp).toLocaleString()}</p></div></div>)}</div> : <p className="mt-5 text-xs text-muted-foreground">No recent activity is available.</p>}
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 id="staff-activity-heading" className="text-sm font-semibold text-foreground">Activity Log</h2>
+                  <p className="mt-1 text-xs text-muted-foreground">Recent actions performed by this user.</p>
+                </div>
+                {totalActivities > 0 && (
+                  <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                    {totalActivities} total
+                  </span>
+                )}
+              </div>
+
+              {totalActivities > 0 ? (
+                <div className="mt-5 flex flex-col gap-4">
+                  <div className="space-y-4">
+                    {paginatedActivities.map((activity) => (
+                      <div key={activity.id} className="flex gap-3">
+                        <span aria-hidden="true" className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium">{activity.title}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{activity.subtitle}</p>
+                          {activity.details && <p className="mt-1 text-xs text-muted-foreground">{activity.details}</p>}
+                          <p className="mt-1.5 text-xs text-muted-foreground">{new Date(activity.timestamp).toLocaleString()}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {totalPages > 1 && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-3">
+                      <p className="text-[11px] text-muted-foreground">
+                        Showing {startIndex + 1}–{Math.min(startIndex + ACTIVITIES_PER_PAGE, totalActivities)} of {totalActivities}
+                      </p>
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setActivityPage((prev) => Math.max(1, prev - 1))}
+                          disabled={safePage <= 1}
+                          className="h-7 gap-1 px-2 text-xs"
+                        >
+                          <ChevronLeft className="size-3.5" />
+                          Previous
+                        </Button>
+                        <span className="px-1 text-xs text-muted-foreground">
+                          {safePage} / {totalPages}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setActivityPage((prev) => Math.min(totalPages, prev + 1))}
+                          disabled={safePage >= totalPages}
+                          className="h-7 gap-1 px-2 text-xs"
+                        >
+                          Next
+                          <ChevronRight className="size-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <p className="mt-5 text-xs text-muted-foreground">No recent activity is available.</p>
+              )}
             </section>
           </div>
 
@@ -169,6 +270,17 @@ export function StaffProfileContent({ staff, activities, onRoleChange }: { staff
           </section>
         </div>
       </div>
+
+      <UploadStaffAvatarDialog
+        open={isUploadDialogOpen}
+        onOpenChange={setIsUploadDialogOpen}
+        staffId={staff.id}
+        staffName={staff.name}
+        currentPhotoUrl={staff.avatar}
+        onSuccess={(newPhotoUrl) => {
+          onAvatarUpdated?.(newPhotoUrl)
+        }}
+      />
     </div>
   )
 }

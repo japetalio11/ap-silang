@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react"
 import { Outlet, useLocation, useNavigate } from "react-router-dom"
 import {
+  BarChart3,
   Building2,
+  Database,
   FileText,
   Hospital,
   LayoutDashboard,
@@ -10,6 +12,7 @@ import {
   Settings2,
   ShieldCheck,
   Sun,
+  Users,
   ChevronsUpDown,
 } from "lucide-react"
 import {
@@ -45,16 +48,19 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { OfflineSyncDrawer } from "./OfflineSyncDrawer"
 import { toast } from "sonner"
 import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { StaffAvatar } from "@/features/team/components/StaffAvatar"
+import { db } from "@/lib/db/silangDatabase"
 
 const superAdminNavigation = [
   { label: "Municipal Overview", path: "/superadmin/overview", icon: LayoutDashboard },
   { label: "RHU Management", path: "/superadmin/rhu-management", icon: Hospital },
   { label: "BHS Management", path: "/superadmin/bhs-management", icon: Building2 },
+  { label: "Municipal Reports", path: "/superadmin/reports", icon: BarChart3 },
+  { label: "Database Maintenance", path: "/superadmin/database-maintenance", icon: Database },
   { label: "Audit Trail", path: "/superadmin/audit-logs", icon: FileText },
   { label: "Settings", path: "/superadmin/settings", icon: Settings2 },
 ]
@@ -67,16 +73,41 @@ export function SuperAdminLayout() {
   const [syncOpen, setSyncOpen] = useState(false)
   const [isOnline, setIsOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine)
 
+  const isFacilityPage = location.pathname.startsWith("/superadmin/facility/")
+  const isStaffProfilePage = /^\/superadmin\/users\/[^/]+$/.test(location.pathname)
+  const isMotherPage = /^\/superadmin\/mother\/[^/]+$/.test(location.pathname)
+  const locationState = location.state as { returnTo?: string; returnLabel?: string } | null
+
   const activeSection =
-    superAdminNavigation.find((item) => location.pathname === item.path) ?? superAdminNavigation[0]
+    superAdminNavigation.find((item) => location.pathname === item.path) ??
+    (isFacilityPage
+      ? { label: "Facility Info Hub", path: location.pathname, icon: Hospital }
+      : isStaffProfilePage
+        ? { label: "Staff Profile", path: location.pathname, icon: Users }
+        : isMotherPage
+          ? { label: "Mother Profile", path: location.pathname, icon: Users }
+          : superAdminNavigation[0])
 
   const userFullName = session?.user
     ? `${session.user.first_name} ${session.user.last_name}`.trim()
     : "Super Administrator"
 
-  const userInitials = session?.user
-    ? `${session.user.first_name?.[0] || "S"}${session.user.last_name?.[0] || "A"}`.toUpperCase()
-    : "SA"
+  const [userProfileUrl, setUserProfileUrl] = useState<string | null>(session?.user.profile_url || null)
+
+  useEffect(() => {
+    if (session?.user.profile_url) {
+      setUserProfileUrl(session.user.profile_url)
+      return
+    }
+    if (!session?.user.user_id) return
+    let active = true
+    db.staff.where("user_id").equals(session.user.user_id).first().then((record) => {
+      if (active && record?.profile_url) {
+        setUserProfileUrl(record.profile_url)
+      }
+    }).catch(() => {})
+    return () => { active = false }
+  }, [session?.user.user_id, session?.user.profile_url])
 
   useEffect(() => {
     document.title = `${activeSection.label} - Silang Superadmin`
@@ -95,7 +126,7 @@ export function SuperAdminLayout() {
   const handleLogout = () => {
     logout()
     toast.success("Signed out of the superadmin workspace")
-    navigate("/superadmin", { replace: true })
+    navigate("/", { replace: true })
   }
 
   return (
@@ -135,7 +166,7 @@ export function SuperAdminLayout() {
                   {superAdminNavigation.map(({ label, path, icon: Icon }) => (
                     <SidebarMenuItem key={path}>
                       <SidebarMenuButton
-                        isActive={activeSection.path === path}
+                        isActive={location.pathname === path}
                         onClick={() =>
                           navigate(path, path.endsWith("/settings") ? { state: { returnTo: location.pathname } } : undefined)
                         }
@@ -160,11 +191,11 @@ export function SuperAdminLayout() {
                       size="lg"
                       className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground transition-all duration-200 ease-linear group-data-[collapsible=icon]:!p-0 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:gap-0"
                     >
-                      <Avatar className="size-8 shrink-0 rounded-lg">
-                        <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
-                          {userInitials}
-                        </AvatarFallback>
-                      </Avatar>
+                      <StaffAvatar
+                        src={userProfileUrl}
+                        name={userFullName}
+                        className="size-8 shrink-0 rounded-lg text-xs"
+                      />
                       <span className="flex min-w-0 flex-1 flex-col overflow-hidden whitespace-nowrap text-left group-data-[collapsible=icon]:max-w-0 group-data-[collapsible=icon]:opacity-0">
                         <span className="truncate text-xs font-medium">{userFullName}</span>
                         <span className="truncate text-[11px] text-muted-foreground">
@@ -176,6 +207,10 @@ export function SuperAdminLayout() {
                   </DropdownMenuTrigger>
                   <DropdownMenuContent side="top" align="start" className="w-[--radix-dropdown-menu-trigger-width]">
                     <DropdownMenuLabel>My Account</DropdownMenuLabel>
+                    <DropdownMenuItem onClick={() => navigate("/dashboard")} className="cursor-pointer">
+                      <LayoutDashboard className="mr-2 size-4" />
+                      Clinic Dashboard
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleLogout} className="cursor-pointer text-destructive focus:text-destructive">
                       Log out
@@ -193,14 +228,73 @@ export function SuperAdminLayout() {
               <SidebarTrigger aria-label="Toggle sidebar" className="-ml-1" />
               <span className="h-4 w-px bg-border" />
               <Breadcrumb>
-                <BreadcrumbList className="text-xs">
+                <BreadcrumbList className="text-xs flex-wrap sm:flex-nowrap">
                   <BreadcrumbItem>
-                    <BreadcrumbPage className="text-xs text-muted-foreground">Administration</BreadcrumbPage>
+                    <BreadcrumbPage className="text-xs text-muted-foreground hidden sm:inline">Administration</BreadcrumbPage>
                   </BreadcrumbItem>
-                  <BreadcrumbSeparator />
-                  <BreadcrumbItem>
-                    <BreadcrumbPage className="text-xs">{activeSection.label}</BreadcrumbPage>
-                  </BreadcrumbItem>
+                  <BreadcrumbSeparator className="hidden sm:inline" />
+                  {isFacilityPage ? (
+                    <>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage
+                          className="max-w-[120px] truncate text-xs text-muted-foreground cursor-pointer hover:underline sm:max-w-none"
+                          onClick={() => navigate("/superadmin/rhu-management")}
+                        >
+                          Facilities
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="max-w-[140px] truncate text-xs sm:max-w-none">Facility Info Hub</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : isStaffProfilePage ? (
+                    <>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage
+                          className="max-w-[120px] truncate text-xs text-muted-foreground cursor-pointer hover:underline sm:max-w-none"
+                          onClick={() => {
+                            if (locationState?.returnTo) {
+                              navigate(locationState.returnTo)
+                            } else {
+                              navigate("/superadmin/users")
+                            }
+                          }}
+                        >
+                          {locationState?.returnLabel || "Staff & Access Control"}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="max-w-[140px] truncate text-xs sm:max-w-none">Staff Profile</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : isMotherPage ? (
+                    <>
+                      <BreadcrumbItem>
+                        <BreadcrumbPage
+                          className="max-w-[120px] truncate text-xs text-muted-foreground cursor-pointer hover:underline sm:max-w-none"
+                          onClick={() => {
+                            if (locationState?.returnTo) {
+                              navigate(locationState.returnTo)
+                            } else {
+                              navigate("/superadmin/rhu-management")
+                            }
+                          }}
+                        >
+                          {locationState?.returnLabel || "Maternal Care"}
+                        </BreadcrumbPage>
+                      </BreadcrumbItem>
+                      <BreadcrumbSeparator />
+                      <BreadcrumbItem>
+                        <BreadcrumbPage className="max-w-[140px] truncate text-xs sm:max-w-none">Mother Profile</BreadcrumbPage>
+                      </BreadcrumbItem>
+                    </>
+                  ) : (
+                    <BreadcrumbItem>
+                      <BreadcrumbPage className="max-w-[160px] truncate text-xs sm:max-w-none">{activeSection.label}</BreadcrumbPage>
+                    </BreadcrumbItem>
+                  )}
                 </BreadcrumbList>
               </Breadcrumb>
             </div>

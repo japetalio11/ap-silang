@@ -28,3 +28,6 @@ dev-dist
 
 AGENTS.md
 .agents
+
+.env
+.env.local

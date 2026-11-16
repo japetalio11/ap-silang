@@ -1,20 +1,28 @@
-import { useEffect, useState } from "react"
-import { Activity, ArrowRightLeft, Building2, Hospital, RefreshCw, Users } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { Activity, ArrowRightLeft, Building2, Hospital, RefreshCw, RotateCcw, Search, Users } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { Skeleton } from "@/components/ui/skeleton"
 import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
 import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { StatusBadge } from "@/components/ui/status-badge"
+import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { fetchMunicipalOverview, type MunicipalOverview } from "../api/superadmin-api"
 
 export function SuperAdminOverviewPage() {
+  const navigate = useNavigate()
   const { session } = useAuthSession()
   const [data, setData] = useState<MunicipalOverview | null>(null)
   const [loading, setLoading] = useState(true)
+  const [query, setQuery] = useState("")
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
 
   const loadOverview = async () => {
     if (!session?.token) return
@@ -34,8 +42,31 @@ export function SuperAdminOverviewPage() {
     loadOverview()
   }, [session?.token])
 
+  useEffect(() => {
+    setPage(1)
+  }, [query])
+
+  const filteredFacilities = useMemo(() => {
+    if (!data?.facilitiesSummary) return []
+    const term = query.trim().toLowerCase()
+    if (!term) return data.facilitiesSummary
+    return data.facilitiesSummary.filter((f) => {
+      return (
+        f.facility_name.toLowerCase().includes(term) ||
+        f.type.toLowerCase().includes(term) ||
+        f.address.toLowerCase().includes(term)
+      )
+    })
+  }, [data?.facilitiesSummary, query])
+
+  const paginatedFacilities = useMemo(() => {
+    const start = (page - 1) * pageSize
+    return filteredFacilities.slice(start, start + pageSize)
+  }, [filteredFacilities, page, pageSize])
+
   return (
     <section className="w-full space-y-4 px-4 py-4">
+      <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold tracking-tight text-foreground">Municipal Health Network Overview</h1>
@@ -104,8 +135,31 @@ export function SuperAdminOverviewPage() {
         </Card>
       </div>
 
-      <div className="space-y-2">
-        <h2 className="text-sm font-semibold tracking-tight text-foreground">Facility Operations Breakdown</h2>
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold tracking-tight text-foreground">Facility Operations Breakdown</h2>
+          <div className="flex items-center gap-2">
+            <div className="relative w-full sm:w-[260px]">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search facility by name, type, location..."
+                className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
+              />
+            </div>
+            {query.trim().length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs font-medium text-muted-foreground"
+                onClick={() => setQuery("")}
+              >
+                <RotateCcw className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        </div>
         <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
           <Table>
             <TableHeader>
@@ -120,9 +174,19 @@ export function SuperAdminOverviewPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {loading ? <TableSkeletonRows columns={7} rows={4} checkboxColumn={false} /> : data?.facilitiesSummary && data.facilitiesSummary.length > 0 ? (
-                data.facilitiesSummary.map((item) => (
-                  <TableRow key={item.facility_id}>
+              {loading ? (
+                <TableSkeletonRows columns={7} rows={4} checkboxColumn={false} />
+              ) : paginatedFacilities.length > 0 ? (
+                paginatedFacilities.map((item) => (
+                  <TableRow
+                    key={item.facility_id}
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    onClick={() =>
+                      navigate(`/superadmin/facility/${item.facility_id}`, {
+                        state: { returnTo: "/superadmin/overview", returnLabel: "Municipal Overview" },
+                      })
+                    }
+                  >
                     <TableCell className="font-medium text-foreground">
                       <div className="flex items-center gap-2">
                         {item.type.toLowerCase().includes("rhu") || item.type.toLowerCase().includes("rural") ? (
@@ -130,7 +194,7 @@ export function SuperAdminOverviewPage() {
                         ) : (
                           <Building2 className="size-4 text-muted-foreground" />
                         )}
-                        {item.facility_name}
+                        <span className="hover:underline">{item.facility_name}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -149,21 +213,65 @@ export function SuperAdminOverviewPage() {
               ) : (
                 <TableRow>
                   <TableCell colSpan={7} className="h-24 text-center text-xs text-muted-foreground">
-                    No facilities registered in the municipal database.
+                    No facilities registered or matching search criteria.
                   </TableCell>
                 </TableRow>
               )}
             </TableBody>
           </Table>
         </div>
+
         <div className="grid gap-3 md:hidden">
-          {loading ? <MobileTableCardSkeleton count={3} /> : data?.facilitiesSummary?.map((item) => <article key={item.facility_id} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
-            <h3 className="text-sm font-semibold text-foreground">{item.facility_name}</h3>
-            <p className="mt-1 text-muted-foreground">{item.type} · {item.address || "Address not recorded"}</p>
-            <dl className="mt-3 grid grid-cols-2 gap-2"><div><dt className="text-muted-foreground">Staff</dt><dd className="font-medium">{item._count?.users ?? 0}</dd></div><div><dt className="text-muted-foreground">Mothers</dt><dd className="font-medium">{item._count?.motherEnrollments ?? 0}</dd></div><div><dt className="text-muted-foreground">Appointments</dt><dd className="font-medium">{item._count?.appointments ?? 0}</dd></div><div><dt className="text-muted-foreground">Referrals</dt><dd className="font-medium">{item._count?.onlineReferralsFrom ?? 0} / {item._count?.onlineReferralsTo ?? 0}</dd></div></dl>
-          </article>)}
-          {!loading && !data?.facilitiesSummary?.length && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No facilities registered.</div>}
+          {loading ? (
+            <MobileTableCardSkeleton count={3} />
+          ) : (
+            paginatedFacilities.map((item) => (
+              <article
+                key={item.facility_id}
+                className="cursor-pointer rounded-md border border-sidebar-border bg-card p-4 text-xs transition-colors hover:bg-muted/50"
+                onClick={() =>
+                  navigate(`/superadmin/facility/${item.facility_id}`, {
+                    state: { returnTo: "/superadmin/overview", returnLabel: "Municipal Overview" },
+                  })
+                }
+              >
+                <h3 className="text-sm font-semibold text-foreground">{item.facility_name}</h3>
+                <p className="mt-1 text-muted-foreground">{item.type} · {item.address || "Address not recorded"}</p>
+                <dl className="mt-3 grid grid-cols-2 gap-2">
+                  <div>
+                    <dt className="text-muted-foreground">Staff</dt>
+                    <dd className="font-medium">{item._count?.users ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Mothers</dt>
+                    <dd className="font-medium">{item._count?.motherEnrollments ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Appointments</dt>
+                    <dd className="font-medium">{item._count?.appointments ?? 0}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Referrals</dt>
+                    <dd className="font-medium">{item._count?.onlineReferralsFrom ?? 0} / {item._count?.onlineReferralsTo ?? 0}</dd>
+                  </div>
+                </dl>
+              </article>
+            ))
+          )}
+          {!loading && filteredFacilities.length === 0 && (
+            <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">
+              No facilities registered or matching search criteria.
+            </div>
+          )}
         </div>
+
+        <TablePaginationFooter
+          rowCount={filteredFacilities.length}
+          page={page}
+          pageSize={pageSize}
+          onPageChange={setPage}
+          onPageSizeChange={setPageSize}
+        />
       </div>
     </section>
   )

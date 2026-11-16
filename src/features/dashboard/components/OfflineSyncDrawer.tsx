@@ -167,6 +167,16 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
     window.addEventListener("online", updateNetwork)
     window.addEventListener("offline", updateNetwork)
     window.addEventListener("silang:outbox-updated", updateQueue)
+
+    const unsubscribe = silangSyncEngine.subscribe((status) => {
+      setOnline(status.isOnline)
+      setSyncing(status.isSyncing)
+      if (status.lastSyncedAt) {
+        setLastSynced(new Date(status.lastSyncedAt).toISOString())
+      }
+      void refreshQueue()
+    })
+
     queueMicrotask(() => {
       void refreshQueue().then(() => {
         if (navigator.onLine && isAutoSyncOnReconnectEnabled()) void syncNow(false)
@@ -176,8 +186,19 @@ export function OfflineSyncDrawer({ open, onOpenChange }: { open: boolean; onOpe
       window.removeEventListener("online", updateNetwork)
       window.removeEventListener("offline", updateNetwork)
       window.removeEventListener("silang:outbox-updated", updateQueue)
+      unsubscribe()
     }
   }, [refreshQueue, syncNow])
+
+  useEffect(() => {
+    if (open) {
+      void refreshQueue().then(() => {
+        if (navigator.onLine && isAutoSyncOnReconnectEnabled()) {
+          void syncNow(false)
+        }
+      })
+    }
+  }, [open, refreshQueue, syncNow])
 
   const pendingCount = items.filter((item) => item.state === "pending").length + generalQueue.length
   const conflicts = [...items.filter((item) => item.state === "conflict"), ...(demoConflict ? [demoConflict] : [])]

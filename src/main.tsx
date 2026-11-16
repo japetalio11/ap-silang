@@ -1,6 +1,6 @@
 import { StrictMode, useEffect } from "react"
 import { createRoot } from "react-dom/client"
-import { BrowserRouter, Routes, Route, Outlet, useLocation, useNavigate, Navigate, type Location } from "react-router-dom"
+import { BrowserRouter, Routes, Route, useLocation, useNavigate, Navigate, type Location } from "react-router-dom"
 import { registerSW } from "virtual:pwa-register"
 import { requestPersistentStorage } from "@/lib/offline-prefetch"
 
@@ -19,8 +19,8 @@ void requestPersistentStorage()
 import "./index.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthForm } from "@/features/auth/components/AuthForm"
-import { SuperAdminLoginPage } from "@/features/auth/components/SuperAdminLoginPage"
-import { RequireSuperAdminAuth } from "@/features/auth/components/RequireSuperAdminAuth"
+import { ContactAdminPage } from "@/features/auth/components/ContactAdminPage"
+import { RequireSuperAdminAuth, isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { DashboardLayout } from "@/features/dashboard/components/DashboardLayout"
 import { DashboardPage } from "@/features/dashboard/components/DashboardPage"
 import { CalendarPage } from "@/features/calendar/components/CalendarPage"
@@ -37,12 +37,21 @@ import { SuperAdminLayout } from "@/features/dashboard/components/SuperAdminLayo
 import { SuperAdminOverviewPage } from "@/features/dashboard/components/SuperAdminOverviewPage"
 import { SuperAdminAuditPage } from "@/features/dashboard/components/SuperAdminAuditPage"
 import { SuperAdminBhsManagementPage, SuperAdminRhuManagementPage, SuperAdminSettingsDialog } from "@/features/dashboard/components/SuperAdminManagementPages"
+import { SuperAdminStaffPage } from "@/features/dashboard/components/SuperAdminStaffPage"
+import { SuperAdminStaffDetailPage } from "@/features/dashboard/components/SuperAdminStaffDetailPage"
+import { SuperAdminFacilityDetailPage } from "@/features/dashboard/components/SuperAdminFacilityDetailPage"
+import { SuperAdminReportsPage } from "@/features/dashboard/components/SuperAdminReportsPage"
+import { SuperAdminDatabasePage } from "@/features/dashboard/components/SuperAdminDatabasePage"
 import { Toaster } from "@/components/ui/sonner"
 import { AuthSessionProvider, useAuthSession } from "@/features/auth/auth-session"
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthSession()
-  return isAuthenticated ? children : <Navigate to="/" replace />
+  const { isAuthenticated, session } = useAuthSession()
+  if (!isAuthenticated) return <Navigate to="/" replace />
+  if (isUserSuperAdmin(session?.user?.role)) {
+    return <Navigate to="/superadmin/overview" replace />
+  }
+  return <>{children}</>
 }
 
 function AppRoutes() {
@@ -55,6 +64,7 @@ function AppRoutes() {
     let pageTitle = "Dashboard"
 
     if (pathname === "/") pageTitle = "Sign In"
+    else if (pathname === "/contact-admin") pageTitle = "Contact Clinic Admin"
     else if (pathname === "/dashboard") pageTitle = "Dashboard"
     else if (pathname === "/dashboard/calendar") pageTitle = "Appointments"
     else if (pathname === "/dashboard/team") pageTitle = "Staff Management"
@@ -68,9 +78,15 @@ function AppRoutes() {
     else if (pathname === "/dashboard/feedback") pageTitle = "Feedback"
     else if (/^\/referral\/[^/]+$/.test(pathname)) pageTitle = "Secure Referral"
     else if (pathname === "/superadmin") pageTitle = "Superadmin Sign In"
+    else if (/^\/superadmin\/facility\/[^/]+$/.test(pathname)) pageTitle = "Facility Information Hub"
+    else if (/^\/superadmin\/users\/[^/]+$/.test(pathname)) pageTitle = "Staff Profile"
+    else if (/^\/superadmin\/mother\/[^/]+$/.test(pathname)) pageTitle = "Mother Profile"
     else if (pathname.endsWith("/overview")) pageTitle = "Municipal Overview"
     else if (pathname.endsWith("/rhu-management")) pageTitle = "RHU Management"
     else if (pathname.endsWith("/bhs-management")) pageTitle = "BHS Management"
+    else if (pathname.endsWith("/users")) pageTitle = "Staff & Access Control"
+    else if (pathname.endsWith("/reports")) pageTitle = "Municipal Reports"
+    else if (pathname.endsWith("/database-maintenance")) pageTitle = "Database Maintenance"
     else if (pathname.endsWith("/audit-logs")) pageTitle = "Audit Trail"
     else if (pathname.endsWith("/settings")) pageTitle = "Settings"
 
@@ -80,15 +96,20 @@ function AppRoutes() {
   return <>
     <Routes location={backgroundLocation ?? location}>
       <Route path="/" element={<AuthForm />} />
-      <Route path="/superadmin" element={<Outlet />}>
-        <Route index element={<SuperAdminLoginPage />} />
-        <Route element={<RequireSuperAdminAuth><SuperAdminLayout /></RequireSuperAdminAuth>}>
-          <Route path="overview" element={<SuperAdminOverviewPage />} />
-          <Route path="rhu-management" element={<SuperAdminRhuManagementPage />} />
-          <Route path="bhs-management" element={<SuperAdminBhsManagementPage />} />
-          <Route path="audit-logs" element={<SuperAdminAuditPage />} />
-          <Route path="settings" element={<SuperAdminSettingsDialog />} />
-        </Route>
+      <Route path="/contact-admin" element={<ContactAdminPage />} />
+      <Route path="/superadmin" element={<RequireSuperAdminAuth><SuperAdminLayout /></RequireSuperAdminAuth>}>
+        <Route index element={<Navigate to="/superadmin/overview" replace />} />
+        <Route path="overview" element={<SuperAdminOverviewPage />} />
+        <Route path="rhu-management" element={<SuperAdminRhuManagementPage />} />
+        <Route path="bhs-management" element={<SuperAdminBhsManagementPage />} />
+        <Route path="facility/:facilityId" element={<SuperAdminFacilityDetailPage />} />
+        <Route path="users" element={<SuperAdminStaffPage />} />
+        <Route path="users/:staffId" element={<SuperAdminStaffDetailPage />} />
+        <Route path="mother/:motherId" element={<MaternalProfilePage />} />
+        <Route path="reports" element={<SuperAdminReportsPage />} />
+        <Route path="database-maintenance" element={<SuperAdminDatabasePage />} />
+        <Route path="audit-logs" element={<SuperAdminAuditPage />} />
+        <Route path="settings" element={<SuperAdminSettingsDialog />} />
       </Route>
       <Route path="/referral/:identifier" element={<ReferralGatewayPage />} />
       <Route path="/dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>

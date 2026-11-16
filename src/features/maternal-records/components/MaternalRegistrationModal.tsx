@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, type ChangeEvent, type FormEvent, type ReactNode } from "react"
-import { addDays, format, parseISO } from "date-fns"
+import { addDays, differenceInYears, format, isValid, parseISO } from "date-fns"
 import { z } from "zod"
 import { Baby, Camera, Check, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -140,7 +140,7 @@ function FormSelect({
   error,
 }: {
   id: string
-  label: string
+  label: ReactNode
   value: string
   placeholder: string
   options: Array<{ value: string; label: string }>
@@ -162,6 +162,21 @@ function FormSelect({
   )
 }
 
+function calculateAgeGroup(dateOfBirth?: string | null): string {
+  if (!dateOfBirth) return ""
+  try {
+    const birth = parseISO(dateOfBirth)
+    if (!isValid(birth)) return ""
+    const age = differenceInYears(new Date(), birth)
+    if (age < 0) return ""
+    if (age < 20) return "Under 20 years"
+    if (age <= 34) return "20-34 years"
+    return "35 years and older"
+  } catch {
+    return ""
+  }
+}
+
 export function MaternalRegistrationModal({
   open,
   onOpenChange,
@@ -169,6 +184,7 @@ export function MaternalRegistrationModal({
   onSubmit,
   currentStaffId,
   currentStaffLabel,
+  initialBirthDate,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -176,9 +192,18 @@ export function MaternalRegistrationModal({
   onSubmit?: (values: RegistrationValues) => Promise<void>
   currentStaffId?: string
   currentStaffLabel?: string
+  initialBirthDate?: string
 }) {
   const [step, setStep] = useState(0)
-  const [values, setValues] = useState<RegistrationValues>(() => ({ ...initialValues, healthWorker: currentStaffId ?? "" }))
+  const [values, setValues] = useState<RegistrationValues>(() => {
+    const dob = initialBirthDate ?? ""
+    return {
+      ...initialValues,
+      healthWorker: currentStaffId ?? "",
+      dateOfBirth: dob,
+      ageGroup: calculateAgeGroup(dob),
+    }
+  })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const stepOffset = mode === "pregnancy" ? 1 : 0
@@ -193,13 +218,33 @@ export function MaternalRegistrationModal({
         ? "text-lime-700 dark:text-lime-300"
         : "text-emerald-700 dark:text-emerald-300"
 
+  useEffect(() => {
+    if (!values.dateOfBirth) return
+    const calculatedGroup = calculateAgeGroup(values.dateOfBirth)
+    if (calculatedGroup && calculatedGroup !== values.ageGroup) {
+      setValues((current) => ({ ...current, ageGroup: calculatedGroup }))
+      setErrors((current) => {
+        if (!current.ageGroup) return current
+        const next = { ...current }
+        delete next.ageGroup
+        return next
+      })
+    }
+  }, [values.dateOfBirth, values.ageGroup])
+
   const update = <K extends keyof RegistrationValues>(key: K, value: RegistrationValues[K]) => {
     setValues((current) => ({ ...current, [key]: value }))
     setErrors((current) => { const next = { ...current }; delete next[key]; return next })
   }
 
   const reset = () => {
-    setValues({ ...initialValues, healthWorker: currentStaffId ?? "" })
+    const dob = initialBirthDate ?? ""
+    setValues({
+      ...initialValues,
+      healthWorker: currentStaffId ?? "",
+      dateOfBirth: dob,
+      ageGroup: calculateAgeGroup(dob),
+    })
     setStep(0)
     setErrors({})
     setIsSubmitting(false)
@@ -356,7 +401,13 @@ export function MaternalRegistrationModal({
                   <Field id="middleName" label={<><span>Middle Name</span><span className="text-muted-foreground">(Optional)</span></>}>
                     <Input id="middleName" autoComplete="additional-name" value={values.middleName} onChange={(event) => update("middleName", event.target.value)} placeholder="Dela Cruz" className="h-8 bg-muted/70 text-xs dark:bg-muted/60" />
                   </Field>
-                  <DateField id="dateOfBirth" label="Date of Birth" value={values.dateOfBirth} onChange={(value) => update("dateOfBirth", value)} required error={errors.dateOfBirth} disableFuture />
+                  <DateField id="dateOfBirth" label="Date of Birth" value={values.dateOfBirth} onChange={(value) => {
+                    update("dateOfBirth", value)
+                    const calculated = calculateAgeGroup(value)
+                    if (calculated) {
+                      update("ageGroup", calculated)
+                    }
+                  }} required error={errors.dateOfBirth} disableFuture />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Field id="contactNumber" label="Phone Number" required error={errors.contactNumber}>
@@ -407,7 +458,25 @@ export function MaternalRegistrationModal({
                   </Field>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <FormSelect id="ageGroup" label="Age Group" value={values.ageGroup} onChange={(value) => update("ageGroup", value)} placeholder="Select age group" options={["Under 20 years", "20-34 years", "35 years and older"].map((name) => ({ value: name, label: name }))} required error={errors.ageGroup} />
+                  <FormSelect
+                    id="ageGroup"
+                    label={
+                      values.dateOfBirth && values.ageGroup ? (
+                        <>
+                          <span>Age Group</span>
+                          <span className="text-[11px] font-normal text-muted-foreground">(Auto-calculated)</span>
+                        </>
+                      ) : (
+                        "Age Group"
+                      )
+                    }
+                    value={values.ageGroup}
+                    onChange={(value) => update("ageGroup", value)}
+                    placeholder="Select age group"
+                    options={["Under 20 years", "20-34 years", "35 years and older"].map((name) => ({ value: name, label: name }))}
+                    required
+                    error={errors.ageGroup}
+                  />
                   <label htmlFor="completedEightAncVisits" className="flex min-h-8 cursor-pointer items-center gap-2 self-end rounded-md px-1.5 py-1.5 text-xs transition-colors hover:bg-muted/50">
                     <Checkbox id="completedEightAncVisits" checked={values.completedEightAncVisits} onCheckedChange={(checked) => update("completedEightAncVisits", checked === true)} />
                     <span>Completed 8 ANC Visits</span>
@@ -499,8 +568,26 @@ export function MaternalRegistrationModal({
   )
 }
 
-export function NewPregnancyDialog({ open, onOpenChange, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; onSubmit: (values: RegistrationValues) => Promise<void> }) {
-  return <MaternalRegistrationModal open={open} onOpenChange={onOpenChange} mode="pregnancy" onSubmit={onSubmit} />
+export function NewPregnancyDialog({
+  open,
+  onOpenChange,
+  onSubmit,
+  birthDate,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSubmit: (values: RegistrationValues) => Promise<void>
+  birthDate?: string | null
+}) {
+  return (
+    <MaternalRegistrationModal
+      open={open}
+      onOpenChange={onOpenChange}
+      mode="pregnancy"
+      onSubmit={onSubmit}
+      initialBirthDate={birthDate ?? undefined}
+    />
+  )
 }
 
 export function EditMaternalProfileDialog({ open, onOpenChange, profile, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; profile: MaternalRecord; onSubmit: (values: RegistrationValues) => Promise<void> }) {

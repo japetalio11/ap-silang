@@ -1,4 +1,4 @@
-import { useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react"
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react"
 import { format } from "date-fns"
 import { CalendarDays, Check, FileText, HeartPulse, Image, LockKeyhole, Printer, Search, ShieldAlert, Upload, UserRound, X } from "lucide-react"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { toast } from "sonner"
 import type { MaternalCompositeRecord, MaternalPregnancy, MaternalStaff } from "../api"
+import { validateClinicalVitalsData, evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 function RequiredLabel({ htmlFor, children, required = false }: { htmlFor: string; children: ReactNode; required?: boolean }) {
   return (
@@ -45,10 +46,25 @@ function PatientBanner({ name, context, details, risk = true }: { name: string; 
   )
 }
 
+function normalizeRiskValue(risk?: string | null): string {
+  const lower = risk?.toLowerCase() ?? ""
+  if (lower.includes("high")) return "high"
+  if (lower.includes("low")) return "low"
+  return "moderate"
+}
+
 export function RiskOverrideDialog({ open, onOpenChange, patientName, pregnancyLabel, currentRisk, onSubmit }: { open: boolean; onOpenChange: (open: boolean) => void; patientName: string; pregnancyLabel: string; currentRisk: string; onSubmit: (riskLevel: string, reason: string) => Promise<void> }) {
-  const [riskLevel, setRiskLevel] = useState("moderate")
+  const [riskLevel, setRiskLevel] = useState(() => normalizeRiskValue(currentRisk))
   const [reason, setReason] = useState("")
   const [isSaving, setIsSaving] = useState(false)
+
+  useEffect(() => {
+    if (open) {
+      setRiskLevel(normalizeRiskValue(currentRisk))
+      setReason("")
+    }
+  }, [open, currentRisk])
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!reason.trim()) { toast.error("Add a clinical reason for this override"); return }
@@ -313,14 +329,75 @@ export function PrenatalVitalsDialog({ open, onOpenChange, pregnancies, onSave }
 
   const update = <K extends keyof EncounterValues>(key: K, value: EncounterValues[K]) => setValues((current) => ({ ...current, [key]: value }))
 
+  const liveCdss = evaluateLocalVisitRisk({
+    vitals: {
+      bp_systolic: values.systolic ? Number(values.systolic) : null,
+      bp_diastolic: values.diastolic ? Number(values.diastolic) : null,
+      pulse_rate_bpm: values.pulse ? Number(values.pulse) : null,
+      temperature_celsius: values.temperature ? Number(values.temperature) : null,
+      has_vaginal_bleeding: values.vaginalBleeding,
+      has_fever: values.fever,
+      has_edema: values.edema,
+      has_pallor: values.pallor,
+      danger_signs_observed: values.additionalSigns,
+    },
+    pregnancy: selectedPregnancy,
+  })
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (step < stepLabels.length - 1) {
+      if (step === 0) {
+        if (!selectedPregnancyId || !effectiveVisitNumber || !effectiveAogWeeks) {
+          toast.error("Complete pregnancy, visit number, and gestational age")
+          return
+        }
+        const aogNum = Number(effectiveAogWeeks)
+        if (Number.isNaN(aogNum) || aogNum < 1 || aogNum > 45) {
+          toast.error("Age of gestation must be between 1 and 45 weeks")
+          return
+        }
+      }
+      if (step === 1) {
+        if (!values.systolic || !values.diastolic || !values.weight || !values.pulse || !values.temperature) {
+          toast.error("Complete all required vital signs (BP, Pulse, Temperature, Weight)")
+          return
+        }
+        const vitalsErrors = validateClinicalVitalsData({
+          bp_systolic: values.systolic,
+          bp_diastolic: values.diastolic,
+          weight_kg: values.weight,
+          pulse_rate_bpm: values.pulse,
+          temperature_celsius: values.temperature,
+          fundic_height_cm: values.fundalHeight || null,
+          fetal_heart_tone_bpm: values.fetalHeartTone || null,
+        })
+        if (vitalsErrors.length > 0) {
+          toast.error(vitalsErrors[0])
+          return
+        }
+      }
       setStep((current) => current + 1)
       return
     }
     if (!selectedPregnancyId || !effectiveVisitNumber || !effectiveAogWeeks || !values.systolic || !values.diastolic || !values.weight || !values.pulse || !values.temperature) {
       toast.error("Complete the required pregnancy, visit, and vital sign fields")
+      return
+    }
+    const validationErrors = validateClinicalVitalsData({
+      trimester: values.trimester,
+      visit_number: effectiveVisitNumber,
+      age_of_gestation_weeks: effectiveAogWeeks,
+      weight_kg: values.weight,
+      temperature_celsius: values.temperature,
+      pulse_rate_bpm: values.pulse,
+      bp_systolic: values.systolic,
+      bp_diastolic: values.diastolic,
+      fundic_height_cm: values.fundalHeight || null,
+      fetal_heart_tone_bpm: values.fetalHeartTone || null,
+    })
+    if (validationErrors.length > 0) {
+      toast.error(validationErrors[0])
       return
     }
     setIsSaving(true)
@@ -389,6 +466,16 @@ export function PrenatalVitalsDialog({ open, onOpenChange, pregnancies, onSave }
                 </Tabs>}
 
                 {step === 2 && <section className="flex flex-col gap-3">
+                  <div className="flex items-center justify-between rounded-md border border-border bg-muted/40 p-3">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold">Offline CDSS Risk:</span>
+                        <StatusBadge status={liveCdss.risk_level_label} />
+                        <span className="text-xs text-muted-foreground">TEWS Score {liveCdss.tews_score}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{liveCdss.protocols[0] || "Routine maternal monitoring recommended."}</p>
+                    </div>
+                  </div>
                   <fieldset className="grid gap-2 sm:grid-cols-2"><legend className="sr-only">Clinical danger signs observed</legend>{([["Vaginal Bleeding", "vaginalBleeding"], ["Maternal Fever", "fever"], ["Edema (Facial/Hands/Feet)", "edema"], ["Severe Pallor", "pallor"]] as const).map(([sign, key]) => <label key={sign} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={values[key]} onCheckedChange={(checked) => update(key, checked === true)} />{sign}</label>)}</fieldset>
                   <Field id="vitals-additional-danger-signs" label="Additional Danger Signs / Observations"><Input id="vitals-additional-danger-signs" value={values.additionalSigns} onChange={(event) => update("additionalSigns", event.target.value)} placeholder="e.g. Severe headache, vision disturbance, epigastric pain" className={inputClass} /></Field>
                   <Field id="vitals-clinical-notes" label="Chief Complaint / Clinical Notes"><Textarea id="vitals-clinical-notes" value={values.notes} onChange={(event) => update("notes", event.target.value)} placeholder="Document reported symptoms and clinical observations..." className="min-h-20 bg-muted/70 text-xs dark:bg-muted/60" /></Field>

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react"
+import { useCallback, useEffect, useLayoutEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
-import { Activity, Building2, CalendarDays, Clock3, Download, Ellipsis, FileText, HeartPulse, Hospital, MapPin, Printer, RefreshCw, ShieldCheck, UserRound, ZoomIn, ZoomOut, X } from "lucide-react"
+import { Activity, Building2, CalendarDays, Clock3, Download, Ellipsis, FileText, HeartPulse, Hospital, MapPin, Moon, Printer, RefreshCw, ShieldCheck, Sun, UserRound, ZoomIn, ZoomOut, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -19,6 +19,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { z } from "zod"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { useTheme } from "@/components/theme-provider"
 import { createReferral, getPublicReferral, respondToPublicReferral, type PublicReferralRecord } from "../api"
 import silangLogo from "@/assets/silang-sidebar.svg"
 
@@ -161,9 +162,26 @@ function HandoverEhrPreview({ record, onClose }: { record: HandoverEhrRecord | n
   </div>
 }
 
+function ThemeToggleButton({ isDarkMode, onToggle, className = "relative size-8" }: { isDarkMode: boolean; onToggle: () => void; className?: string }) {
+  return <Button
+    type="button"
+    variant="outline"
+    size="icon"
+    className={className}
+    aria-label="Toggle theme"
+    title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
+    onClick={onToggle}
+  >
+    <Sun className="size-3.5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+    <Moon className="absolute size-3.5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+    <span className="sr-only">Toggle theme</span>
+  </Button>
+}
+
 export function ReferralGatewayPage() {
   const { identifier = "" } = useParams()
   const { session } = useAuthSession()
+  const { theme, setTheme } = useTheme()
   const [record, setRecord] = useState<PublicReferralRecord | null>(null)
   const [pin, setPin] = useState(() => new URLSearchParams(window.location.search).get("pin") ?? "")
   const [isLoading, setIsLoading] = useState(true)
@@ -180,6 +198,30 @@ export function ReferralGatewayPage() {
   const [referralFormErrors, setReferralFormErrors] = useState<{ hospital?: string; reason?: string }>({})
   const [isCreatingReferral, setIsCreatingReferral] = useState(false)
 
+  useLayoutEffect(() => {
+    const previousTheme = localStorage.getItem("theme") as "light" | "dark" | "system" | null
+    const savedTheme = localStorage.getItem("referral_theme")
+    const targetTheme = savedTheme === "dark" ? "dark" : "light"
+    document.documentElement.classList.remove("light", "dark")
+    document.documentElement.classList.add(targetTheme)
+    setTheme(targetTheme)
+    return () => {
+      if (previousTheme && (previousTheme === "light" || previousTheme === "dark" || previousTheme === "system")) {
+        setTheme(previousTheme)
+      }
+    }
+  }, [setTheme])
+
+  const isDarkMode = theme === "dark" || (theme !== "light" && typeof document !== "undefined" && document.documentElement.classList.contains("dark"))
+
+  const toggleTheme = () => {
+    const nextTheme = isDarkMode ? "light" : "dark"
+    document.documentElement.classList.remove("light", "dark")
+    document.documentElement.classList.add(nextTheme)
+    setTheme(nextTheme)
+    localStorage.setItem("referral_theme", nextTheme)
+  }
+
   const load = useCallback(async (currentPin?: string, quiet = false) => {
     if (!identifier) return
     if (!quiet) setIsLoading(true)
@@ -189,7 +231,6 @@ export function ReferralGatewayPage() {
       setRecord(referral)
       if (referral?.isPinVerified) {
         setPinError("")
-        // The code is kept only in memory after the link opens, not in browser history.
       } else if (currentPin) {
         setPinError("That transfer code does not match. Check the code and try again.")
       }
@@ -330,11 +371,24 @@ export function ReferralGatewayPage() {
     cells: [valueOr(supplement.supplement_type), prettyDate(supplement.date_given), valueOr(supplement.tablets_given_count, "Not recorded"), <StatusBadge status={supplement.is_completed ? "Completed" : "Active"} />],
   }))
 
-  if (isLoading) return <main className="min-h-screen bg-background p-6 text-foreground"><div className="mx-auto max-w-5xl space-y-5"><Skeleton className="h-14 w-full" /><Skeleton className="h-48 w-full" /><Skeleton className="h-72 w-full" /></div></main>
+  if (isLoading) return <main className="relative min-h-screen bg-background p-6 text-foreground">
+    <div className="absolute top-4 right-4 flex items-center gap-2">
+      <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} className="relative size-8 border-sidebar-border bg-background" />
+    </div>
+    <div className="mx-auto max-w-5xl space-y-5"><Skeleton className="h-14 w-full" /><Skeleton className="h-48 w-full" /><Skeleton className="h-72 w-full" /></div>
+  </main>
 
-  if (!record) return <main className="flex min-h-screen items-center justify-center bg-background p-5 text-foreground"><Card className="w-full max-w-md"><CardHeader><CardTitle className="text-base">Referral link unavailable</CardTitle><p className="text-sm text-muted-foreground">This link may be invalid or no longer available.</p></CardHeader></Card></main>
+  if (!record) return <main className="relative flex min-h-screen items-center justify-center bg-background p-5 text-foreground">
+    <div className="absolute top-4 right-4 flex items-center gap-2">
+      <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} className="relative size-8 border-sidebar-border bg-background" />
+    </div>
+    <Card className="w-full max-w-md"><CardHeader><CardTitle className="text-base">Referral link unavailable</CardTitle><p className="text-sm text-muted-foreground">This link may be invalid or no longer available.</p></CardHeader></Card>
+  </main>
 
-  if (!hasAccess) return <main className="flex min-h-screen items-center justify-center bg-muted/30 px-4 py-8 text-foreground">
+  if (!hasAccess) return <main className="relative flex min-h-screen items-center justify-center bg-muted/30 px-4 py-8 text-foreground">
+    <div className="absolute top-4 right-4 flex items-center gap-2">
+      <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} className="relative size-8 border-sidebar-border bg-background" />
+    </div>
     <Card className="w-full max-w-sm shadow-none">
       <CardHeader className="flex flex-col items-center gap-1.5 text-center">
         <span className="mb-1 flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -394,6 +448,7 @@ export function ReferralGatewayPage() {
           </div>
         </div>
         <div className="ml-auto flex shrink-0 items-center gap-2 pl-3">
+          <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} />
           <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Export referral" title="Export referral" onClick={exportReferral}><Download className="size-3.5" /></Button>
           <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Refresh referral" title="Refresh referral" disabled={isRefreshing} onClick={() => void refreshReferral()}><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
           <SheetTrigger asChild>
@@ -454,6 +509,22 @@ export function ReferralGatewayPage() {
                 </dl>
               </section>
 
+              <section aria-labelledby="handover-referral-vitals" className="border-t border-border/70 pt-5">
+                <h3 id="handover-referral-vitals" className="text-sm font-semibold text-foreground">Latest vitals</h3>
+                <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
+                  <ClinicalField label="Blood pressure" value={valueOr(latestVitals?.bp, reasonField(fullClinicalSummary, "BP") || "Not recorded")} />
+                  <ClinicalField label="Pulse rate" value={valueOr(latestVitals?.pulse_rate, reasonField(fullClinicalSummary, "PR") || "Not recorded")} />
+                  <ClinicalField label="Temperature" value={valueOr(latestVitals?.temp, reasonField(fullClinicalSummary, "T") || "Not recorded")} />
+                  <ClinicalField label="Weight" value={reasonField(fullClinicalSummary, "wt") || "Not recorded"} />
+                  <ClinicalField label="Height" value={reasonField(fullClinicalSummary, "ht") || "Not recorded"} />
+                  <ClinicalField label="Fundal height" value={valueOr(latestVitals?.fundic_height)} />
+                  <ClinicalField label="Fetal heart tone" value={valueOr(latestVitals?.fetal_heart_tone)} />
+                  <ClinicalField label="Blood sugar" value={reasonField(fullClinicalSummary, "Blood Sugar") || "Not recorded"} />
+                  <ClinicalField label="Respiratory rate" value={reasonField(fullClinicalSummary, "Respiratory Rate") || "Not recorded"} />
+                  <ClinicalField label="O₂ saturation" value={reasonField(fullClinicalSummary, "O2 Saturation") || "Not recorded"} />
+                </dl>
+              </section>
+
               <section aria-labelledby="handover-referral-reason" className="border-t border-border/70 pt-5">
                 <h3 id="handover-referral-reason" className="text-sm font-semibold text-foreground">Reason for referral</h3>
                 <dl className="mt-4 grid min-w-0 gap-x-6 gap-y-4 sm:grid-cols-2">
@@ -475,22 +546,6 @@ export function ReferralGatewayPage() {
                   <ClinicalField label="EDD" value={prettyDate(record.obstetric_info?.edd_date || reasonField(fullClinicalSummary, "EDC"))} />
                   <ClinicalField label="Previous delivery" value={valueOr(record.obstetric_info?.previous_delivery_history, reasonLine(fullClinicalSummary, "Previous delivery") || "None reported")} className="col-span-2 md:col-span-1" />
                   <ClinicalField label="Co-morbidities" value={valueOr(record.obstetric_info?.co_morbidities, reasonLine(fullClinicalSummary, "Co-morbidities") || "None reported")} className="col-span-2 md:col-span-1" />
-                </dl>
-              </section>
-
-              <section aria-labelledby="handover-referral-vitals" className="border-t border-border/70 pt-5">
-                <h3 id="handover-referral-vitals" className="text-sm font-semibold text-foreground">Latest vitals</h3>
-                <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
-                  <ClinicalField label="Blood pressure" value={valueOr(latestVitals?.bp, reasonField(fullClinicalSummary, "BP") || "Not recorded")} />
-                  <ClinicalField label="Pulse rate" value={valueOr(latestVitals?.pulse_rate, reasonField(fullClinicalSummary, "PR") || "Not recorded")} />
-                  <ClinicalField label="Temperature" value={valueOr(latestVitals?.temp, reasonField(fullClinicalSummary, "T") || "Not recorded")} />
-                  <ClinicalField label="Weight" value={reasonField(fullClinicalSummary, "wt") || "Not recorded"} />
-                  <ClinicalField label="Height" value={reasonField(fullClinicalSummary, "ht") || "Not recorded"} />
-                  <ClinicalField label="Fundal height" value={valueOr(latestVitals?.fundic_height)} />
-                  <ClinicalField label="Fetal heart tone" value={valueOr(latestVitals?.fetal_heart_tone)} />
-                  <ClinicalField label="Blood sugar" value={reasonField(fullClinicalSummary, "Blood Sugar") || "Not recorded"} />
-                  <ClinicalField label="Respiratory rate" value={reasonField(fullClinicalSummary, "Respiratory Rate") || "Not recorded"} />
-                  <ClinicalField label="O₂ saturation" value={reasonField(fullClinicalSummary, "O2 Saturation") || "Not recorded"} />
                 </dl>
               </section>
 

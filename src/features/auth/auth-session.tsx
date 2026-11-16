@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { apiRequest } from "@/lib/api"
-import { requestPersistentStorage, warmOfflineData } from "@/lib/offline-prefetch"
+import { requestPersistentStorage, warmOfflineData, warmSuperAdminOfflineData } from "@/lib/offline-prefetch"
+import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { toast } from "sonner"
 
 const SESSION_KEY = "silang.auth.session"
@@ -16,6 +17,7 @@ export type AuthUser = {
   facility_id: string | null
   email?: string | null
   phone_number?: string | null
+  profile_url?: string | null
 }
 
 export type AuthFacility = {
@@ -35,8 +37,8 @@ type LoginCredentials = { identifier: string; password: string; rememberMe: bool
 type AuthSessionContextValue = {
   session: AuthSession | null
   isAuthenticated: boolean
-  login: (credentials: LoginCredentials) => Promise<void>
-  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<void>
+  login: (credentials: LoginCredentials) => Promise<AuthUser>
+  loginWithGoogle: (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => Promise<AuthUser>
   unlockOffline: (pin: string) => boolean
   logout: () => void
 }
@@ -140,6 +142,18 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
         return nextSession
       })
     }
+    const onStaffUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ staffId?: string; payload?: { profile_url?: string } }>
+      const updatedStaffId = customEvent.detail?.staffId
+      const newProfileUrl = customEvent.detail?.payload?.profile_url
+      if (!updatedStaffId || !newProfileUrl) return
+      setSession((current) => {
+        if (!current || current.user.user_id !== updatedStaffId) return current
+        const nextSession = { ...current, user: { ...current.user, profile_url: newProfileUrl } }
+        persistStoredSession(nextSession)
+        return nextSession
+      })
+    }
     const onFacilityUpdated = (event: Event) => {
       const detail = (event as CustomEvent<AuthFacility>).detail
       if (!detail?.facility_id) return
@@ -151,9 +165,11 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
       })
     }
     window.addEventListener("silang:profile-updated", onProfileUpdated)
+    window.addEventListener("silang:staff-updated", onStaffUpdated)
     window.addEventListener("silang:facility-updated", onFacilityUpdated)
     return () => {
       window.removeEventListener("silang:profile-updated", onProfileUpdated)
+      window.removeEventListener("silang:staff-updated", onStaffUpdated)
       window.removeEventListener("silang:facility-updated", onFacilityUpdated)
     }
   }, [])
@@ -185,7 +201,11 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     const facilityId = session.user.facility_id
     const warm = () => {
       if (isTokenExpired(session.token)) return
-      void warmOfflineData(session.token, session.user.user_id, facilityId)
+      if (isUserSuperAdmin(session.user.role)) {
+        void warmSuperAdminOfflineData(session.token, session.user.user_id)
+      } else {
+        void warmOfflineData(session.token, session.user.user_id, facilityId)
+      }
     }
 
     void requestPersistentStorage()
@@ -236,20 +256,22 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials) => {
+  const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials): Promise<AuthUser> => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ identifier: identifier.trim(), password }),
     })
     completeLogin(response, rememberMe, workspace)
+    return response.user
   }, [completeLogin])
 
-  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace) => {
+  const loginWithGoogle = useCallback(async (accessToken: string, rememberMe: boolean, workspace?: LoginWorkspace): Promise<AuthUser> => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/google", {
       method: "POST",
       body: JSON.stringify({ accessToken }),
     })
     completeLogin(response, rememberMe, workspace)
+    return response.user
   }, [completeLogin])
 
   const value = useMemo(() => ({ session, isAuthenticated: Boolean(session), login, loginWithGoogle, unlockOffline, logout }), [session, login, loginWithGoogle, unlockOffline, logout])

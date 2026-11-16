@@ -1,6 +1,7 @@
 import type { ReactNode } from "react"
-import { Activity, Baby, CalendarDays, ClipboardList, Clock3, HeartPulse, MapPin, UserRound } from "lucide-react"
+import { Activity, Baby, CalendarDays, ClipboardList, Clock3, HeartPulse, MapPin, Pencil, Trash2, UserRound } from "lucide-react"
 import { format } from "date-fns"
+import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent } from "@/components/ui/sheet"
 import { DrawerHeading } from "@/components/ui/drawer-heading"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -19,17 +20,29 @@ function Detail({ label, icon: Icon, children }: { label: string; icon: typeof C
   </div>
 }
 
-export function DeliveryDetailsDrawer({ open, onOpenChange, patientName, delivery, pregnancy }: {
+export function DeliveryDetailsDrawer({
+  open,
+  onOpenChange,
+  patientName,
+  delivery,
+  pregnancy,
+  onEdit,
+  onDelete,
+  readOnly = false,
+}: {
   open: boolean
   onOpenChange: (open: boolean) => void
   patientName: string
   delivery: MaternalDelivery | null
   pregnancy?: MaternalPregnancy
+  onEdit?: () => void
+  onDelete?: () => void
+  readOnly?: boolean
 }) {
   if (!delivery) return null
   const newborns = delivery.newbornRecords ?? []
   return <Sheet open={open} onOpenChange={onOpenChange}>
-    <SheetContent side="right" showCloseButton className="w-3/4 gap-0 overflow-y-auto border-sidebar-border bg-background p-0 text-foreground sm:max-w-sm">
+    <SheetContent side="right" showCloseButton className="w-3/4 gap-0 overflow-y-auto border-sidebar-border bg-background p-0 text-foreground sm:max-w-md">
       <DrawerHeading
         icon={ClipboardList}
         title={<>{patientName} <span className="font-normal text-muted-foreground">— Delivery Details</span></>}
@@ -69,6 +82,34 @@ export function DeliveryDetailsDrawer({ open, onOpenChange, patientName, deliver
           </dl>
         </div>)}</div> : <p className="mt-3 text-xs text-muted-foreground">No newborn record is linked to this delivery.</p>}
       </section>
+
+      {!readOnly && (onEdit || onDelete) && (
+        <div className="sticky bottom-0 flex items-center justify-end gap-2 border-t border-border bg-background/95 px-5 py-3 backdrop-blur-sm">
+          {onDelete && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={onDelete}
+              className="h-8 gap-1.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="size-3.5" />
+              Delete Delivery
+            </Button>
+          )}
+          {onEdit && (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onEdit}
+              className="h-8 gap-1.5 text-xs"
+            >
+              <Pencil className="size-3.5" />
+              Edit Delivery
+            </Button>
+          )}
+        </div>
+      )}
     </SheetContent>
   </Sheet>
 }

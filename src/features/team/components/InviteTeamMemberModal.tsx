@@ -27,13 +27,30 @@ const staffSchema = z.object({
   middleName: z.string().trim().optional(),
   lastName: z.string().trim().min(1, "Last name is required."),
   phone: z.string().trim().optional(),
-  email: z.string().trim().email("Enter a valid email address.").or(z.literal("")),
+  email: z.string().trim().min(1, "Email address is required.").email("Enter a valid email address."),
   role: z.enum(["Nurse", "Midwife", "Admin"], { error: "Select a staff role." }),
   password: z.string().min(6, "Use at least 6 characters."),
 })
 
-export function InviteTeamMemberModal({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = React.useState(false)
+export function InviteTeamMemberModal({
+  children,
+  open: controlledOpen,
+  onOpenChange: setControlledOpen,
+}: {
+  children?: React.ReactNode
+  open?: boolean
+  onOpenChange?: (open: boolean) => void
+}) {
+  const [internalOpen, setInternalOpen] = React.useState(false)
+  const isControlled = controlledOpen !== undefined
+  const open = isControlled ? controlledOpen : internalOpen
+  const setOpen = React.useCallback((value: boolean) => {
+    if (isControlled) {
+      setControlledOpen?.(value)
+    } else {
+      setInternalOpen(value)
+    }
+  }, [isControlled, setControlledOpen])
   const { session } = useAuthSession()
   const [values, setValues] = React.useState({ firstName: "", middleName: "", lastName: "", phone: "", email: "", role: "Nurse", password: "" })
   const [errors, setErrors] = React.useState<Record<string, string>>({})
@@ -59,7 +76,7 @@ export function InviteTeamMemberModal({ children }: { children: React.ReactNode 
         last_name: parsed.data.lastName,
         role: parsed.data.role,
         phone_number: parsed.data.phone || undefined,
-        email: parsed.data.email || undefined,
+        email: parsed.data.email,
         password: parsed.data.password,
         facility_id: session.user.facility_id ?? undefined,
       })
@@ -93,7 +110,7 @@ export function InviteTeamMemberModal({ children }: { children: React.ReactNode 
           <div className="flex flex-col gap-2"><Label htmlFor="staff-middle-name">Middle Name <span className="text-muted-foreground">(Optional)</span></Label><Input id="staff-middle-name" value={values.middleName} onChange={(event) => change("middleName", event.target.value)} placeholder="Dela Cruz" className={inputClassName} /></div>
           <div className="flex flex-col gap-2"><Label htmlFor="staff-phone">Phone Number</Label><Input id="staff-phone" type="tel" autoComplete="tel" value={values.phone} onChange={(event) => change("phone", event.target.value)} placeholder="09XX XXX XXXX" className={inputClassName} /></div>
         </div>
-        <div className="flex flex-col gap-2"><Label htmlFor="staff-email">Email Address</Label><Input id="staff-email" type="email" autoComplete="email" value={values.email} onChange={(event) => change("email", event.target.value)} placeholder="name@example.com" className={inputClassName} aria-invalid={Boolean(errors.email)} />{errorText("email")}</div>
+        <div className="flex flex-col gap-2"><Label htmlFor="staff-email">Email Address{required}</Label><Input id="staff-email" type="email" autoComplete="email" value={values.email} onChange={(event) => change("email", event.target.value)} placeholder="name@example.com" className={inputClassName} aria-invalid={Boolean(errors.email)} />{errorText("email")}</div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="flex flex-col gap-2"><Label htmlFor="staff-role">Role{required}</Label><Select value={values.role} onValueChange={(value) => change("role", value)}><SelectTrigger id="staff-role" className={inputClassName}><SelectValue placeholder="Select role" /></SelectTrigger><SelectContent position="popper">{roles.map((role) => <SelectItem key={role} value={role}>{role}</SelectItem>)}</SelectContent></Select>{errorText("role")}</div>
           <div className="flex flex-col gap-2"><Label htmlFor="staff-password">Temporary Password{required}</Label><Input id="staff-password" type="password" autoComplete="new-password" value={values.password} onChange={(event) => change("password", event.target.value)} placeholder="At least 6 characters" className={inputClassName} aria-invalid={Boolean(errors.password)} />{errorText("password")}</div>

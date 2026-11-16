@@ -2,7 +2,7 @@ import * as React from "react"
 import { useCallback, useMemo, useState } from "react"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { addDays, addMonths, addWeeks, endOfMonth, endOfWeek, format, isSameDay, isSameMonth, startOfDay, startOfMonth, startOfWeek, subMonths, subWeeks } from "date-fns"
-import { CalendarPlus } from "lucide-react"
+import { AlertCircle, CalendarPlus } from "lucide-react"
 
 
 import { CustomToolbar } from "./CustomToolbar"
@@ -13,6 +13,7 @@ import type { AppEvent } from "./types"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { ConfirmSensitiveActionDialog } from "@/components/ui/confirm-sensitive-action-dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
@@ -21,13 +22,12 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
 import { getMaternalRecords } from "@/features/maternal-records/api"
 import { toast } from "sonner"
-import { appointmentToEvent, cancelAppointment, createAppointment, getAppointments, maternalRecordToAppointmentOption } from "../api"
+import { appointmentToEvent, cancelAppointment, createAppointment, deleteAppointment, getAppointments, maternalRecordToAppointmentOption } from "../api"
 import { getClosedDates, type ClosedDateRecord } from "../closed-dates"
 import type { AppointmentFormValues, AppointmentMotherOption } from "./CreateAppointmentModal"
 
 import "react-big-calendar/lib/css/react-big-calendar.css"
 
-// Re-export AppEvent from the shared types file for backwards compatibility
 export type { AppEvent } from "./types"
 
 export function CalendarPage() {
@@ -42,6 +42,7 @@ export function CalendarPage() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isDateAppointmentsOpen, setIsDateAppointmentsOpen] = useState(false)
   const [appointmentToCancel, setAppointmentToCancel] = useState<AppEvent | null>(null)
+  const [appointmentToDelete, setAppointmentToDelete] = useState<AppEvent | null>(null)
   const [cancelPassword, setCancelPassword] = useState("")
   const [isCancelling, setIsCancelling] = useState(false)
   const [events, setEvents] = useState<AppEvent[]>([])
@@ -57,7 +58,6 @@ export function CalendarPage() {
     return () => window.removeEventListener("silang:closed-dates-updated", syncClosedDates)
   }, [session?.user?.facility_id])
 
-  // Swipe gesture handling
   const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number} | null>(null)
   const [touchEndPos, setTouchEndPos] = useState<{x: number, y: number} | null>(null)
   const minSwipeDistance = 50
@@ -118,7 +118,6 @@ export function CalendarPage() {
     }
   }, [session])
 
-  // Loading appointments is an external data synchronization effect.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => { void loadCalendarData() }, [loadCalendarData])
 
@@ -170,6 +169,18 @@ export function CalendarPage() {
     }
   }
 
+  const confirmDeleteAppointment = async () => {
+    if (!appointmentToDelete?.appointmentId || !session?.token) return
+    try {
+      await deleteAppointment(session.token, appointmentToDelete.appointmentId)
+      setEvents((current) => current.filter((event) => event.id !== appointmentToDelete.id))
+      toast.success("Appointment deleted")
+      setAppointmentToDelete(null)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to delete appointment")
+    }
+  }
+
   const monthWeeks = React.useMemo(() => {
     const firstWeek = startOfWeek(startOfMonth(viewDate), { weekStartsOn: 1 })
     const lastWeek = endOfWeek(endOfMonth(viewDate), { weekStartsOn: 1 })
@@ -182,7 +193,6 @@ export function CalendarPage() {
     return weeks
   }, [viewDate])
 
-  // Handle navigate from toolbar or calendar
   const handleNavigate = (action: 'PREV' | 'NEXT' | 'TODAY' | Date) => {
     if (action instanceof Date) {
       setViewDate(action)
@@ -209,8 +219,12 @@ export function CalendarPage() {
     setSelectedDate(start)
     setViewDate(start)
     const day = start.getDay()
-    // On desktop, clicking a weekday opens the create modal. 
-    // On mobile, it just selects the date to show events below.
+    const dateStr = format(start, "yyyy-MM-dd")
+    const isClosed = closedDates.some((item) => item.date === dateStr)
+    if (isClosed) {
+      toast.error("Facility is closed on this date. Appointments cannot be scheduled.")
+      return
+    }
     if (!isMobileRef.current && day !== 0 && day !== 6) {
       setIsCreateModalOpen(true)
     }
@@ -228,7 +242,6 @@ export function CalendarPage() {
     setViewDate(event.start)
   }
 
-  // Filter events for the selected date to show in the mobile bottom section
   const selectedDateEvents = useMemo(() => {
     return visibleEvents.filter(e => e.start && selectedDate &&
       e.start.getDate() === selectedDate.getDate() &&
@@ -237,6 +250,9 @@ export function CalendarPage() {
     )
   }, [visibleEvents, selectedDate])
 
+  const selectedDateStr = format(selectedDate, "yyyy-MM-dd")
+  const selectedDateClosed = closedDates.find((item) => item.date === selectedDateStr)
+
   return (
     <div 
       className="flex flex-col h-full bg-background dark:bg-black p-4 text-foreground relative min-h-0 w-full overflow-hidden"
@@ -244,7 +260,6 @@ export function CalendarPage() {
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEndHandler}
     >
-      {/* Extracted Toolbar */}
       <div className="shrink-0 mb-4 z-10">
         <CustomToolbar
           date={viewDate}
@@ -322,6 +337,7 @@ export function CalendarPage() {
             viewDate={viewDate}
             selectedDate={selectedDate}
             events={visibleEvents}
+            closedDates={closedDates}
             onSelectDate={(d) => handleSelectSlot({ start: d })}
             onSelectEvent={handleSelectEvent}
           />
@@ -336,9 +352,27 @@ export function CalendarPage() {
       <Dialog open={isDateAppointmentsOpen} onOpenChange={setIsDateAppointmentsOpen}>
         <DialogContent className="flex max-h-[80dvh] w-[calc(100%-2rem)] max-w-lg flex-col gap-4 overflow-hidden rounded-xl border-sidebar-border bg-background p-5 text-foreground">
           <DialogHeader className="shrink-0 gap-1">
-            <DialogTitle className="text-base font-semibold">Appointments</DialogTitle>
+            <div className="flex items-center justify-between gap-2">
+              <DialogTitle className="text-base font-semibold">Appointments</DialogTitle>
+              {selectedDateClosed && (
+                <span className="rounded bg-destructive/15 px-2 py-0.5 text-xs font-semibold text-destructive">
+                  Facility Closed
+                </span>
+              )}
+            </div>
             <DialogDescription>{format(selectedDate, "EEEE, MMMM d, yyyy")}</DialogDescription>
           </DialogHeader>
+
+          {selectedDateClosed && (
+            <div className="flex items-start gap-2.5 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-destructive">
+              <AlertCircle className="mt-0.5 size-4 shrink-0" />
+              <div className="min-w-0 text-xs">
+                <p className="font-semibold">Facility Closed: {selectedDateClosed.reason}</p>
+                <p className="mt-0.5 text-destructive/80">Appointments cannot be scheduled on closed dates.</p>
+              </div>
+            </div>
+          )}
+
           <div className="min-h-0 max-h-[min(52dvh,28rem)] flex-1 overflow-y-auto">
             {selectedDateEvents.length ? (
               <div className="flex flex-col gap-2 pr-1">
@@ -346,6 +380,7 @@ export function CalendarPage() {
                   <div className="min-w-0 flex-1"><CustomEvent event={event} onClick={handleSelectEvent} compact /></div>
                   {event.appointmentId && <TableRowActions label={`Actions for ${event.patient ?? "appointment"}`}>
                     <DropdownMenuItem onSelect={() => { setIsDateAppointmentsOpen(false); setAppointmentToCancel(event) }} disabled={event.status?.toLowerCase() === "cancelled" || event.status?.toLowerCase() === "completed"} className="text-destructive focus:text-destructive">Cancel Appointment</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => { setIsDateAppointmentsOpen(false); setAppointmentToDelete(event) }} className="text-destructive focus:text-destructive">Delete Appointment</DropdownMenuItem>
                   </TableRowActions>}
                 </div>)}
               </div>
@@ -357,9 +392,15 @@ export function CalendarPage() {
           </div>
           <DialogFooter className="flex-row justify-between gap-3 sm:justify-between">
             <Button type="button" variant="outline" onClick={() => setIsDateAppointmentsOpen(false)} className="h-8 px-3 text-xs">Close</Button>
-            <Button type="button" onClick={() => { setIsDateAppointmentsOpen(false); setIsCreateModalOpen(true) }} className="h-8 gap-1.5 px-3 text-xs">
-              <CalendarPlus className="size-3.5" />Schedule Appointment
-            </Button>
+            {!selectedDateClosed ? (
+              <Button type="button" onClick={() => { setIsDateAppointmentsOpen(false); setIsCreateModalOpen(true) }} className="h-8 gap-1.5 px-3 text-xs">
+                <CalendarPlus className="size-3.5" />Schedule Appointment
+              </Button>
+            ) : (
+              <Button type="button" disabled variant="outline" className="h-8 gap-1.5 px-3 text-xs text-destructive border-destructive/30 bg-destructive/5 opacity-80 cursor-not-allowed">
+                <AlertCircle className="size-3.5" />Closed (Scheduling Blocked)
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -381,6 +422,15 @@ export function CalendarPage() {
         </DialogContent>
       </Dialog>
 
+      <ConfirmSensitiveActionDialog
+        open={Boolean(appointmentToDelete)}
+        onOpenChange={(open) => { if (!open) setAppointmentToDelete(null) }}
+        title={`Are you sure you want to delete the appointment for “${appointmentToDelete?.patient ?? "this mother"}”?`}
+        description="This will permanently delete this appointment record. This action cannot be undone."
+        confirmLabel="I understand the consequences, delete this appointment"
+        onConfirm={confirmDeleteAppointment}
+      />
+
       <CreateAppointmentModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
@@ -388,6 +438,7 @@ export function CalendarPage() {
         mothers={mothers}
         loadingMothers={isLoading}
         facilityId={session?.user?.facility_id}
+        initialDate={!selectedDateClosed ? selectedDateStr : undefined}
       />
     </div>
   )

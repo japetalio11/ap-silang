@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label"
 import { toast } from "sonner"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
+import { AuthLegalModal, type LegalModalTab } from "@/features/auth/components/AuthLegalModal"
 
 export function SuperAdminLoginPage() {
   const navigate = useNavigate()
@@ -16,6 +17,7 @@ export function SuperAdminLoginPage() {
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [openPolicy, setOpenPolicy] = useState<LegalModalTab | null>(null)
 
   useEffect(() => {
     if (isAuthenticated && session && isUserSuperAdmin(session.user.role)) {
@@ -159,9 +161,26 @@ export function SuperAdminLoginPage() {
               </Button>
             </div>
           </div>
-          <p className="mx-auto max-w-[330px] text-center text-xs leading-relaxed text-muted-foreground">
-            Silang Municipal Health Office • Central Data Administration
-          </p>
+          <div className="mx-auto max-w-[340px] text-center text-xs leading-relaxed text-muted-foreground space-y-1">
+            <p>Pili Municipal Health Office • Central Data Administration</p>
+            <p className="text-[11px]">
+              <button
+                type="button"
+                onClick={() => setOpenPolicy("terms")}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Terms of Service
+              </button>
+              {" • "}
+              <button
+                type="button"
+                onClick={() => setOpenPolicy("privacy")}
+                className="underline underline-offset-2 hover:text-foreground"
+              >
+                Health Data Privacy Policy
+              </button>
+            </p>
+          </div>
         </section>
 
         <aside className="relative m-1 hidden min-h-0 flex-col justify-between overflow-hidden rounded-md border border-border bg-background p-6 sm:m-2 lg:flex xl:p-10">
@@ -210,6 +229,14 @@ export function SuperAdminLoginPage() {
           </p>
         </aside>
       </div>
+
+      <AuthLegalModal
+        open={openPolicy !== null}
+        onOpenChange={(open) => {
+          if (!open) setOpenPolicy(null)
+        }}
+        initialTab={openPolicy ?? "terms"}
+      />
     </main>
   )
 }

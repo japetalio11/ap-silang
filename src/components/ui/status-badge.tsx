@@ -5,7 +5,7 @@ import {
   Circle,
   CircleAlert,
   CircleCheck,
-  Sparkles,
+  Clock,
   ShieldCheck,
   TriangleAlert,
   Truck,
@@ -26,7 +26,7 @@ function getStatusStyle(status: string): StatusStyle {
     return { className: "bg-zinc-600 border-zinc-600/20", icon: Archive }
   }
   if (normalized.includes("deceased")) return { className: "bg-zinc-600 border-zinc-600/20", icon: Circle }
-  if (normalized.includes("ongoing")) return { className: "bg-[#b45309] border-[#b45309]/20", icon: Sparkles }
+  if (normalized.includes("ongoing") || normalized.includes("today")) return { className: "bg-[#b45309] border-[#b45309]/20", icon: Clock }
   if (normalized.includes("in transit")) return { className: "bg-[#b45309] border-[#b45309]/20", icon: Truck }
   if (normalized.includes("high risk") || normalized.includes("danger") || normalized.includes("cancel") || normalized.includes("missed") || normalized.includes("rejected") || normalized.includes("booked")) {
     return { className: "bg-[#be123c] border-[#be123c]/20", icon: TriangleAlert }

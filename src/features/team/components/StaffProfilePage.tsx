@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, CalendarDays } from "lucide-react"
+import { AlertTriangle, ArrowLeft, CalendarDays } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { toast } from "sonner"
 import { getStaffActivities, getStaffById, setStaffActive, updateStaffRole, type StaffActivity, type StaffRecord } from "../api"
@@ -18,6 +19,12 @@ export function StaffProfilePage() {
   const [activities, setActivities] = useState<StaffActivity[]>([])
   const [loading, setLoading] = useState(true)
   const [isScheduleOpen, setIsScheduleOpen] = useState(false)
+  const [isDeactivateOpen, setIsDeactivateOpen] = useState(false)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
+
+  const userRole = session?.user?.role?.toLowerCase().trim() || ""
+  const isAdminOrAbove = userRole === "admin" || userRole === "systemadmin" || userRole === "superadmin"
+
   const loadStaff = useCallback(async () => {
     if (!token || !staffId) return
     setLoading(true)
@@ -36,6 +43,17 @@ export function StaffProfilePage() {
     return () => window.clearTimeout(timer)
   }, [loadStaff])
 
+  useEffect(() => {
+    const handleStaffUpdated = (event: Event) => {
+      const customEvent = event as CustomEvent<{ staffId?: string; payload?: { profile_url?: string } }>
+      if (customEvent.detail?.staffId === staffId && customEvent.detail?.payload?.profile_url) {
+        setStaff((prev) => prev ? { ...prev, avatar: customEvent.detail.payload!.profile_url! } : null)
+      }
+    }
+    window.addEventListener("silang:staff-updated", handleStaffUpdated)
+    return () => window.removeEventListener("silang:staff-updated", handleStaffUpdated)
+  }, [staffId])
+
   const changeRole = async (role: string) => {
     if (!staff || !token) return false
     try {
@@ -47,14 +65,31 @@ export function StaffProfilePage() {
     return false
   }
 
-  const changeActiveStatus = async () => {
+  const handleToggleActiveClick = () => {
+    if (!isAdminOrAbove) {
+      toast.error("Only administrators can deactivate or activate staff accounts.")
+      return
+    }
+    if (staff?.status === "Active") {
+      setIsDeactivateOpen(true)
+    } else {
+      void changeActiveStatus(true)
+    }
+  }
+
+  const changeActiveStatus = async (nextActive: boolean) => {
     if (!staff || !token) return
-    const is_active = staff.status !== "Active"
+    setIsUpdatingStatus(true)
     try {
-      await setStaffActive(token, staff.id, is_active)
-      setStaff({ ...staff, status: is_active ? "Active" : "Deactivated" })
-      toast.success(is_active ? "Staff account activated" : "Staff account deactivated")
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Unable to update staff account") }
+      await setStaffActive(token, staff.id, nextActive)
+      setStaff({ ...staff, status: nextActive ? "Active" : "Deactivated" })
+      toast.success(nextActive ? "Staff account activated" : "Staff account deactivated")
+      setIsDeactivateOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to update staff account")
+    } finally {
+      setIsUpdatingStatus(false)
+    }
   }
 
   return (
@@ -64,11 +99,25 @@ export function StaffProfilePage() {
           <ArrowLeft className="size-3.5" />
           Staff Management
         </Button>
-        {staff && !loading && <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
-          <Button variant="outline" onClick={() => setIsScheduleOpen(true)} className="h-8 gap-1.5 px-2.5 text-xs"><CalendarDays className="size-3.5" />Staff Schedule</Button>
-          <Button variant="outline" onClick={() => void changeActiveStatus()} className="h-8 px-2.5 text-xs">{staff.status === "Active" ? "Deactivate Account" : "Activate Account"}</Button>
-          <Button variant="outline" disabled title="Staff profile editing is not available through the connected API." className="h-8 px-2.5 text-xs">Edit Profile</Button>
-        </div>}
+        {staff && !loading && (
+          <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            {isAdminOrAbove && (
+              <>
+                <Button variant="outline" onClick={() => setIsScheduleOpen(true)} className="h-8 gap-1.5 px-2.5 text-xs">
+                  <CalendarDays className="size-3.5" />Staff Schedule
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleToggleActiveClick}
+                  disabled={isUpdatingStatus}
+                  className={`h-8 px-2.5 text-xs ${staff.status === "Active" ? "text-destructive hover:bg-destructive/10 hover:text-destructive" : ""}`}
+                >
+                  {staff.status === "Active" ? "Deactivate Account" : "Activate Account"}
+                </Button>
+              </>
+            )}
+          </div>
+        )}
       </div>
       {loading ? (
         <section className="grid min-h-0 flex-1 gap-4 xl:grid-cols-[1fr_1fr]" aria-label="Loading staff profile" aria-busy="true">
@@ -83,8 +132,15 @@ export function StaffProfilePage() {
         </section>
       ) : staff ? (
         <>
-          <StaffProfileContent staff={staff} activities={activities} onRoleChange={changeRole} />
-          <StaffScheduleDialog key={staff.id} open={isScheduleOpen} onOpenChange={setIsScheduleOpen} staff={staff} />
+          <StaffProfileContent
+            staff={staff}
+            activities={activities}
+            onRoleChange={changeRole}
+            onAvatarUpdated={(newAvatar) => {
+              setStaff((prev) => prev ? { ...prev, avatar: newAvatar } : null)
+            }}
+          />
+          {isAdminOrAbove && <StaffScheduleDialog key={staff.id} open={isScheduleOpen} onOpenChange={setIsScheduleOpen} staff={staff} />}
         </>
       ) : (
         <section className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-md border border-sidebar-border text-center">
@@ -93,6 +149,61 @@ export function StaffProfilePage() {
           <Button variant="outline" onClick={() => navigate("/dashboard/team")} className="h-8 text-xs">Back to Staff Management</Button>
         </section>
       )}
+
+      <Dialog open={isDeactivateOpen} onOpenChange={setIsDeactivateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-2 text-destructive">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-destructive/10">
+                <AlertTriangle className="size-4" />
+              </div>
+              <DialogTitle className="text-base font-semibold text-foreground">
+                Deactivate Staff Account?
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+              Are you sure you want to deactivate the account of <span className="font-semibold text-foreground">{staff?.name}</span> ({staff?.role})?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
+            <p className="font-medium text-foreground">Effects of deactivation:</p>
+            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+              <li>
+                <strong className="text-foreground">Session Termination:</strong> The user will be immediately signed out and blocked from accessing clinic portals and mobile applications.
+              </li>
+              <li>
+                <strong className="text-foreground">Access Revocation:</strong> Access to patient charts, maternal records, and clinical appointments will be halted.
+              </li>
+              <li>
+                <strong className="text-foreground">Data Preservation:</strong> All historical consultations, medical entries, and audit logs created by this staff member remain secure and intact.
+              </li>
+              <li>
+                <strong className="text-foreground">Reversible:</strong> Administrators can reactivate this account at any time.
+              </li>
+            </ul>
+          </div>
+
+          <DialogFooter className="gap-2 sm:justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsDeactivateOpen(false)}
+              disabled={isUpdatingStatus}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => void changeActiveStatus(false)}
+              disabled={isUpdatingStatus}
+            >
+              {isUpdatingStatus ? "Deactivating…" : "Confirm Deactivation"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
