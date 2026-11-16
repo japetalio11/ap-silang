@@ -23,6 +23,7 @@ export class SilangSyncEngine {
   private isOnlineState: boolean = typeof navigator !== "undefined" ? navigator.onLine : true
   private tempIdMap: Map<string, string> = new Map()
   private tempUserIdMap: Map<string, string> = new Map()
+  private autoSyncTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor() {
     if (typeof window !== "undefined") {
@@ -33,11 +34,56 @@ export class SilangSyncEngine {
 
       window.addEventListener("online", () => {
         this.setNetworkOnline(true)
+        this.triggerAutoSync(500)
       })
       window.addEventListener("offline", () => {
         this.setNetworkOnline(false)
       })
+      window.addEventListener("focus", () => {
+        if (typeof navigator !== "undefined" && navigator.onLine) {
+          this.triggerAutoSync(500)
+        }
+      })
+      setInterval(() => {
+        if (typeof navigator !== "undefined" && navigator.onLine && !this.isSyncing) {
+          void db.offlineQueue.where("status").anyOf("pending", "error").count().then((count) => {
+            if (count > 0) this.triggerAutoSync(500)
+          }).catch(() => {})
+        }
+      }, 25000)
+      setTimeout(() => {
+        if (typeof navigator !== "undefined" && navigator.onLine) {
+          this.triggerAutoSync(1500)
+        }
+      }, 1500)
     }
+  }
+
+  public getStoredToken(): string | null {
+    if (typeof window === "undefined") return null
+    for (const storage of [window.sessionStorage, window.localStorage]) {
+      try {
+        const raw = storage.getItem("silang.auth.session") || storage.getItem("silang.auth.offline-session")
+        if (raw) {
+          const parsed = JSON.parse(raw) as { token?: string }
+          if (parsed?.token) return parsed.token
+        }
+      } catch {}
+    }
+    return null
+  }
+
+  public triggerAutoSync(delayMs = 1000) {
+    if (typeof navigator === "undefined" || !navigator.onLine || this.isSyncing) return
+    if (!isAutoSyncOnReconnectEnabled()) return
+    const token = this.getStoredToken()
+    if (!token) return
+
+    if (this.autoSyncTimer) clearTimeout(this.autoSyncTimer)
+    this.autoSyncTimer = setTimeout(() => {
+      this.autoSyncTimer = null
+      void this.processQueue(token)
+    }, delayMs)
   }
 
   private async rehydrateMappings() {
@@ -72,22 +118,10 @@ export class SilangSyncEngine {
   }
 
   public setNetworkOnline(online: boolean) {
-    if (this.isOnlineState !== online) {
-      this.isOnlineState = online
-      this.notify()
-      if (online && isAutoSyncOnReconnectEnabled()) {
-        const sessionStr = window.localStorage.getItem("silang.auth.session")
-        if (sessionStr) {
-          try {
-            const session = JSON.parse(sessionStr) as { token?: string }
-            if (session.token) {
-              void this.processQueue(session.token)
-            }
-          } catch {
-            return
-          }
-        }
-      }
+    this.isOnlineState = online
+    this.notify()
+    if (online) {
+      this.triggerAutoSync(500)
     }
   }
 
@@ -117,6 +151,9 @@ export class SilangSyncEngine {
         continue
       }
     }
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("silang:outbox-updated"))
+    }
   }
 
   public isItemBlocked(item: OfflineQueueItem, queue: OfflineQueueItem[]): boolean {
@@ -142,7 +179,7 @@ export class SilangSyncEngine {
 
     for (let i = 0; i < currentIndex; i++) {
       const prev = queue[i]
-      if (prev.status === "pending" || prev.status === "processing") {
+      if (prev.status === "pending" || prev.status === "processing" || prev.status === "error") {
         if (prev.temp_id && checkIds.includes(prev.temp_id)) {
           return true
         }
@@ -172,6 +209,48 @@ export class SilangSyncEngine {
     await this.notify()
   }
 
+  public resolveEndpoint(endpoint: string): string {
+    let resolved = endpoint
+    for (const [tempId, canonicalId] of this.tempIdMap.entries()) {
+      if (!tempId || !canonicalId) continue
+      const encTemp = encodeURIComponent(tempId)
+      const encCanon = encodeURIComponent(canonicalId)
+      if (resolved.includes(encTemp)) {
+        resolved = resolved.split(encTemp).join(encCanon)
+      }
+      if (resolved.includes(tempId)) {
+        resolved = resolved.split(tempId).join(canonicalId)
+      }
+    }
+    return resolved
+  }
+
+  public async cancelOfflineMutation(tempId: string): Promise<boolean> {
+    if (!tempId) return false
+    const mapping = await db.idMappings.get(tempId).catch(() => null)
+    if (mapping?.canonical_id) {
+      return false
+    }
+    const allQueue = await db.offlineQueue.toArray().catch(() => [])
+    for (const item of allQueue) {
+      if (!item.id) continue
+      const payloadValues = item.payload && typeof item.payload === "object" ? Object.values(item.payload) : []
+      const matchesTemp =
+        item.temp_id === tempId ||
+        item.endpoint.includes(tempId) ||
+        item.endpoint.includes(encodeURIComponent(tempId)) ||
+        payloadValues.includes(tempId)
+      if (matchesTemp) {
+        await db.offlineQueue.delete(item.id).catch(() => {})
+      }
+    }
+    await this.notify()
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("silang:outbox-updated"))
+    }
+    return true
+  }
+
   public async enqueue(item: Omit<OfflineQueueItem, "id" | "created_at" | "retry_count" | "status">) {
     const queueItem: OfflineQueueItem = {
       ...item,
@@ -181,6 +260,9 @@ export class SilangSyncEngine {
     }
     const id = await db.offlineQueue.add(queueItem)
     await this.notify()
+    if (typeof navigator !== "undefined" && navigator.onLine) {
+      this.triggerAutoSync(1000)
+    }
     return id
   }
 
@@ -265,11 +347,39 @@ export class SilangSyncEngine {
       }
     }
 
+    const entityIdKeys = [
+      ["appointment_id", "appointmentId"],
+      ["delivery_id", "deliveryId"],
+      ["supplement_id", "supplementId"],
+      ["screening_id", "screeningId"],
+      ["visit_id", "visitId"],
+    ] as const
+
+    for (const [snakeKey, camelKey] of entityIdKeys) {
+      for (const key of [snakeKey, camelKey] as const) {
+        const val = clone[key]
+        if (typeof val === "string") {
+          if (this.tempIdMap.has(val)) {
+            clone[key] = this.tempIdMap.get(val)!
+          } else {
+            const mapping = await db.idMappings.get(val).catch(() => null)
+            if (mapping?.canonical_id) {
+              this.tempIdMap.set(val, mapping.canonical_id)
+              clone[key] = mapping.canonical_id
+            }
+          }
+        }
+      }
+    }
+
     if (typeof clone.patient_id === "string" && this.tempIdMap.has(clone.patient_id)) {
       clone.patient_id = this.tempIdMap.get(clone.patient_id)
     }
     if (typeof clone.staff_id === "string" && this.tempIdMap.has(clone.staff_id)) {
       clone.staff_id = this.tempIdMap.get(clone.staff_id)
+    }
+    if (typeof clone.health_worker_id === "string" && this.tempIdMap.has(clone.health_worker_id)) {
+      clone.health_worker_id = this.tempIdMap.get(clone.health_worker_id)
     }
 
     if (["delivery_outcome", "lab_screening", "prenatal_visit", "referral", "prescription"].includes(entityType ?? "")) {
@@ -317,6 +427,30 @@ export class SilangSyncEngine {
       entity_type: entityType,
       created_at: Date.now(),
     }).catch(() => {})
+
+    const remainingQueue = await db.offlineQueue.toArray().catch(() => [])
+    for (const item of remainingQueue) {
+      if (!item.id) continue
+      let needsUpdate = false
+      let updatedEndpoint = item.endpoint
+      let updatedTempId = item.temp_id
+
+      if (updatedEndpoint.includes(tempId) || updatedEndpoint.includes(encodeURIComponent(tempId))) {
+        updatedEndpoint = this.resolveEndpoint(updatedEndpoint)
+        needsUpdate = true
+      }
+      if (updatedTempId === tempId) {
+        updatedTempId = canonicalId
+        needsUpdate = true
+      }
+
+      if (needsUpdate) {
+        await db.offlineQueue.update(item.id, {
+          endpoint: updatedEndpoint,
+          temp_id: updatedTempId,
+        }).catch(() => {})
+      }
+    }
   }
 
   public async processQueue(token: string): Promise<{ synced: number; conflicts: number; errors: number }> {
@@ -370,10 +504,35 @@ export class SilangSyncEngine {
           continue
         }
 
+        const tempTarget = (item.temp_id?.startsWith("temp-") ? item.temp_id : null) || item.endpoint.match(/temp-[a-zA-Z0-9-]+/)?.[0] || null
+
+        if (tempTarget && !this.tempIdMap.has(tempTarget)) {
+          const mapping = await db.idMappings.get(tempTarget).catch(() => null)
+          if (mapping?.canonical_id) {
+            this.tempIdMap.set(tempTarget, mapping.canonical_id)
+            if (mapping.canonical_user_id) {
+              this.tempUserIdMap.set(tempTarget, mapping.canonical_user_id)
+            }
+          }
+        }
+
+        if (item.action !== "CREATE" && tempTarget && !this.tempIdMap.has(tempTarget)) {
+          const hasPendingCreate = allItems.some(
+            (prev) => prev.temp_id === tempTarget && prev.action === "CREATE"
+          )
+          if (hasPendingCreate) {
+            continue
+          }
+          await db.offlineQueue.delete(item.id).catch(() => {})
+          synced++
+          continue
+        }
+
         await db.offlineQueue.update(item.id, { status: "processing" })
 
         try {
           const resolvedPayload = await this.resolvePayloadReferences(item.payload, item.entity_type)
+          const resolvedEndpoint = this.resolveEndpoint(item.endpoint)
 
           if (item.blob_ids && item.blob_ids.length > 0) {
             const uploadedUrls = await this.uploadBlobsIfAny(item.blob_ids, token)
@@ -387,23 +546,43 @@ export class SilangSyncEngine {
 
           let response: Record<string, unknown> | null = null
 
-          if (item.method === "POST") {
-            response = await apiRequest<Record<string, unknown>>(item.endpoint, {
+          if (item.method === "POST" && item.action !== "UPDATE") {
+            response = await apiRequest<Record<string, unknown>>(resolvedEndpoint, {
               method: "POST",
               token,
               body: JSON.stringify(resolvedPayload),
             })
-          } else if (item.method === "PUT") {
-            response = await apiRequest<Record<string, unknown>>(item.endpoint, {
-              method: "PUT",
-              token,
-              body: JSON.stringify(resolvedPayload),
-            })
+          } else if (item.method === "PUT" || item.action === "UPDATE") {
+            try {
+              response = await apiRequest<Record<string, unknown>>(resolvedEndpoint, {
+                method: item.method,
+                token,
+                body: JSON.stringify(resolvedPayload),
+              })
+            } catch (updateError: any) {
+              if (updateError instanceof ApiError && updateError.status === 404) {
+                response = { success: false, ignored: true, message: "Resource not found on server" }
+              } else if (updateError?.message && updateError.message.toLowerCase().includes("not found")) {
+                response = { success: false, ignored: true, message: "Resource not found on server" }
+              } else {
+                throw updateError
+              }
+            }
           } else if (item.method === "DELETE") {
-            response = await apiRequest<Record<string, unknown>>(item.endpoint, {
-              method: "DELETE",
-              token,
-            })
+            try {
+              response = await apiRequest<Record<string, unknown>>(resolvedEndpoint, {
+                method: "DELETE",
+                token,
+              })
+            } catch (delError: any) {
+              if (delError instanceof ApiError && delError.status === 404) {
+                response = { success: true, message: "Resource already deleted on server" }
+              } else if (delError?.message && delError.message.toLowerCase().includes("not found")) {
+                response = { success: true, message: "Resource already deleted on server" }
+              } else {
+                throw delError
+              }
+            }
           }
 
           const resAny = response as any
@@ -572,6 +751,23 @@ export class SilangSyncEngine {
                 })
               }
             }
+          } else if (item.entity_type === "prescription" && item.action === "CREATE") {
+            const resSup = (resAny?.data ?? resAny?.result ?? resAny?.supplement_record ?? resAny?.supplement ?? resAny) as Record<string, any> | undefined
+            const serverSupId = (resSup?.supplement_id || resSup?.id) as string | undefined
+            if (serverSupId && item.temp_id) {
+              await this.recordMapping(item.temp_id, serverSupId, "prescription")
+              const localSup = await db.prescriptions.get(item.temp_id)
+              if (localSup) {
+                await db.prescriptions.delete(item.temp_id)
+                await db.prescriptions.put({
+                  ...localSup,
+                  id: serverSupId,
+                  prescription_id: serverSupId,
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
           } else if (item.entity_type === "appointment" && item.action === "CREATE") {
             const resAppt = (response?.data ?? response?.result ?? response?.appointment) as Record<string, unknown> | undefined
             const serverApptId = (resAppt?.appointment_id || resAppt?.id) as string | undefined
@@ -584,6 +780,48 @@ export class SilangSyncEngine {
                   ...localAppt,
                   id: serverApptId,
                   appointment_id: serverApptId,
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
+          } else if (item.entity_type === "appointment" && item.action === "UPDATE") {
+            const rawId = String(item.temp_id || resolvedEndpoint.split("/").pop() || "")
+            const apptId = this.tempIdMap.get(rawId) || rawId
+            if (apptId) {
+              const localAppt = await db.appointments.get(apptId)
+              if (localAppt) {
+                await db.appointments.update(localAppt.id, {
+                  ...localAppt,
+                  ...resolvedPayload,
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
+          } else if (item.entity_type === "delivery_outcome" && item.action === "UPDATE") {
+            const rawId = String(item.temp_id || resolvedEndpoint.split("/").pop() || "")
+            const delId = this.tempIdMap.get(rawId) || rawId
+            if (delId) {
+              const localDel = await db.deliveryOutcomes.get(delId)
+              if (localDel) {
+                await db.deliveryOutcomes.update(localDel.id, {
+                  ...localDel,
+                  ...resolvedPayload,
+                  sync_status: "synced",
+                  updated_at: Date.now(),
+                })
+              }
+            }
+          } else if (item.entity_type === "prescription" && item.action === "UPDATE") {
+            const rawId = String(resolvedPayload.supplement_id || item.temp_id || "")
+            const supId = this.tempIdMap.get(rawId) || rawId
+            if (supId) {
+              const localSup = await db.prescriptions.get(supId)
+              if (localSup) {
+                await db.prescriptions.update(localSup.id, {
+                  ...localSup,
+                  ...resolvedPayload,
                   sync_status: "synced",
                   updated_at: Date.now(),
                 })
@@ -607,7 +845,7 @@ export class SilangSyncEngine {
               }
             }
           } else if (item.entity_type === "staff" && item.action === "UPDATE") {
-            const rawId = String(resolvedPayload.user_id || item.temp_id || item.endpoint.split("/")[2] || "")
+            const rawId = String(resolvedPayload.user_id || item.temp_id || resolvedEndpoint.split("/")[2] || "")
             const staffId = this.tempIdMap.get(rawId) || rawId
             if (staffId) {
               const localStaff = await db.staff.get(staffId) || await db.staff.where("user_id").equals(staffId).first()

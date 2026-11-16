@@ -360,12 +360,72 @@ export function updateStaffRole(token: string, id: string, role: string) {
 }
 
 export async function setStaffActive(token: string, id: string, is_active: boolean) {
-  const res = await apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(id)}/deactivate`, { method: "PUT", token, body: JSON.stringify({ is_active }) })
   const local = await db.staff.get(id) || await db.staff.where("user_id").equals(id).first()
   if (local) {
-    await db.staff.update(local.id, { is_active, updated_at: Date.now() }).catch(() => {})
+    await db.staff.update(local.id, { is_active, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
   }
-  return res
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("silang:staff-updated", { detail: { staffId: id, is_active } }))
+  }
+
+  if (id.startsWith("temp-")) {
+    const pendingCreate = await db.offlineQueue.where("temp_id").equals(id).first().catch(() => null)
+    if (pendingCreate && pendingCreate.id) {
+      const updatedPayload = { ...(pendingCreate.payload || {}), is_active }
+      await db.offlineQueue.update(pendingCreate.id, { payload: updatedPayload }).catch(() => {})
+    } else {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "staff",
+        action: "UPDATE",
+        endpoint: `/user/${encodeURIComponent(id)}/deactivate`,
+        method: "PUT",
+        payload: { user_id: id, is_active },
+        temp_id: id,
+      })
+    }
+    return { result: { ...(local || {}), user_id: id, is_active } as any, offline: true }
+  }
+
+  if (typeof navigator !== "undefined" && !navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "staff",
+      action: "UPDATE",
+      endpoint: `/user/${encodeURIComponent(id)}/deactivate`,
+      method: "PUT",
+      payload: { user_id: id, is_active },
+      temp_id: id,
+    })
+    return { result: { ...(local || {}), user_id: id, is_active } as any, offline: true }
+  }
+
+  try {
+    const res = await apiRequest<{ result: StaffApiRecord }>(`/user/${encodeURIComponent(id)}/deactivate`, {
+      method: "PUT",
+      token,
+      body: JSON.stringify({ is_active }),
+    })
+    if (local) {
+      await db.staff.update(local.id, { is_active, sync_status: "synced", updated_at: Date.now() }).catch(() => {})
+    }
+    return res
+  } catch (error: any) {
+    if (error instanceof TypeError || !navigator.onLine) {
+      await silangSyncEngine.enqueue({
+        client_mutation_id: crypto.randomUUID(),
+        entity_type: "staff",
+        action: "UPDATE",
+        endpoint: `/user/${encodeURIComponent(id)}/deactivate`,
+        method: "PUT",
+        payload: { user_id: id, is_active },
+        temp_id: id,
+      })
+      return { result: { ...(local || {}), user_id: id, is_active } as any, offline: true }
+    }
+    throw error
+  }
 }
 
 export function resetStaffPassword(token: string, id: string, newPassword: string) {

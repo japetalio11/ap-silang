@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { DrawerHeading } from "@/components/ui/drawer-heading"
 import type { MaternalAppointment, MaternalPregnancy, MaternalSupplement } from "../api"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 function DetailRow({ label, icon: Icon, children, className }: { label: string; icon: LucideIcon; children: ReactNode; className?: string }) {
   return <div className={`grid min-w-0 grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] items-start gap-3 py-2 text-xs ${className ?? ""}`}>
@@ -85,7 +86,22 @@ export function AppointmentDetailsDialog({
   const appointmentDate = appointment?.appointment_date ? new Date(appointment.appointment_date) : null
   const appointmentDateLabel = appointmentDate && !Number.isNaN(appointmentDate.getTime()) ? `${appointmentDate.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" })}${appointment?.appointment_time ? ` at ${appointment.appointment_time}` : ""}` : "Date not recorded"
   const visitDateLabel = consultation?.visit_date ? new Date(consultation.visit_date).toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" }) : "Date not recorded"
-  const riskLabel = consultation?.risk_level_assessed ?? "Not assessed"
+  const evaluatedRisk = consultation ? evaluateLocalVisitRisk({
+    vitals: {
+      bp_systolic: consultation.bp_systolic,
+      bp_diastolic: consultation.bp_diastolic,
+      pulse_rate_bpm: consultation.pulse_rate_bpm,
+      temperature_celsius: consultation.temperature_celsius,
+      has_vaginal_bleeding: Boolean(consultation.has_vaginal_bleeding),
+      has_fever: Boolean(consultation.has_fever),
+      has_edema: Boolean(consultation.has_edema),
+      has_pallor: Boolean(consultation.has_pallor),
+      danger_signs_observed: consultation.danger_signs_observed,
+    },
+    pregnancy,
+    overrideRiskLevel: consultation.risk_level_assessed,
+  }) : null
+  const riskLabel = consultation?.risk_level_assessed ?? evaluatedRisk?.risk_level_label ?? "Not assessed"
   const dangerSigns = [
     consultation?.has_vaginal_bleeding && "Vaginal bleeding",
     consultation?.has_fever && "Maternal fever",

@@ -110,6 +110,7 @@ import { ChangeStaffDialog, ConfirmRiskOverridePasswordDialog, EhrExportDialog, 
 import { EditMaternalProfileDialog, NewPregnancyDialog, type RegistrationValues } from "./MaternalRegistrationModal"
 import { MaternalAvatar } from "./MaternalAvatar"
 import { UploadAvatarDialog } from "./UploadAvatarDialog"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 const riskStyles = {
   "Low Risk": {
@@ -879,7 +880,31 @@ export function MaternalProfilePage() {
     || (Boolean(appointmentPregnancy?.pregnancy_id) && supplement.pregnancy_id === appointmentPregnancy?.pregnancy_id)
   )
   const latestVisit = getLatestPrenatalVisit(currentPregnancy)
-  const riskLevel = normalizeMaternalRisk(latestVisit?.risk_level_assessed)
+  const localCdss = useMemo(() => {
+    if (!latestVisit) return null
+    return evaluateLocalVisitRisk({
+      vitals: {
+        bp_systolic: latestVisit.bp_systolic,
+        bp_diastolic: latestVisit.bp_diastolic,
+        pulse_rate_bpm: latestVisit.pulse_rate_bpm,
+        temperature_celsius: latestVisit.temperature_celsius,
+        has_vaginal_bleeding: Boolean(latestVisit.has_vaginal_bleeding),
+        has_fever: Boolean(latestVisit.has_fever),
+        has_edema: Boolean(latestVisit.has_edema),
+        has_pallor: Boolean(latestVisit.has_pallor),
+        danger_signs_observed: latestVisit.danger_signs_observed,
+      },
+      mother: maternalRecord ? { age: maternalRecord.age } : null,
+      pregnancy: currentPregnancy,
+      overrideRiskLevel: latestVisit.risk_level_assessed,
+    })
+  }, [latestVisit, maternalRecord, currentPregnancy])
+
+  const effectiveRiskLevel = latestVisit?.risk_level_assessed
+    ? normalizeMaternalRisk(latestVisit.risk_level_assessed)
+    : (localCdss?.risk_level_label ?? "Low Risk")
+  const effectiveTews = latestVisit?.tews_score ?? localCdss?.tews_score ?? 0
+
   const dangerSigns = [
     latestVisit?.has_vaginal_bleeding && "Vaginal bleeding",
     latestVisit?.has_fever && "Maternal fever",
@@ -888,14 +913,14 @@ export function MaternalProfilePage() {
     latestVisit?.danger_signs_observed?.trim(),
   ].filter(Boolean)
   const riskAssessment = {
-    level: riskLevel as keyof typeof riskStyles,
-    tews: latestVisit?.tews_score ?? 0,
+    level: effectiveRiskLevel as keyof typeof riskStyles,
+    tews: effectiveTews,
     verdict: latestVisit
       ? dangerSigns.length
         ? `Triggered by: ${dangerSigns.join(", ")}.`
-        : riskLevel === "Low Risk"
+        : effectiveRiskLevel === "Low Risk"
           ? "All recorded vital signs are within routine clinical limits. No danger signs reported."
-          : "Risk assessment recorded for the latest visit. Review the clinical measurements and history."
+          : (localCdss?.protocols?.[0] || "Risk assessment recorded for the latest visit. Review the clinical measurements and history.")
       : "Log a consultation to see the current clinical assessment.",
   }
   const riskStyle = riskStyles[riskAssessment.level]
@@ -1025,6 +1050,26 @@ export function MaternalProfilePage() {
   })
   const appointmentEntries = (() => {
     const matchedVisitIds = new Set<string>()
+    const resolveVisitRisk = (v?: MaternalPrenatalVisit | null) => {
+      if (!v) return "Not assessed"
+      if (v.risk_level_assessed) return normalizeMaternalRisk(v.risk_level_assessed)
+      return evaluateLocalVisitRisk({
+        vitals: {
+          bp_systolic: v.bp_systolic,
+          bp_diastolic: v.bp_diastolic,
+          pulse_rate_bpm: v.pulse_rate_bpm,
+          temperature_celsius: v.temperature_celsius,
+          has_vaginal_bleeding: Boolean(v.has_vaginal_bleeding),
+          has_fever: Boolean(v.has_fever),
+          has_edema: Boolean(v.has_edema),
+          has_pallor: Boolean(v.has_pallor),
+          danger_signs_observed: v.danger_signs_observed,
+        },
+        mother: maternalRecord ? { age: maternalRecord.age } : null,
+        pregnancy: currentPregnancy,
+      }).risk_level_label
+    }
+
     const scheduledEntries = appointmentRowsState.map((baseRow, index) => {
       const appointment = maternalRecord?.appointments?.[index]
       const visit = appointment ? allVitals.find((candidate) => {
@@ -1037,7 +1082,7 @@ export function MaternalProfilePage() {
       const row: ReactNode[] = [
         <div className="flex flex-col gap-0.5"><span className="font-medium">{baseRow[0]}</span>{visit && <span className="text-[11px] text-muted-foreground">Visit #{visit.visit_number ?? "—"} · {visit.age_of_gestation_weeks ?? "—"}w AOG</span>}</div>,
         visit ? `${String(baseRow[1] ?? "Appointment")} · Consultation` : baseRow[1],
-        visit ? <StatusBadge status={visit.risk_level_assessed || "Not assessed"} /> : "—",
+        visit ? <StatusBadge status={resolveVisitRisk(visit)} /> : "—",
         baseRow[2],
       ]
       return { row, appointment, index, visit, pregnancy: visit?.pregnancy }
@@ -1051,7 +1096,7 @@ export function MaternalProfilePage() {
         row: [
           <div className="flex flex-col gap-0.5"><span className="font-medium">{formatRecordDate(visit.visit_date)}</span><span className="text-[11px] text-muted-foreground">Visit #{visit.visit_number ?? "—"} · {visit.age_of_gestation_weeks ?? "—"}w AOG</span></div>,
           "Consultation",
-          <StatusBadge status={visit.risk_level_assessed || "Not assessed"} />,
+          <StatusBadge status={resolveVisitRisk(visit)} />,
           <StatusBadge status="Completed" />,
         ] as ReactNode[],
       }
@@ -1263,7 +1308,7 @@ export function MaternalProfilePage() {
                 <CardTitle className={`truncate text-base font-semibold ${riskStyle.value}`}>{profile.fullName}</CardTitle>
                 <p className={`mt-0.5 text-xs ${riskStyle.label}`}>Maternal record · {profile.serialNo}</p>
               </div>
-              <StatusBadge status={latestVisit?.risk_level_assessed ? riskAssessment.level : "Not assessed"} />
+              <StatusBadge status={latestVisit ? riskAssessment.level : "Not assessed"} />
             </CardHeader>
             <CardContent className="grid gap-5 px-4 pt-1 sm:grid-cols-2 lg:grid-cols-3">
               <section className="space-y-3">

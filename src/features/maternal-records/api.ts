@@ -2,6 +2,7 @@ import { apiRequest } from "@/lib/api"
 import { db, type LocalMother, type LocalPregnancy, type LocalPrenatalVisit, type LocalLabScreening, type LocalDeliveryOutcome } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getPendingMotherUpdates, isNetworkFailure, enqueueMotherProfileUpdate } from "@/features/dashboard/offline-maternal-sync"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 export type MaternalPrenatalVisit = {
   visit_id?: string
@@ -1302,11 +1303,27 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
 
   if (isOffline) {
     const tempVisitId = `temp-v-${crypto.randomUUID()}`
+    const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
+    const mother = preg?.mother_id ? await db.mothers.get(preg.mother_id).catch(() => null) : null
+    const baselineVisit = await db.prenatalVisits
+      .where("pregnancy_id")
+      .equals(input.pregnancy_id)
+      .filter((v) => v.trimester === 1)
+      .first()
+      .catch(() => null)
+
+    const cdssResult = evaluateLocalVisitRisk({
+      vitals: input,
+      mother,
+      pregnancy: preg,
+      baselineVisit,
+    })
+
     const localVisit: LocalPrenatalVisit = {
       id: tempVisitId,
       visit_id: tempVisitId,
       pregnancy_id: input.pregnancy_id,
-      mother_id: "",
+      mother_id: preg?.mother_id || "",
       health_worker_id: input.health_worker_id,
       trimester: input.trimester,
       visit_number: input.visit_number,
@@ -1325,21 +1342,41 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
       has_pallor: input.has_pallor,
       has_edema: input.has_edema,
       has_fever: input.has_fever,
+      risk_level_assessed: cdssResult.risk_level_label,
+      tews_score: cdssResult.tews_score,
+      triggers: cdssResult.triggers,
+      protocols: cdssResult.protocols,
       visit_date: new Date().toISOString(),
       sync_status: "pending_create",
       updated_at: Date.now(),
     }
-    const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
-    if (preg) localVisit.mother_id = preg.mother_id
 
     await db.prenatalVisits.put(localVisit)
+    if (preg) {
+      await db.pregnancies.update(preg.id, {
+        risk_level: cdssResult.risk_level_label,
+        updated_at: Date.now(),
+      }).catch(() => {})
+      if (preg.mother_id) {
+        await db.mothers.update(preg.mother_id, {
+          risk_level: cdssResult.risk_level_label,
+          updated_at: Date.now(),
+        }).catch(() => {})
+      }
+    }
+
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "prenatal_visit",
       action: "CREATE",
       endpoint: "/prenatal-visit/register",
       method: "POST",
-      payload: { ...input, mother_id: (input as any).mother_id || preg?.mother_id },
+      payload: {
+        ...input,
+        mother_id: (input as any).mother_id || preg?.mother_id,
+        risk_level_assessed: cdssResult.risk_level_label,
+        tews_score: cdssResult.tews_score,
+      },
       temp_id: tempVisitId,
     })
     return {
@@ -1371,11 +1408,27 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
   } catch (error: any) {
     if (error instanceof TypeError || !navigator.onLine) {
       const tempVisitId = `temp-v-${crypto.randomUUID()}`
+      const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
+      const mother = preg?.mother_id ? await db.mothers.get(preg.mother_id).catch(() => null) : null
+      const baselineVisit = await db.prenatalVisits
+        .where("pregnancy_id")
+        .equals(input.pregnancy_id)
+        .filter((v) => v.trimester === 1)
+        .first()
+        .catch(() => null)
+
+      const cdssResult = evaluateLocalVisitRisk({
+        vitals: input,
+        mother,
+        pregnancy: preg,
+        baselineVisit,
+      })
+
       const localVisit: LocalPrenatalVisit = {
         id: tempVisitId,
         visit_id: tempVisitId,
         pregnancy_id: input.pregnancy_id,
-        mother_id: "",
+        mother_id: preg?.mother_id || "",
         health_worker_id: input.health_worker_id,
         trimester: input.trimester,
         visit_number: input.visit_number,
@@ -1394,20 +1447,41 @@ export const registerPrenatalVisit = async (token: string, input: RegisterPrenat
         has_pallor: input.has_pallor,
         has_edema: input.has_edema,
         has_fever: input.has_fever,
+        risk_level_assessed: cdssResult.risk_level_label,
+        tews_score: cdssResult.tews_score,
+        triggers: cdssResult.triggers,
+        protocols: cdssResult.protocols,
         visit_date: new Date().toISOString(),
         sync_status: "pending_create",
         updated_at: Date.now(),
       }
-      const preg = await db.pregnancies.get(input.pregnancy_id).catch(() => null)
-      if (preg) localVisit.mother_id = preg.mother_id
+
       await db.prenatalVisits.put(localVisit)
+      if (preg) {
+        await db.pregnancies.update(preg.id, {
+          risk_level: cdssResult.risk_level_label,
+          updated_at: Date.now(),
+        }).catch(() => {})
+        if (preg.mother_id) {
+          await db.mothers.update(preg.mother_id, {
+            risk_level: cdssResult.risk_level_label,
+            updated_at: Date.now(),
+          }).catch(() => {})
+        }
+      }
+
       await silangSyncEngine.enqueue({
         client_mutation_id: crypto.randomUUID(),
         entity_type: "prenatal_visit",
         action: "CREATE",
         endpoint: "/prenatal-visit/register",
         method: "POST",
-        payload: { ...input, mother_id: (input as any).mother_id || preg?.mother_id },
+        payload: {
+          ...input,
+          mother_id: (input as any).mother_id || preg?.mother_id,
+          risk_level_assessed: cdssResult.risk_level_label,
+          tews_score: cdssResult.tews_score,
+        },
         temp_id: tempVisitId,
       })
       return {
@@ -1448,26 +1522,58 @@ export const updatePrenatalVisit = async (
   visitId: string,
   input: UpdatePrenatalVisitInput
 ) => {
+  const existingVisit = await db.prenatalVisits.get(visitId).catch(() => null)
+  let cdssUpdates: { risk_level_assessed?: string; tews_score?: number } = {}
+  if (existingVisit) {
+    const pregId = input.pregnancy_id || existingVisit.pregnancy_id
+    const preg = pregId ? await db.pregnancies.get(pregId).catch(() => null) : null
+    const mother = preg?.mother_id ? await db.mothers.get(preg.mother_id).catch(() => null) : null
+    const baselineVisit = pregId
+      ? await db.prenatalVisits
+          .where("pregnancy_id")
+          .equals(pregId)
+          .filter((v) => v.trimester === 1 && v.id !== visitId)
+          .first()
+          .catch(() => null)
+      : null
+
+    const cdssResult = evaluateLocalVisitRisk({
+      vitals: { ...existingVisit, ...input },
+      mother,
+      pregnancy: preg,
+      baselineVisit,
+    })
+    cdssUpdates = {
+      risk_level_assessed: cdssResult.risk_level_label,
+      tews_score: cdssResult.tews_score,
+    }
+  }
+
   await db.prenatalVisits.update(visitId, {
     ...input,
+    ...cdssUpdates,
     sync_status: "pending_update",
     updated_at: Date.now(),
   }).catch(() => {})
+
+  const mapping = visitId.startsWith("temp-") ? await db.idMappings.get(visitId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || visitId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "prenatal_visit",
       action: "UPDATE",
-      endpoint: `/prenatal-visit/update/${encodeURIComponent(visitId)}`,
+      endpoint: `/prenatal-visit/update/${encodeURIComponent(targetId)}`,
       method: "PUT",
-      payload: input,
-      temp_id: visitId,
+      payload: { ...input, ...cdssUpdates },
+      temp_id: targetId,
     })
     return { message: "Prenatal visit updated offline", offline: true }
   }
   try {
     return await apiRequest<{ message?: string; result?: MaternalPrenatalVisit }>(
-      `/prenatal-visit/update/${encodeURIComponent(visitId)}`,
+      `/prenatal-visit/update/${encodeURIComponent(targetId)}`,
       {
         method: "PUT",
         token,
@@ -1480,10 +1586,10 @@ export const updatePrenatalVisit = async (
         client_mutation_id: crypto.randomUUID(),
         entity_type: "prenatal_visit",
         action: "UPDATE",
-        endpoint: `/prenatal-visit/update/${encodeURIComponent(visitId)}`,
+        endpoint: `/prenatal-visit/update/${encodeURIComponent(targetId)}`,
         method: "PUT",
-        payload: input,
-        temp_id: visitId,
+        payload: { ...input, ...cdssUpdates },
+        temp_id: targetId,
       })
       return { message: "Prenatal visit updated offline", offline: true }
     }
@@ -1493,21 +1599,30 @@ export const updatePrenatalVisit = async (
 
 export const deletePrenatalVisit = async (token: string, visitId: string) => {
   await db.prenatalVisits.delete(visitId).catch(() => {})
+  if (visitId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(visitId)
+    if (cancelled) {
+      return { message: "Prenatal visit deleted offline", offline: true }
+    }
+  }
+  const mapping = visitId.startsWith("temp-") ? await db.idMappings.get(visitId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || visitId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "prenatal_visit",
       action: "DELETE",
-      endpoint: `/prenatal-visit/delete/${encodeURIComponent(visitId)}`,
+      endpoint: `/prenatal-visit/delete/${encodeURIComponent(targetId)}`,
       method: "DELETE",
       payload: {},
-      temp_id: visitId,
+      temp_id: targetId,
     })
     return { message: "Prenatal visit deleted offline", offline: true }
   }
   try {
     return await apiRequest<{ message?: string }>(
-      `/prenatal-visit/delete/${encodeURIComponent(visitId)}`,
+      `/prenatal-visit/delete/${encodeURIComponent(targetId)}`,
       {
         method: "DELETE",
         token,
@@ -1519,10 +1634,10 @@ export const deletePrenatalVisit = async (token: string, visitId: string) => {
         client_mutation_id: crypto.randomUUID(),
         entity_type: "prenatal_visit",
         action: "DELETE",
-        endpoint: `/prenatal-visit/delete/${encodeURIComponent(visitId)}`,
+        endpoint: `/prenatal-visit/delete/${encodeURIComponent(targetId)}`,
         method: "DELETE",
         payload: {},
-        temp_id: visitId,
+        temp_id: targetId,
       })
       return { message: "Prenatal visit deleted offline", offline: true }
     }
@@ -1696,24 +1811,57 @@ export const registerMaternalLabScreening = async (token: string, input: Registe
   }
 }
 
-export const deleteMaternalLabScreening = (token: string, screeningId: string) =>
-  apiRequest<{ message?: string }>(`/lab-screening/delete/${encodeURIComponent(screeningId)}`, { method: "DELETE", token })
+export const deleteMaternalLabScreening = async (token: string, screeningId: string) => {
+  await db.labScreenings.delete(screeningId).catch(() => {})
+  if (screeningId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(screeningId)
+    if (cancelled) {
+      return { message: "Lab screening deleted offline", offline: true }
+    }
+  }
+  const mapping = screeningId.startsWith("temp-") ? await db.idMappings.get(screeningId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || screeningId
+
+  if (!navigator.onLine) {
+    await silangSyncEngine.enqueue({
+      client_mutation_id: crypto.randomUUID(),
+      entity_type: "lab_screening",
+      action: "DELETE",
+      endpoint: `/lab-screening/delete/${encodeURIComponent(targetId)}`,
+      method: "DELETE",
+      payload: {},
+      temp_id: targetId,
+    })
+    return { message: "Lab screening deleted offline", offline: true }
+  }
+  return apiRequest<{ message?: string }>(`/lab-screening/delete/${encodeURIComponent(targetId)}`, { method: "DELETE", token })
+}
 
 export const cancelMaternalAppointment = async (token: string, appointmentId: string) => {
   await db.appointments.update(appointmentId, { status: "Cancelled", sync_status: "pending_update" }).catch(() => {})
+  if (appointmentId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(appointmentId)
+    if (cancelled) {
+      await db.appointments.delete(appointmentId).catch(() => {})
+      return { message: "Appointment cancelled offline", offline: true }
+    }
+  }
+  const mapping = appointmentId.startsWith("temp-") ? await db.idMappings.get(appointmentId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || appointmentId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "appointment",
       action: "UPDATE",
-      endpoint: `/appointment/cancel/${encodeURIComponent(appointmentId)}`,
+      endpoint: `/appointment/cancel/${encodeURIComponent(targetId)}`,
       method: "PUT",
       payload: {},
-      temp_id: appointmentId,
+      temp_id: targetId,
     })
-    return { message: "Appointment cancelled offline" }
+    return { message: "Appointment cancelled offline", offline: true }
   }
-  return apiRequest<{ message?: string }>(`/appointment/cancel/${encodeURIComponent(appointmentId)}`, { method: "PUT", token, body: JSON.stringify({}) })
+  return apiRequest<{ message?: string }>(`/appointment/cancel/${encodeURIComponent(targetId)}`, { method: "PUT", token, body: JSON.stringify({}) })
 }
 
 export type UpdateMaternalAppointmentInput = {
@@ -1741,20 +1889,23 @@ export const updateMaternalAppointment = async (
     })
     .catch(() => {})
 
+  const mapping = appointmentId.startsWith("temp-") ? await db.idMappings.get(appointmentId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || appointmentId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "appointment",
       action: "UPDATE",
-      endpoint: `/appointment/update/${encodeURIComponent(appointmentId)}`,
+      endpoint: `/appointment/update/${encodeURIComponent(targetId)}`,
       method: "PUT",
       payload: input,
-      temp_id: appointmentId,
+      temp_id: targetId,
     })
-    return { message: "Appointment updated offline" }
+    return { message: "Appointment updated offline", offline: true }
   }
   return apiRequest<{ message?: string; data?: MaternalAppointment }>(
-    `/appointment/update/${encodeURIComponent(appointmentId)}`,
+    `/appointment/update/${encodeURIComponent(targetId)}`,
     {
       method: "PUT",
       token,
@@ -1765,20 +1916,29 @@ export const updateMaternalAppointment = async (
 
 export const deleteMaternalAppointment = async (token: string, appointmentId: string) => {
   await db.appointments.delete(appointmentId).catch(() => {})
+  if (appointmentId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(appointmentId)
+    if (cancelled) {
+      return { message: "Appointment deleted offline", offline: true }
+    }
+  }
+  const mapping = appointmentId.startsWith("temp-") ? await db.idMappings.get(appointmentId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || appointmentId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "appointment",
       action: "DELETE",
-      endpoint: `/appointment/delete/${encodeURIComponent(appointmentId)}`,
+      endpoint: `/appointment/delete/${encodeURIComponent(targetId)}`,
       method: "DELETE",
       payload: {},
-      temp_id: appointmentId,
+      temp_id: targetId,
     })
-    return { message: "Appointment deleted offline" }
+    return { message: "Appointment deleted offline", offline: true }
   }
   return apiRequest<{ message?: string }>(
-    `/appointment/delete/${encodeURIComponent(appointmentId)}`,
+    `/appointment/delete/${encodeURIComponent(targetId)}`,
     {
       method: "DELETE",
       token,
@@ -1802,20 +1962,23 @@ export type UpdateDeliveryOutcomeInput = {
 
 export const updateDeliveryOutcome = async (token: string, deliveryId: string, input: UpdateDeliveryOutcomeInput) => {
   await db.deliveryOutcomes.update(deliveryId, { ...input, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
+  const mapping = deliveryId.startsWith("temp-") ? await db.idMappings.get(deliveryId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || deliveryId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "delivery_outcome",
       action: "UPDATE",
-      endpoint: `/delivery-outcome/update/${encodeURIComponent(deliveryId)}`,
+      endpoint: `/delivery-outcome/update/${encodeURIComponent(targetId)}`,
       method: "PUT",
       payload: input,
-      temp_id: deliveryId,
+      temp_id: targetId,
     })
     return { message: "Delivery outcome updated offline", offline: true }
   }
   try {
-    return await apiRequest<{ message?: string; data?: MaternalDelivery }>(`/delivery-outcome/update/${encodeURIComponent(deliveryId)}`, {
+    return await apiRequest<{ message?: string; data?: MaternalDelivery }>(`/delivery-outcome/update/${encodeURIComponent(targetId)}`, {
       method: "PUT",
       token,
       body: JSON.stringify(input),
@@ -1826,10 +1989,10 @@ export const updateDeliveryOutcome = async (token: string, deliveryId: string, i
         client_mutation_id: crypto.randomUUID(),
         entity_type: "delivery_outcome",
         action: "UPDATE",
-        endpoint: `/delivery-outcome/update/${encodeURIComponent(deliveryId)}`,
+        endpoint: `/delivery-outcome/update/${encodeURIComponent(targetId)}`,
         method: "PUT",
         payload: input,
-        temp_id: deliveryId,
+        temp_id: targetId,
       })
       return { message: "Delivery outcome updated offline", offline: true }
     }
@@ -1839,20 +2002,29 @@ export const updateDeliveryOutcome = async (token: string, deliveryId: string, i
 
 export const deleteDeliveryOutcome = async (token: string, deliveryId: string) => {
   await db.deliveryOutcomes.delete(deliveryId).catch(() => {})
+  if (deliveryId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(deliveryId)
+    if (cancelled) {
+      return { message: "Delivery outcome deleted offline", offline: true }
+    }
+  }
+  const mapping = deliveryId.startsWith("temp-") ? await db.idMappings.get(deliveryId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || deliveryId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "delivery_outcome",
       action: "DELETE",
-      endpoint: `/delivery-outcome/delete/${encodeURIComponent(deliveryId)}`,
+      endpoint: `/delivery-outcome/delete/${encodeURIComponent(targetId)}`,
       method: "DELETE",
       payload: {},
-      temp_id: deliveryId,
+      temp_id: targetId,
     })
     return { message: "Delivery outcome deleted offline", offline: true }
   }
   try {
-    return await apiRequest<{ message?: string }>(`/delivery-outcome/delete/${encodeURIComponent(deliveryId)}`, {
+    return await apiRequest<{ message?: string }>(`/delivery-outcome/delete/${encodeURIComponent(targetId)}`, {
       method: "DELETE",
       token,
     })
@@ -1862,10 +2034,10 @@ export const deleteDeliveryOutcome = async (token: string, deliveryId: string) =
         client_mutation_id: crypto.randomUUID(),
         entity_type: "delivery_outcome",
         action: "DELETE",
-        endpoint: `/delivery-outcome/delete/${encodeURIComponent(deliveryId)}`,
+        endpoint: `/delivery-outcome/delete/${encodeURIComponent(targetId)}`,
         method: "DELETE",
         payload: {},
-        temp_id: deliveryId,
+        temp_id: targetId,
       })
       return { message: "Delivery outcome deleted offline", offline: true }
     }
@@ -1901,20 +2073,23 @@ export type UpdatePregnancyInput = {
 
 export const updatePregnancy = async (token: string, pregnancyId: string, input: UpdatePregnancyInput) => {
   await db.pregnancies.update(pregnancyId, { ...input, sync_status: "pending_update", updated_at: Date.now() }).catch(() => {})
+  const mapping = pregnancyId.startsWith("temp-") ? await db.idMappings.get(pregnancyId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || pregnancyId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "pregnancy",
       action: "UPDATE",
-      endpoint: `/pregnancy/update/${encodeURIComponent(pregnancyId)}`,
+      endpoint: `/pregnancy/update/${encodeURIComponent(targetId)}`,
       method: "PUT",
       payload: input,
-      temp_id: pregnancyId,
+      temp_id: targetId,
     })
     return { message: "Pregnancy updated offline", offline: true }
   }
   try {
-    return await apiRequest<{ message?: string; pregnancy?: MaternalPregnancy }>(`/pregnancy/update/${encodeURIComponent(pregnancyId)}`, {
+    return await apiRequest<{ message?: string; pregnancy?: MaternalPregnancy }>(`/pregnancy/update/${encodeURIComponent(targetId)}`, {
       method: "PUT",
       token,
       body: JSON.stringify(input),
@@ -1925,10 +2100,10 @@ export const updatePregnancy = async (token: string, pregnancyId: string, input:
         client_mutation_id: crypto.randomUUID(),
         entity_type: "pregnancy",
         action: "UPDATE",
-        endpoint: `/pregnancy/update/${encodeURIComponent(pregnancyId)}`,
+        endpoint: `/pregnancy/update/${encodeURIComponent(targetId)}`,
         method: "PUT",
         payload: input,
-        temp_id: pregnancyId,
+        temp_id: targetId,
       })
       return { message: "Pregnancy updated offline", offline: true }
     }
@@ -1938,20 +2113,29 @@ export const updatePregnancy = async (token: string, pregnancyId: string, input:
 
 export const deletePregnancy = async (token: string, pregnancyId: string) => {
   await db.pregnancies.delete(pregnancyId).catch(() => {})
+  if (pregnancyId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(pregnancyId)
+    if (cancelled) {
+      return { message: "Pregnancy deleted offline", offline: true }
+    }
+  }
+  const mapping = pregnancyId.startsWith("temp-") ? await db.idMappings.get(pregnancyId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || pregnancyId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "pregnancy",
       action: "DELETE",
-      endpoint: `/pregnancy/delete/${encodeURIComponent(pregnancyId)}`,
+      endpoint: `/pregnancy/delete/${encodeURIComponent(targetId)}`,
       method: "DELETE",
       payload: {},
-      temp_id: pregnancyId,
+      temp_id: targetId,
     })
     return { message: "Pregnancy deleted offline", offline: true }
   }
   try {
-    return await apiRequest<{ message?: string }>(`/pregnancy/delete/${encodeURIComponent(pregnancyId)}`, {
+    return await apiRequest<{ message?: string }>(`/pregnancy/delete/${encodeURIComponent(targetId)}`, {
       method: "DELETE",
       token,
     })
@@ -1961,10 +2145,10 @@ export const deletePregnancy = async (token: string, pregnancyId: string) => {
         client_mutation_id: crypto.randomUUID(),
         entity_type: "pregnancy",
         action: "DELETE",
-        endpoint: `/pregnancy/delete/${encodeURIComponent(pregnancyId)}`,
+        endpoint: `/pregnancy/delete/${encodeURIComponent(targetId)}`,
         method: "DELETE",
         payload: {},
-        temp_id: pregnancyId,
+        temp_id: targetId,
       })
       return { message: "Pregnancy deleted offline", offline: true }
     }
@@ -1989,6 +2173,9 @@ export const updateMaternalSupplement = async (token: string, input: UpdateMater
     sync_status: "pending_update",
     updated_at: Date.now(),
   }).catch(() => {})
+  const mapping = input.supplement_id.startsWith("temp-") ? await db.idMappings.get(input.supplement_id).catch(() => null) : null
+  const targetId = mapping?.canonical_id || input.supplement_id
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
@@ -1996,8 +2183,8 @@ export const updateMaternalSupplement = async (token: string, input: UpdateMater
       action: "UPDATE",
       endpoint: "/supplement/update",
       method: "PUT",
-      payload: input,
-      temp_id: input.supplement_id,
+      payload: { ...input, supplement_id: targetId },
+      temp_id: targetId,
     })
     return { message: "Supplement record updated offline", offline: true }
   }
@@ -2005,7 +2192,7 @@ export const updateMaternalSupplement = async (token: string, input: UpdateMater
     return await apiRequest<{ message?: string; supplement_record?: MaternalSupplement }>("/supplement/update", {
       method: "PUT",
       token,
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, supplement_id: targetId }),
     })
   } catch (error) {
     if (isNetworkFailure(error)) {
@@ -2015,8 +2202,8 @@ export const updateMaternalSupplement = async (token: string, input: UpdateMater
         action: "UPDATE",
         endpoint: "/supplement/update",
         method: "PUT",
-        payload: input,
-        temp_id: input.supplement_id,
+        payload: { ...input, supplement_id: targetId },
+        temp_id: targetId,
       })
       return { message: "Supplement record updated offline", offline: true }
     }
@@ -2026,20 +2213,29 @@ export const updateMaternalSupplement = async (token: string, input: UpdateMater
 
 export const deleteMaternalSupplement = async (token: string, supplementId: string) => {
   await db.prescriptions.delete(supplementId).catch(() => {})
+  if (supplementId.startsWith("temp-")) {
+    const cancelled = await silangSyncEngine.cancelOfflineMutation(supplementId)
+    if (cancelled) {
+      return { message: "Supplement record deleted offline", offline: true }
+    }
+  }
+  const mapping = supplementId.startsWith("temp-") ? await db.idMappings.get(supplementId).catch(() => null) : null
+  const targetId = mapping?.canonical_id || supplementId
+
   if (!navigator.onLine) {
     await silangSyncEngine.enqueue({
       client_mutation_id: crypto.randomUUID(),
       entity_type: "prescription",
       action: "DELETE",
-      endpoint: `/supplement/delete/${encodeURIComponent(supplementId)}`,
+      endpoint: `/supplement/delete/${encodeURIComponent(targetId)}`,
       method: "DELETE",
       payload: {},
-      temp_id: supplementId,
+      temp_id: targetId,
     })
     return { message: "Supplement record deleted offline", offline: true }
   }
   try {
-    return await apiRequest<{ message?: string }>(`/supplement/delete/${encodeURIComponent(supplementId)}`, {
+    return await apiRequest<{ message?: string }>(`/supplement/delete/${encodeURIComponent(targetId)}`, {
       method: "DELETE",
       token,
     })
@@ -2049,10 +2245,10 @@ export const deleteMaternalSupplement = async (token: string, supplementId: stri
         client_mutation_id: crypto.randomUUID(),
         entity_type: "prescription",
         action: "DELETE",
-        endpoint: `/supplement/delete/${encodeURIComponent(supplementId)}`,
+        endpoint: `/supplement/delete/${encodeURIComponent(targetId)}`,
         method: "DELETE",
         payload: {},
-        temp_id: supplementId,
+        temp_id: targetId,
       })
       return { message: "Supplement record deleted offline", offline: true }
     }

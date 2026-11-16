@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { getClosedDates } from "@/features/calendar/closed-dates"
+import { validateClinicalVitalsData } from "@/lib/cdss/cdssEngine"
 import type {
   MaternalAppointment,
   MaternalPregnancy,
@@ -257,6 +258,24 @@ export function EditAppointmentDialog({
         setActiveTab("vitals")
         return
       }
+
+      const vitalsErrors = validateClinicalVitalsData({
+        trimester,
+        visit_number: visitNumber,
+        age_of_gestation_weeks: aogWeeks ? parseFloat(aogWeeks) : 1,
+        weight_kg: weight,
+        temperature_celsius: temperature,
+        pulse_rate_bpm: pulse,
+        bp_systolic: systolic,
+        bp_diastolic: diastolic,
+        fundic_height_cm: fundalHeight || null,
+        fetal_heart_tone_bpm: fetalHeartTone || null,
+      })
+      if (vitalsErrors.length > 0) {
+        toast.error(vitalsErrors[0])
+        setActiveTab("vitals")
+        return
+      }
     }
 
     setIsSaving(true)
@@ -285,7 +304,7 @@ export function EditAppointmentDialog({
           await onSaveVisit(visit.visit_id, {
             pregnancy_id: pregnancyId,
             visit_number: parseInt(visitNumber, 10) || 1,
-            age_of_gestation_weeks: aogWeeks ? parseFloat(aogWeeks) : undefined,
+            age_of_gestation_weeks: aogWeeks ? Math.max(1, parseFloat(aogWeeks)) : 1,
             trimester: parseInt(trimester, 10) || 1,
             bp_systolic: parseInt(systolic, 10),
             bp_diastolic: parseInt(diastolic, 10),
@@ -309,7 +328,7 @@ export function EditAppointmentDialog({
             pregnancy_id: pregnancyId,
             health_worker_id: "",
             visit_number: parseInt(visitNumber, 10) || 1,
-            age_of_gestation_weeks: aogWeeks ? parseFloat(aogWeeks) : 0,
+            age_of_gestation_weeks: aogWeeks ? Math.max(1, parseFloat(aogWeeks)) : 1,
             trimester: parseInt(trimester, 10) || 1,
             bp_systolic: parseInt(systolic, 10),
             bp_diastolic: parseInt(diastolic, 10),

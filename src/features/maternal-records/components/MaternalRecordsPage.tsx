@@ -33,6 +33,7 @@ import { differenceInCalendarDays, format, isValid } from "date-fns"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { connectMotherToFacility, deleteMaternalRecord, getLatestMaternalPregnancy, getLatestPrenatalVisit, getMaternalRecords, normalizeMaternalRisk, registerMaternalRecord, registerPregnancy, uploadMaternalAvatar, type MaternalRecord } from "../api"
 import { MaternalAvatar } from "./MaternalAvatar"
+import { evaluateLocalVisitRisk } from "@/lib/cdss/cdssEngine"
 
 const recordTabs = [
   { value: "all", label: "All" },
@@ -149,7 +150,25 @@ export function MaternalRecordsPage() {
     const edd = latestPregnancy?.edd_date ? new Date(latestPregnancy.edd_date) : null
     const gestationDays = lmp && isValid(lmp) ? Math.max(0, differenceInCalendarDays(new Date(), lmp)) : null
     const aog = gestationDays === null ? "—" : `${Math.floor(gestationDays / 7)}w ${gestationDays % 7}d`
-    const riskLabel = normalizeMaternalRisk(latestVisit?.risk_level_assessed)
+    const riskLabel = latestVisit?.risk_level_assessed
+      ? normalizeMaternalRisk(latestVisit.risk_level_assessed)
+      : latestVisit
+        ? evaluateLocalVisitRisk({
+            vitals: {
+              bp_systolic: latestVisit.bp_systolic,
+              bp_diastolic: latestVisit.bp_diastolic,
+              pulse_rate_bpm: latestVisit.pulse_rate_bpm,
+              temperature_celsius: latestVisit.temperature_celsius,
+              has_vaginal_bleeding: Boolean(latestVisit.has_vaginal_bleeding),
+              has_fever: Boolean(latestVisit.has_fever),
+              has_edema: Boolean(latestVisit.has_edema),
+              has_pallor: Boolean(latestVisit.has_pallor),
+              danger_signs_observed: latestVisit.danger_signs_observed,
+            },
+            mother: { age: record.age },
+            pregnancy: latestPregnancy,
+          }).risk_level_label
+        : "Not assessed"
     const pregnancyStatus = latestPregnancy?.pregnancy_status?.toLowerCase() ?? ""
     const address = user?.address ?? "—"
     const nextFollowUp = "—"
