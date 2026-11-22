@@ -14,12 +14,14 @@ export default defineConfig(({ mode }) => {
   server: {
     proxy: {
       "/api": { target: backendUrl, changeOrigin: true, secure: true },
+      "/uploads": { target: backendUrl, changeOrigin: true, secure: true },
       "/socket.io": { target: backendUrl, changeOrigin: true, ws: true, secure: true },
     },
   },
   preview: {
     proxy: {
       "/api": { target: backendUrl, changeOrigin: true, secure: true },
+      "/uploads": { target: backendUrl, changeOrigin: true, secure: true },
       "/socket.io": { target: backendUrl, changeOrigin: true, ws: true, secure: true },
     },
   },

@@ -21,6 +21,7 @@ import { z } from "zod"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { useTheme } from "@/components/theme-provider"
 import { createReferral, getPublicReferral, respondToPublicReferral, type PublicReferralRecord } from "../api"
+import { backendAssetUrl } from "@/lib/api"
 import silangLogo from "@/assets/silang-sidebar.svg"
 
 const pinSchema = z.string().regex(/^\d{6}$/, "Enter the 6-digit transfer code.")
@@ -115,7 +116,7 @@ function attachmentName(fileUrl?: string | null, fallback = "Health record") {
 
 function attachmentUrl(fileUrl?: string | null) {
   if (!fileUrl) return ""
-  try { return new URL(fileUrl, window.location.origin).href } catch { return fileUrl }
+  return backendAssetUrl(fileUrl)
 }
 
 function HandoverEhrPreview({ record, onClose }: { record: HandoverEhrRecord | null; onClose: () => void }) {
