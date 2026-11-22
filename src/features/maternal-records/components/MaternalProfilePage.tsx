@@ -48,6 +48,7 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
 import { db } from "@/lib/db/silangDatabase"
+import { backendAssetUrl } from "@/lib/api"
 import { CreateAppointmentModal, type AppointmentMotherOption } from "@/features/calendar/components/CreateAppointmentModal"
 import type { AppointmentFormValues } from "@/features/calendar/components/CreateAppointmentModal"
 import { createAppointment } from "@/features/calendar/api"
@@ -170,11 +171,7 @@ function getAttachmentName(fileUrl?: string | null, fallback = "Health record") 
 
 function resolveAttachmentUrl(fileUrl?: string | null) {
   if (!fileUrl) return ""
-  try {
-    return new URL(fileUrl, window.location.origin).href
-  } catch {
-    return fileUrl
-  }
+  return backendAssetUrl(fileUrl)
 }
 
 function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | null; onClose: () => void }) {
