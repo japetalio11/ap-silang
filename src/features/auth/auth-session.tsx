@@ -259,7 +259,7 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async ({ identifier, password, rememberMe, workspace }: LoginCredentials): Promise<AuthUser> => {
     const response = await apiRequest<{ token: string; user: AuthUser }>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ identifier: identifier.trim(), password }),
+      body: JSON.stringify({ identifier: identifier.trim(), password: password.trim() }),
     })
     completeLogin(response, rememberMe, workspace)
     return response.user
