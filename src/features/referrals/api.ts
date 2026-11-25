@@ -3,10 +3,13 @@ import { db, type LocalReferral } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getActiveFacilityId } from "@/features/auth/auth-session"
 
-function filterFacilityReferrals<T extends { referring_facility_id?: string | null; receiving_facility_id?: string | null; facility_id?: string | null }>(list: T[]): T[] {
+function filterFacilityReferrals(list: LocalReferral[]): LocalReferral[] {
   const facilityId = getActiveFacilityId()
   if (!facilityId) return list
-  return list.filter((r) => r.referring_facility_id === facilityId || r.receiving_facility_id === facilityId || r.facility_id === facilityId)
+  return list.filter((r) => {
+    const rec = r as LocalReferral & { referring_facility_id?: string | null; receiving_facility_id?: string | null; facility_id?: string | null }
+    return rec.referring_facility_id === facilityId || rec.receiving_facility_id === facilityId || rec.facility_id === facilityId
+  })
 }
 
 export function getReferralGatewayLink(referralId: string) {
