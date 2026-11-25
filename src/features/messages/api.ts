@@ -3,15 +3,21 @@ import { db, type LocalMessage } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getActiveFacilityId } from "@/features/auth/auth-session"
 
+function matchesMotherFacility(m: { facility_id?: string | null; assigned_facility_id?: string | null; facility?: { facility_id?: string | null } | null; user?: { facility_id?: string | null } | null }, facilityId: string | null): boolean {
+  if (!facilityId) return true
+  return m.facility_id === facilityId || m.assigned_facility_id === facilityId || m.facility?.facility_id === facilityId || m.user?.facility_id === facilityId
+}
+
 async function getFacilityUserIds(): Promise<Set<string> | null> {
   const facilityId = getActiveFacilityId()
   if (!facilityId) return null
-  const [mothers, staff] = await Promise.all([
-    db.mothers.where("facility_id").equals(facilityId).toArray().catch(() => []),
+  const [rawMothers, staff] = await Promise.all([
+    db.mothers.toArray().catch(() => []),
     db.staff.where("facility_id").equals(facilityId).toArray().catch(() => []),
   ])
   const ids = new Set<string>()
-  for (const m of mothers) {
+  for (const m of rawMothers) {
+    if (!matchesMotherFacility(m as any, facilityId)) continue
     if (m.user_id) ids.add(m.user_id)
     if (m.user?.user_id) ids.add(m.user.user_id)
   }
@@ -62,18 +68,16 @@ export async function getMessages(token: string): Promise<MessageListResponse> {
     const local = allowedIds
       ? rawLocal.filter((m) => allowedIds.has(m.sender_id) || allowedIds.has(m.receiver_id))
       : rawLocal
-    if (local.length > 0) {
-      return {
-        data: local.map((m) => ({
-          message_id: m.message_id,
-          sender_id: m.sender_id,
-          receiver_id: m.receiver_id,
-          message_type: m.message_type,
-          message_content: m.message_content,
-          message_date: m.message_date,
-          is_read: m.is_read,
-        })),
-      }
+    return {
+      data: local.map((m) => ({
+        message_id: m.message_id,
+        sender_id: m.sender_id,
+        receiver_id: m.receiver_id,
+        message_type: m.message_type,
+        message_content: m.message_content,
+        message_date: m.message_date,
+        is_read: m.is_read,
+      })),
     }
   }
 
@@ -115,7 +119,7 @@ export async function getMessages(token: string): Promise<MessageListResponse> {
     const local = allowedIds
       ? rawLocal.filter((m) => allowedIds.has(m.sender_id) || allowedIds.has(m.receiver_id))
       : rawLocal
-    if (local.length > 0) {
+    if (local.length > 0 || (typeof navigator !== "undefined" && !navigator.onLine)) {
       return {
         data: local.map((m) => ({
           message_id: m.message_id,
@@ -152,7 +156,25 @@ export async function getMessageMothers(token: string): Promise<{ result?: Messa
   }
 
   try {
-    return await apiRequest<{ result?: MessageMother[] }>("/mother/active", { token })
+    const res = await apiRequest<{ result?: MessageMother[] }>("/mother/active", { token })
+    if (Array.isArray(res.result)) {
+      for (const m of res.result) {
+        if (!m.mother_id || !m.user?.user_id) continue
+        await db.mothers.put({
+          id: m.mother_id,
+          mother_id: m.mother_id,
+          user_id: m.user.user_id,
+          facility_id: facilityId ?? undefined,
+          first_name: m.user.first_name || "",
+          last_name: m.user.last_name || "",
+          profile_url: m.user.profile_url ?? null,
+          user: m.user,
+          sync_status: "synced",
+          updated_at: Date.now(),
+        } as any).catch(() => {})
+      }
+    }
+    return res
   } catch (error) {
     const rawMothers = await db.mothers.toArray().catch(() => [])
     const localMothers = rawMothers.filter((m) => matchesFacility(m as any))
