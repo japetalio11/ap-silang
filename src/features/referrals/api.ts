@@ -1,6 +1,13 @@
 import { apiRequest } from "@/lib/api"
 import { db, type LocalReferral } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { getActiveFacilityId } from "@/features/auth/auth-session"
+
+function filterFacilityReferrals<T extends { referring_facility_id?: string | null; receiving_facility_id?: string | null; facility_id?: string | null }>(list: T[]): T[] {
+  const facilityId = getActiveFacilityId()
+  if (!facilityId) return list
+  return list.filter((r) => r.referring_facility_id === facilityId || r.receiving_facility_id === facilityId || r.facility_id === facilityId)
+}
 
 export function getReferralGatewayLink(referralId: string) {
   const route = `/referral/${encodeURIComponent(referralId)}`
@@ -235,7 +242,7 @@ async function enrichLocalReferral(r: LocalReferral): Promise<ReferralApiRecord>
 
 export const getReferrals = async (token: string): Promise<{ data?: ReferralApiRecord[]; message?: string }> => {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const local = await db.referrals.toArray().catch(() => [])
+    const local = filterFacilityReferrals(await db.referrals.toArray().catch(() => []))
     const enriched = await Promise.all(local.map(enrichLocalReferral))
     return { data: enriched }
   }
@@ -252,13 +259,13 @@ export const getReferrals = async (token: string): Promise<{ data?: ReferralApiR
         }).catch(() => {})
       }
     }
-    const pending = await db.referrals.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
+    const pending = filterFacilityReferrals(await db.referrals.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => []))
     const onlineIds = new Set((res.data || []).map((r) => r.referral_id))
     const uniquePending = pending.filter((r) => !onlineIds.has(r.referral_id))
     const enrichedPending = await Promise.all(uniquePending.map(enrichLocalReferral))
     return { data: [...enrichedPending, ...(res.data || [])] as ReferralApiRecord[] }
   } catch (error) {
-    const local = await db.referrals.toArray().catch(() => [])
+    const local = filterFacilityReferrals(await db.referrals.toArray().catch(() => []))
     if (local.length > 0) {
       const enriched = await Promise.all(local.map(enrichLocalReferral))
       return { data: enriched }

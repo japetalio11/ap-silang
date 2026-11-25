@@ -57,6 +57,10 @@ function isTokenExpired(token: string) {
 
 const AuthSessionContext = createContext<AuthSessionContextValue | null>(null)
 
+export function getActiveFacilityId(): string | null {
+  return getStoredSession()?.user.facility_id ?? null
+}
+
 function getStoredSession(): AuthSession | null {
   for (const storage of [window.localStorage, window.sessionStorage]) {
     const value = storage.getItem(SESSION_KEY)
