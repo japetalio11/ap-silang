@@ -60,6 +60,5 @@ export const MOCK_STAFF: StaffRecord[] = [
 
 export const STAFF_FILTERS = {
   Role: ["Nurse", "Midwife", "Admin"],
-  Facility: ["RHU 1 (Main Birthing Unit)", "San Isidro BHS", "Carolina BHS", "Himaao BHS", "Anayan BHS"],
   Status: ["Active", "Pending Activation", "Deactivated"],
 }

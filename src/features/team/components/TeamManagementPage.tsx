@@ -50,7 +50,7 @@ export function TeamManagementPage() {
   const token = session?.token
   const [activeTab, setActiveTab] = useState("all")
   const [search, setSearch] = useState("")
-  const [filters, setFilters] = useState<Record<string, string[]>>({ Role: [], Facility: [], Status: [] })
+  const [filters, setFilters] = useState<Record<string, string[]>>({ Role: [], Status: [] })
   const [staff, setStaff] = useState<StaffRecord[]>([])
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -144,9 +144,8 @@ export function TeamManagementPage() {
     const query = search.trim().toLowerCase()
     const matchesSearch = !query || [staff.name, staff.email, staff.phone, staff.role, staff.facility, staff.license ?? ""].some((value) => value.toLowerCase().includes(query))
     const matchesRole = filters.Role.length === 0 || filters.Role.some((role) => staff.role.toLowerCase().includes(role.toLowerCase()))
-    const matchesFacility = filters.Facility.length === 0 || filters.Facility.some((facility) => staff.facility.toLowerCase().includes(facility.toLowerCase().replace(" (main birthing unit)", "").replace(" (main birthing clinic)", "")))
     const matchesStatus = filters.Status.length === 0 || filters.Status.includes(staff.status)
-    return matchesTab && matchesSearch && matchesRole && matchesFacility && matchesStatus
+    return matchesTab && matchesSearch && matchesRole && matchesStatus
   })
   const staffTabCounts = {
     all: staff.length,
@@ -264,7 +263,7 @@ export function TeamManagementPage() {
                   </PopoverContent>
                 </Popover>
               ))}
-              {(activeFilterCount > 0 || search.trim().length > 0) && <Button variant="ghost" onClick={() => { setSearch(""); setFilters({ Role: [], Facility: [], Status: [] }) }} className="h-8 shrink-0 gap-2 px-2 text-xs font-medium text-muted-foreground"><RotateCcw className="size-3.5" />Reset Filter</Button>}
+              {(activeFilterCount > 0 || search.trim().length > 0) && <Button variant="ghost" onClick={() => { setSearch(""); setFilters({ Role: [], Status: [] }) }} className="h-8 shrink-0 gap-2 px-2 text-xs font-medium text-muted-foreground"><RotateCcw className="size-3.5" />Reset Filter</Button>}
             </div>
           </div>
 
@@ -332,7 +331,7 @@ export function TeamManagementPage() {
                       title={hasStaffQuery ? "No staff match this view" : "No staff members yet"}
                       description={hasStaffQuery ? "Try changing or clearing the selected search and filters." : "Add your first staff member to begin managing facility access."}
                       action={hasStaffQuery
-                        ? <Button variant="outline" onClick={() => { setActiveTab("all"); setSearch(""); setFilters({ Role: [], Facility: [], Status: [] }) }} className="h-8 gap-1.5 px-2.5 text-xs"><RotateCcw className="size-3.5" />Reset Filter</Button>
+                        ? <Button variant="outline" onClick={() => { setActiveTab("all"); setSearch(""); setFilters({ Role: [], Status: [] }) }} className="h-8 gap-1.5 px-2.5 text-xs"><RotateCcw className="size-3.5" />Reset Filter</Button>
                         : <InviteTeamMemberModal><Button className="h-8 gap-1.5 px-2.5 text-xs"><UserPlus className="size-3.5" />Add Staff Member</Button></InviteTeamMemberModal>}
                     />
                   )}
@@ -382,7 +381,7 @@ export function TeamManagementPage() {
                   title={hasStaffQuery ? "No staff match this view" : "No staff members yet"}
                   description={hasStaffQuery ? "Try changing or clearing the selected search and filters." : "Add your first staff member to begin managing facility access."}
                   action={hasStaffQuery
-                    ? <Button variant="outline" onClick={() => { setActiveTab("all"); setSearch(""); setFilters({ Role: [], Facility: [], Status: [] }) }} className="h-8 gap-1.5 px-2.5 text-xs"><RotateCcw className="size-3.5" />Reset Filter</Button>
+                    ? <Button variant="outline" onClick={() => { setActiveTab("all"); setSearch(""); setFilters({ Role: [], Status: [] }) }} className="h-8 gap-1.5 px-2.5 text-xs"><RotateCcw className="size-3.5" />Reset Filter</Button>
                     : <InviteTeamMemberModal><Button className="h-8 gap-1.5 px-2.5 text-xs"><UserPlus className="size-3.5" />Add Staff Member</Button></InviteTeamMemberModal>}
                 />
               </div>

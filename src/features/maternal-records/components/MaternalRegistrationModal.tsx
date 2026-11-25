@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import { addDays, differenceInYears, format, isValid, parseISO } from "date-fns"
 import { z } from "zod"
-import { Baby, Camera, Check, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
+import { Baby, Camera, Check, ChevronsUpDown, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DateInput } from "@/components/ui/date-input"
@@ -9,9 +9,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "sonner"
 import { useAuthSession } from "@/features/auth/auth-session"
+import { getFacilityStaff, type StaffRecord } from "@/features/team/api"
 import { uploadMaternalAvatar, type MaternalRecord } from "../api"
 import { MaternalAvatar } from "./MaternalAvatar"
 
@@ -194,7 +197,32 @@ export function MaternalRegistrationModal({
   currentStaffLabel?: string
   initialBirthDate?: string
 }) {
+  const { session } = useAuthSession()
+  const [facilityStaff, setFacilityStaff] = useState<StaffRecord[]>([])
+  const [staffPickerOpen, setStaffPickerOpen] = useState(false)
   const [step, setStep] = useState(0)
+
+  useEffect(() => {
+    if (!open || !session?.token) return
+    let active = true
+    getFacilityStaff(session.token)
+      .then((list) => {
+        if (active) setFacilityStaff(list.filter((member) => member.status === "Active"))
+      })
+      .catch(() => {})
+    return () => { active = false }
+  }, [open, session?.token])
+
+  const staffOptions = (() => {
+    const options = facilityStaff.map((member) => ({
+      value: member.id,
+      label: member.id === currentStaffId ? `${member.name} (You - Default)` : `${member.name} (${member.role})`,
+    }))
+    if (currentStaffId && !options.some((opt) => opt.value === currentStaffId)) {
+      options.unshift({ value: currentStaffId, label: currentStaffLabel ?? "Current staff (You - Default)" })
+    }
+    return options
+  })()
   const [values, setValues] = useState<RegistrationValues>(() => {
     const dob = initialBirthDate ?? ""
     return {
@@ -428,7 +456,48 @@ export function MaternalRegistrationModal({
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <FormSelect id="bloodType" label="Blood Type" value={values.bloodType} onChange={(value) => update("bloodType", value)} placeholder="Select blood type" options={["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((name) => ({ value: name, label: name }))} required error={errors.bloodType} />
-                  <FormSelect id="healthWorker" label="Assigned Staff / Care Provider" value={values.healthWorker} onChange={(value) => update("healthWorker", value)} placeholder="Select care provider" options={currentStaffId ? [{ value: currentStaffId, label: currentStaffLabel ?? "Current staff (You - Default)" }] : []} />
+                  <div className="space-y-2">
+                    <Label htmlFor="healthWorker" className="text-xs font-medium">Assigned Staff / Care Provider</Label>
+                    <Popover open={staffPickerOpen} onOpenChange={setStaffPickerOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          id="healthWorker"
+                          variant="outline"
+                          role="combobox"
+                          className="h-9 w-full justify-between px-3 text-xs font-normal"
+                        >
+                          <span className="truncate">
+                            {staffOptions.find((opt) => opt.value === values.healthWorker)?.label ?? "Select care provider"}
+                          </span>
+                          <ChevronsUpDown className="ml-2 size-3.5 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Search staff..." className="h-8 text-xs" />
+                          <CommandList>
+                            <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">No staff found.</CommandEmpty>
+                            <CommandGroup>
+                              {staffOptions.map((option) => (
+                                <CommandItem
+                                  key={option.value}
+                                  value={option.label}
+                                  onSelect={() => {
+                                    update("healthWorker", option.value)
+                                    setStaffPickerOpen(false)
+                                  }}
+                                  className="text-xs"
+                                >
+                                  <Check className={`mr-2 size-3.5 ${values.healthWorker === option.value ? "opacity-100" : "opacity-0"}`} />
+                                  <span className="truncate">{option.label}</span>
+                                </CommandItem>
+                              ))}
+                            </CommandGroup>
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  </div>
                 </div>
               </section>
             )}

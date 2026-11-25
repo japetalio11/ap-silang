@@ -41,7 +41,7 @@ declare global {
 
 const loginSchema = z.object({
   identifier: z.string().trim().min(1, "Enter your email or phone number."),
-  password: z.string().min(1, "Enter your password."),
+  password: z.string().trim().min(1, "Enter your password."),
 })
 
 type LoginFormValues = z.infer<typeof loginSchema>

@@ -41,6 +41,56 @@ function SettingsSubtabs({ value, onChange, items }: { value: string; onChange: 
   </div>
 }
 
+type ChannelHealth = {
+  fcm: string
+  sms: string
+  email: string
+}
+
+const CHANNELS: Array<{ key: keyof ChannelHealth; title: string; description: string }> = [
+  { key: "fcm", title: "Firebase Cloud Messaging (FCM)", description: "Used for app push notifications." },
+  { key: "sms", title: "Semaphore SMS Gateway", description: "Fallback for mothers without smartphones." },
+  { key: "email", title: "Resend Email", description: "Used for official transfers and alerts." },
+]
+
+function ChannelStatusCard() {
+  const [channels, setChannels] = useState<ChannelHealth | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    apiRequest<{ channels?: ChannelHealth }>("/health/channels")
+      .then((res) => {
+        if (active && res?.channels) setChannels(res.channels)
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => { active = false }
+  }, [])
+
+  return (
+    <Card className="rounded-md border-sidebar-border shadow-none ring-0">
+      <CardHeader>
+        <CardTitle>Channel Status</CardTitle>
+        <p className="text-xs text-muted-foreground">Live configuration status of notification delivery channels.</p>
+      </CardHeader>
+      <CardContent className="max-w-2xl space-y-3">
+        {CHANNELS.map(({ key, title, description }) => (
+          <div key={key} className="flex items-center justify-between gap-4 rounded-md border border-sidebar-border p-3">
+            <div className="min-w-0">
+              <p className="text-xs font-medium">{title}</p>
+              <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+            </div>
+            <StatusBadge status={channels?.[key] ?? (loading ? "Pending" : "Unknown")} className="shrink-0" />
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  )
+}
+
 export function SettingsPage({ onClose }: { onClose?: () => void }) {
   const { session } = useAuthSession()
   const token = session?.token
@@ -783,12 +833,7 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
         <SettingsSubtabs value={notificationTab} onChange={setNotificationTab} items={[{ value: "channels", label: "Channel Status" }, { value: "triggers", label: "Trigger Preferences" }, { value: "preferences", label: "Notification Preferences" }]} />
 
         {notificationTab === "channels" && (
-          <Card className="rounded-md border-sidebar-border shadow-none ring-0">
-            <CardHeader><CardTitle>Channel Status</CardTitle><p className="text-xs text-muted-foreground">Channel health is not exposed by the connected backend.</p></CardHeader>
-            <CardContent className="max-w-2xl space-y-3">
-              {[["Firebase Cloud Messaging (FCM)", "Used for app push notifications."], ["Semaphore SMS Gateway", "Fallback for mothers without smartphones."], ["Resend Email", "Used for official transfers and alerts."]].map(([title, description]) => <div key={title} className="flex items-center justify-between gap-4 rounded-md border border-sidebar-border p-3"><div className="min-w-0"><p className="text-xs font-medium">{title}</p><p className="mt-0.5 text-xs text-muted-foreground">{description}</p></div><StatusBadge status="Unknown" className="shrink-0" /></div>)}
-            </CardContent>
-          </Card>
+          <ChannelStatusCard />
         )}
 
         {notificationTab === "triggers" && (
