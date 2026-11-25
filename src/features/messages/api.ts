@@ -134,9 +134,11 @@ export async function getMessages(token: string): Promise<MessageListResponse> {
 
 export async function getMessageMothers(token: string): Promise<{ result?: MessageMother[] }> {
   const facilityId = getActiveFacilityId()
+  const matchesFacility = (m: { facility_id?: string | null; assigned_facility_id?: string | null; facility?: { facility_id?: string | null } | null }) =>
+    !facilityId || m.facility_id === facilityId || m.assigned_facility_id === facilityId || m.facility?.facility_id === facilityId
   if (typeof navigator !== "undefined" && !navigator.onLine) {
     const rawMothers = await db.mothers.toArray().catch(() => [])
-    const localMothers = facilityId ? rawMothers.filter((m) => m.facility_id === facilityId) : rawMothers
+    const localMothers = rawMothers.filter((m) => matchesFacility(m as any))
     const mapped: MessageMother[] = localMothers.map((m) => ({
       mother_id: m.mother_id,
       user: m.user || {
@@ -153,7 +155,7 @@ export async function getMessageMothers(token: string): Promise<{ result?: Messa
     return await apiRequest<{ result?: MessageMother[] }>("/mother/active", { token })
   } catch (error) {
     const rawMothers = await db.mothers.toArray().catch(() => [])
-    const localMothers = facilityId ? rawMothers.filter((m) => m.facility_id === facilityId) : rawMothers
+    const localMothers = rawMothers.filter((m) => matchesFacility(m as any))
     if (localMothers.length > 0) {
       const mapped: MessageMother[] = localMothers.map((m) => ({
         mother_id: m.mother_id,
