@@ -184,13 +184,42 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
     let active = true
     let createdUrl: string | null = null
 
-    if (fileUrl && fileUrl.startsWith("blob-")) {
-      db.blobs.get(fileUrl).then((localBlob) => {
-        if (!active || !localBlob) return
-        createdUrl = URL.createObjectURL(localBlob.data)
-        setBlobUrl(createdUrl)
-        setBlobInfo({ mimeType: localBlob.mime_type, filename: localBlob.filename })
-      }).catch(() => {})
+    if (fileUrl) {
+      db.blobs.get(fileUrl)
+        .then((localBlob) => localBlob ?? (record?.screening_id ? db.blobs.get(record.screening_id) : undefined))
+        .then(async (localBlob) => {
+          if (!active) return
+          if (localBlob) {
+            createdUrl = URL.createObjectURL(localBlob.data)
+            setBlobUrl(createdUrl)
+            setBlobInfo({ mimeType: localBlob.mime_type, filename: localBlob.filename })
+            return
+          }
+          setBlobUrl(null)
+          setBlobInfo(null)
+          if (!fileUrl.startsWith("blob-") && typeof navigator !== "undefined" && navigator.onLine) {
+            const resolved = resolveAttachmentUrl(fileUrl)
+            const res = resolved ? await fetch(resolved).catch(() => null) : null
+            if (!res || !res.ok || !active) return
+            const blob = await res.blob().catch(() => null)
+            if (!blob || !active) return
+            createdUrl = URL.createObjectURL(blob)
+            setBlobUrl(createdUrl)
+            setBlobInfo({ mimeType: blob.type, filename: (record as any)?.file_name || getAttachmentName(fileUrl, record?.screening_type || "Health record") })
+            void db.blobs.put({
+              id: fileUrl,
+              data: blob,
+              filename: (record as any)?.file_name || getAttachmentName(fileUrl, record?.screening_type || "Health record"),
+              mime_type: blob.type,
+            }).catch(() => {})
+          }
+        })
+        .catch(() => {
+          if (active) {
+            setBlobUrl(null)
+            setBlobInfo(null)
+          }
+        })
     } else {
       setBlobUrl(null)
       setBlobInfo(null)
@@ -202,7 +231,7 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
         URL.revokeObjectURL(createdUrl)
       }
     }
-  }, [fileUrl])
+  }, [fileUrl, record?.screening_id])
 
   useEffect(() => {
     if (!record) return
@@ -221,7 +250,8 @@ function EhrRecordPreview({ record, onClose }: { record: MaternalLabRecord | nul
   const extension = fileName.split(".").pop()?.toLowerCase() ?? ""
   const isImage = mime.startsWith("image/") || ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)
   const isPdf = mime.includes("pdf") || extension === "pdf"
-  const previewUrl = blobUrl || resolveAttachmentUrl(fileUrl)
+  const isOfflineUncached = typeof navigator !== "undefined" && !navigator.onLine && !blobUrl
+  const previewUrl = blobUrl || (isOfflineUncached ? "" : resolveAttachmentUrl(fileUrl))
 
   return (
     <div className="fixed inset-0 z-[100] bg-background/95 text-foreground" role="presentation" onClick={onClose}>

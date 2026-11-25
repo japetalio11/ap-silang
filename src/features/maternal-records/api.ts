@@ -1,4 +1,4 @@
-import { apiRequest } from "@/lib/api"
+import { apiRequest, backendAssetUrl } from "@/lib/api"
 import { getActiveFacilityId } from "@/features/auth/auth-session"
 import { db, type LocalMother, type LocalPregnancy, type LocalPrenatalVisit, type LocalLabScreening, type LocalDeliveryOutcome, type SyncStatus } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
@@ -493,6 +493,22 @@ async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
           sync_status: "synced",
           updated_at: now,
         })
+        if (typeof navigator !== "undefined" && navigator.onLine && l.file_url && !l.file_url.startsWith("blob-")) {
+          const fileUrl = l.file_url
+          void db.blobs.get(fileUrl).then(async (existing) => {
+            if (existing) return
+            const res = await fetch(backendAssetUrl(fileUrl)).catch(() => null)
+            if (!res || !res.ok) return
+            const blob = await res.blob().catch(() => null)
+            if (!blob) return
+            await db.blobs.put({
+              id: fileUrl,
+              data: blob,
+              filename: (l as any).file_name || l.screening_type || "health-record",
+              mime_type: blob.type,
+            }).catch(() => {})
+          }).catch(() => {})
+        }
       }
     }
   }
@@ -1787,7 +1803,16 @@ export const uploadMaternalLabFile = async (token: string, file: File) => {
   }
   const body = new FormData()
   body.append("file", file)
-  return apiRequest<{ file_url: string }>("/lab-screening/upload", { method: "POST", token, body })
+  const res = await apiRequest<{ file_url: string }>("/lab-screening/upload", { method: "POST", token, body })
+  if (res?.file_url) {
+    await db.blobs.put({
+      id: res.file_url,
+      data: file,
+      filename: file.name,
+      mime_type: file.type,
+    }).catch(() => {})
+  }
+  return res
 }
 
 export const registerMaternalLabScreening = async (token: string, input: RegisterLabScreeningInput) => {

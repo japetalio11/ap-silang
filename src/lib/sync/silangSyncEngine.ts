@@ -759,6 +759,10 @@ export class SilangSyncEngine {
             }
             if (item.blob_ids && item.blob_ids.length > 0) {
               for (const blobId of item.blob_ids) {
+                const existing = await db.blobs.get(blobId).catch(() => null)
+                if (existing && finalFileUrl) {
+                  await db.blobs.put({ ...existing, id: finalFileUrl }).catch(() => {})
+                }
                 await db.blobs.delete(blobId).catch(() => {})
               }
             }
