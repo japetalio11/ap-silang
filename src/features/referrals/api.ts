@@ -7,8 +7,24 @@ function filterFacilityReferrals(list: LocalReferral[]): LocalReferral[] {
   const facilityId = getActiveFacilityId()
   if (!facilityId) return list
   return list.filter((r) => {
-    const rec = r as LocalReferral & { referring_facility_id?: string | null; receiving_facility_id?: string | null; facility_id?: string | null }
-    return rec.referring_facility_id === facilityId || rec.receiving_facility_id === facilityId || rec.facility_id === facilityId
+    const rec = r as LocalReferral & {
+      referring_facility_id?: string | null
+      receiving_facility_id?: string | null
+      from_facility_id?: string | null
+      to_facility_id?: string | null
+      facility_id?: string | null
+      referring_facility?: { facility_id?: string | null } | null
+      receiving_facility?: { facility_id?: string | null } | null
+    }
+    return (
+      rec.referring_facility_id === facilityId ||
+      rec.receiving_facility_id === facilityId ||
+      rec.from_facility_id === facilityId ||
+      rec.to_facility_id === facilityId ||
+      rec.facility_id === facilityId ||
+      rec.referring_facility?.facility_id === facilityId ||
+      rec.receiving_facility?.facility_id === facilityId
+    )
   })
 }
 

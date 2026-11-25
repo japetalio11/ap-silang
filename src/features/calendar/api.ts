@@ -1,6 +1,13 @@
 import { apiRequest } from "@/lib/api"
 import { db, type LocalAppointment } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { getActiveFacilityId } from "@/features/auth/auth-session"
+
+function filterFacilityAppointments(list: LocalAppointment[]): LocalAppointment[] {
+  const facilityId = getActiveFacilityId()
+  if (!facilityId) return list
+  return list.filter((a) => a.facility_id === facilityId || a.facility?.facility_id === facilityId)
+}
 import type { MaternalRecord } from "@/features/maternal-records/api"
 import type { AppEvent } from "./components/types"
 
@@ -60,7 +67,7 @@ export function appointmentToEvent(appointment: AppointmentRecord): AppEvent {
 
 export async function getAppointments(token: string, options?: { scope?: string }): Promise<{ message?: string; data: AppointmentRecord[] }> {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const local = await db.appointments.toArray().catch(() => [])
+    const local = filterFacilityAppointments(await db.appointments.toArray().catch(() => []))
     if (local.length > 0) {
       return {
         data: local.map((a) => ({
@@ -94,12 +101,12 @@ export async function getAppointments(token: string, options?: { scope?: string 
         }).catch(() => {})
       }
     }
-    const pending = await db.appointments.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
+    const pending = filterFacilityAppointments(await db.appointments.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => []))
     const onlineIds = new Set((res.data || []).map((a) => a.appointment_id))
     const uniquePending = pending.filter((a) => !onlineIds.has(a.appointment_id))
     return { data: [...uniquePending, ...(res.data || [])] as AppointmentRecord[] }
   } catch (error) {
-    const local = await db.appointments.toArray().catch(() => [])
+    const local = filterFacilityAppointments(await db.appointments.toArray().catch(() => []))
     if (local.length > 0) {
       return {
         data: local.map((a) => ({

@@ -1,6 +1,25 @@
 import { apiRequest } from "@/lib/api"
 import { db, type LocalMessage } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { getActiveFacilityId } from "@/features/auth/auth-session"
+
+async function getFacilityUserIds(): Promise<Set<string> | null> {
+  const facilityId = getActiveFacilityId()
+  if (!facilityId) return null
+  const [mothers, staff] = await Promise.all([
+    db.mothers.where("facility_id").equals(facilityId).toArray().catch(() => []),
+    db.staff.where("facility_id").equals(facilityId).toArray().catch(() => []),
+  ])
+  const ids = new Set<string>()
+  for (const m of mothers) {
+    if (m.user_id) ids.add(m.user_id)
+    if (m.user?.user_id) ids.add(m.user.user_id)
+  }
+  for (const s of staff) {
+    if (s.user_id) ids.add(s.user_id)
+  }
+  return ids
+}
 
 export type MessageUser = {
   user_id: string
@@ -36,7 +55,13 @@ export type MessageListResponse = {
 
 export async function getMessages(token: string): Promise<MessageListResponse> {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const local = await db.messages.toArray().catch(() => [])
+    const [rawLocal, allowedIds] = await Promise.all([
+      db.messages.toArray().catch(() => []),
+      getFacilityUserIds(),
+    ])
+    const local = allowedIds
+      ? rawLocal.filter((m) => allowedIds.has(m.sender_id) || allowedIds.has(m.receiver_id))
+      : rawLocal
     if (local.length > 0) {
       return {
         data: local.map((m) => ({
@@ -83,7 +108,13 @@ export async function getMessages(token: string): Promise<MessageListResponse> {
     }))
     return { ...res, data: [...(res.data || []), ...uniquePending] }
   } catch (error) {
-    const local = await db.messages.toArray().catch(() => [])
+    const [rawLocal, allowedIds] = await Promise.all([
+      db.messages.toArray().catch(() => []),
+      getFacilityUserIds(),
+    ])
+    const local = allowedIds
+      ? rawLocal.filter((m) => allowedIds.has(m.sender_id) || allowedIds.has(m.receiver_id))
+      : rawLocal
     if (local.length > 0) {
       return {
         data: local.map((m) => ({
@@ -102,8 +133,10 @@ export async function getMessages(token: string): Promise<MessageListResponse> {
 }
 
 export async function getMessageMothers(token: string): Promise<{ result?: MessageMother[] }> {
+  const facilityId = getActiveFacilityId()
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const localMothers = await db.mothers.toArray().catch(() => [])
+    const rawMothers = await db.mothers.toArray().catch(() => [])
+    const localMothers = facilityId ? rawMothers.filter((m) => m.facility_id === facilityId) : rawMothers
     const mapped: MessageMother[] = localMothers.map((m) => ({
       mother_id: m.mother_id,
       user: m.user || {
@@ -119,7 +152,8 @@ export async function getMessageMothers(token: string): Promise<{ result?: Messa
   try {
     return await apiRequest<{ result?: MessageMother[] }>("/mother/active", { token })
   } catch (error) {
-    const localMothers = await db.mothers.toArray().catch(() => [])
+    const rawMothers = await db.mothers.toArray().catch(() => [])
+    const localMothers = facilityId ? rawMothers.filter((m) => m.facility_id === facilityId) : rawMothers
     if (localMothers.length > 0) {
       const mapped: MessageMother[] = localMothers.map((m) => ({
         mother_id: m.mother_id,
