@@ -136,6 +136,8 @@ export async function warmOfflineData(token: string, userId: string, facilityId?
       const mothersToStore: LocalMother[] = mothers.map((mother) => ({
         ...mother,
         id: mother.mother_id,
+        user_id: mother.user?.user_id ?? (mother as any).user_id ?? null,
+        facility_id: (mother.user as any)?.facility_id ?? (mother as any).facility_id ?? facilityId ?? null,
         first_name: mother.user?.first_name,
         middle_name: mother.user?.middle_name,
         last_name: mother.user?.last_name,

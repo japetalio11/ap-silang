@@ -297,10 +297,13 @@ async function persistActiveMothersBatch(mothers: MaternalRecord[]) {
   const labsToPut: any[] = []
 
   const now = Date.now()
+  const activeFacilityId = getActiveFacilityId()
   for (const mother of mothers) {
     mothersToPut.push({
       ...mother,
       id: mother.mother_id,
+      user_id: mother.user?.user_id ?? (mother as any).user_id ?? null,
+      facility_id: (mother.user as any)?.facility_id ?? (mother as any).facility_id ?? activeFacilityId ?? null,
       first_name: mother.user?.first_name,
       middle_name: mother.user?.middle_name,
       last_name: mother.user?.last_name,
@@ -547,8 +550,8 @@ async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
 
 export async function getMaternalRecords(token: string): Promise<MaternalListResponse> {
   const facilityId = getActiveFacilityId()
-  const filterByFacility = <T extends { facility_id?: string | null }>(list: T[]) =>
-    facilityId ? list.filter((m) => m.facility_id === facilityId) : list
+  const filterByFacility = <T extends { facility_id?: string | null; user?: { facility_id?: string | null } | null }>(list: T[]) =>
+    facilityId ? list.filter((m) => m.facility_id === facilityId || m.user?.facility_id === facilityId) : list
 
   const pendingMothers = filterByFacility(await db.mothers.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => []))
 
