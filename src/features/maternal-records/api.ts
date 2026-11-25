@@ -1,4 +1,5 @@
 import { apiRequest } from "@/lib/api"
+import { getActiveFacilityId } from "@/features/auth/auth-session"
 import { db, type LocalMother, type LocalPregnancy, type LocalPrenatalVisit, type LocalLabScreening, type LocalDeliveryOutcome, type SyncStatus } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getPendingMotherUpdates, isNetworkFailure, enqueueMotherProfileUpdate } from "@/features/dashboard/offline-maternal-sync"
@@ -545,10 +546,14 @@ async function persistCompositeProfileBatch(result: MaternalCompositeRecord) {
 }
 
 export async function getMaternalRecords(token: string): Promise<MaternalListResponse> {
-  const pendingMothers = await db.mothers.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
+  const facilityId = getActiveFacilityId()
+  const filterByFacility = <T extends { facility_id?: string | null }>(list: T[]) =>
+    facilityId ? list.filter((m) => m.facility_id === facilityId) : list
+
+  const pendingMothers = filterByFacility(await db.mothers.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => []))
 
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const localMothers = await db.mothers.toArray().catch(() => [])
+    const localMothers = filterByFacility(await db.mothers.toArray().catch(() => []))
     if (localMothers.length > 0) {
       return {
         result: localMothers.map((m) => ({
@@ -619,7 +624,7 @@ export async function getMaternalRecords(token: string): Promise<MaternalListRes
 
     return { result: [...uniquePending, ...mergedOnline] }
   } catch (error) {
-    const localMothers = await db.mothers.toArray().catch(() => [])
+    const localMothers = filterByFacility(await db.mothers.toArray().catch(() => []))
     if (localMothers.length > 0) {
       return {
         result: localMothers.map((m) => ({

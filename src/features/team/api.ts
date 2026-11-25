@@ -1,6 +1,12 @@
 import { apiRequest } from "@/lib/api"
 import { db, type LocalStaff } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
+import { getActiveFacilityId } from "@/features/auth/auth-session"
+
+function filterFacilityStaff<T extends { facility_id?: string | null; role?: string | null }>(list: T[]): T[] {
+  const facilityId = getActiveFacilityId()
+  return list.filter((s) => (!facilityId || s.facility_id === facilityId) && s.role?.toLowerCase() !== "superadmin")
+}
 
 export type StaffApiRecord = {
   user_id: string
@@ -54,7 +60,7 @@ export function mapStaffRecord(staff: StaffApiRecord): StaffRecord {
 
 export async function getFacilityStaff(token: string): Promise<StaffRecord[]> {
   if (typeof navigator !== "undefined" && !navigator.onLine) {
-    const local = await db.staff.toArray().catch(() => [])
+    const local = filterFacilityStaff(await db.staff.toArray().catch(() => []))
     return local.map((s) => mapStaffRecord(s as any))
   }
 
@@ -80,12 +86,12 @@ export async function getFacilityStaff(token: string): Promise<StaffRecord[]> {
         }).catch(() => {})
       }
     }
-    const pending = await db.staff.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => [])
+    const pending = filterFacilityStaff(await db.staff.where("sync_status").anyOf("pending_create", "pending_update").toArray().catch(() => []))
     const onlineIds = new Set((response.result || []).map((s) => s.user_id))
     const uniquePending = pending.filter((s) => !onlineIds.has(s.user_id)).map((s) => mapStaffRecord(s as any))
     return [...uniquePending, ...(response.result ?? []).map(mapStaffRecord)]
   } catch (error) {
-    const local = await db.staff.toArray().catch(() => [])
+    const local = filterFacilityStaff(await db.staff.toArray().catch(() => []))
     if (local.length > 0) {
       return local.map((s) => mapStaffRecord(s as any))
     }
