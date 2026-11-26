@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from "react"
 import {
+  ArrowLeft,
   CheckCheck,
   ChevronDown,
   CloudOff,
@@ -81,6 +82,7 @@ type ChatMessage = {
 type MessagePayload = MessageRecord & {
   sender_id: string
   receiver_id: string
+  sync_status?: string
 }
 
 function formatMessageTime(value?: string | null) {
@@ -98,7 +100,9 @@ function toChatMessage(
   message: MessagePayload,
   currentUserId: string
 ): ChatMessage {
-  const isOffline = message.message_id.startsWith("temp-") || (message as any).sync_status === "pending_create"
+  const isOffline =
+    message.message_id.startsWith("temp-") ||
+    message.sync_status === "pending_create"
   return {
     id: message.message_id,
     from: message.sender_id === currentUserId ? "staff" : "mother",
@@ -195,6 +199,7 @@ export function MessagesPage() {
   const { socket } = useSocket()
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedId, setSelectedId] = useState("")
+  const [mobileThreadOpen, setMobileThreadOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [draft, setDraft] = useState("")
   const [attachment, setAttachment] = useState<File | null>(null)
@@ -214,10 +219,15 @@ export function MessagesPage() {
   const readRequestsRef = useRef<Set<string>>(new Set())
   const inFlightMessagesRef = useRef<Set<string>>(new Set())
   const selectedIdRef = useRef(selectedId)
+  const mobileThreadOpenRef = useRef(mobileThreadOpen)
 
   useEffect(() => {
     selectedIdRef.current = selectedId
   }, [selectedId])
+
+  useEffect(() => {
+    mobileThreadOpenRef.current = mobileThreadOpen
+  }, [mobileThreadOpen])
 
   const loadInbox = useCallback(async () => {
     if (!sessionToken || !currentUserId) {
@@ -366,7 +376,9 @@ export function MessagesPage() {
       const activityTime = newMsg.message_date
         ? new Date(newMsg.message_date).getTime()
         : Date.now()
-      const isViewingThisThread = selectedIdRef.current === partnerId
+      const isViewingThisThread =
+        selectedIdRef.current === partnerId &&
+        (!isMobile || mobileThreadOpenRef.current)
 
       setConversations((current) => {
         const targetIndex = current.findIndex((c) => c.id === partnerId)
@@ -448,7 +460,7 @@ export function MessagesPage() {
       socket.off("message:read", handleMessageRead)
       socket.off("message:read_all", handleMessageReadAll)
     }
-  }, [socket, currentUserId, sessionToken, loadInbox])
+  }, [socket, currentUserId, sessionToken, loadInbox, isMobile])
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => void loadInbox(), 0)
@@ -494,14 +506,16 @@ export function MessagesPage() {
   )
 
   useEffect(() => {
+    if (isMobile && !mobileThreadOpen) return
     threadEndRef.current?.scrollIntoView({ block: "end" })
-  }, [selectedId, messages.length])
+  }, [selectedId, messages.length, isMobile, mobileThreadOpen])
 
   useEffect(() => {
     if (
       !sessionToken ||
       !currentUserId ||
       !selected.id ||
+      (isMobile && !mobileThreadOpen) ||
       selected.unread === 0 ||
       readRequestsRef.current.has(selected.id)
     )
@@ -534,10 +548,13 @@ export function MessagesPage() {
         )
       )
       .finally(() => readRequestsRef.current.delete(selected.id))
-  }, [selected.id, selected.unread, sessionToken, currentUserId])
+  }, [selected.id, selected.unread, sessionToken, currentUserId, isMobile, mobileThreadOpen])
 
   const selectConversation = (id: string) => {
     setSelectedId(id)
+    setMobileThreadOpen(true)
+    setThreadSearchOpen(false)
+    setThreadSearch("")
   }
 
   const sendMessage = async (event: FormEvent<HTMLFormElement>) => {
@@ -731,13 +748,11 @@ export function MessagesPage() {
             gridTemplateColumns: isMobile
               ? "minmax(0, 1fr)"
               : "minmax(300px, 32%) minmax(0, 1fr)",
-            gridTemplateRows: isMobile
-              ? "minmax(220px, 38%) minmax(0, 1fr)"
-              : "minmax(0, 1fr)",
+            gridTemplateRows: "minmax(0, 1fr)",
           }}
         >
           <aside
-            className={`flex min-h-0 min-w-0 flex-col ${isMobile ? "border-b" : "border-r"} border-border`}
+            className={`${isMobile && mobileThreadOpen ? "hidden" : "flex"} min-h-0 min-w-0 flex-col ${isMobile ? "" : "border-r"} border-border`}
           >
             <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
               <div className="min-w-0">
@@ -815,9 +830,11 @@ export function MessagesPage() {
                     type="button"
                     onClick={() => selectConversation(conversation.id)}
                     aria-current={
-                      selectedId === conversation.id ? "true" : undefined
+                      selectedId === conversation.id && (!isMobile || mobileThreadOpen)
+                        ? "true"
+                        : undefined
                     }
-                    className={`flex w-full items-center gap-3 overflow-hidden rounded-lg px-3 py-3 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${selectedId === conversation.id ? "bg-accent" : ""}`}
+                    className={`flex w-full items-center gap-3 overflow-hidden rounded-lg px-3 py-3 text-left transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${selectedId === conversation.id && (!isMobile || mobileThreadOpen) ? "bg-accent" : ""}`}
                   >
                     <span className="relative shrink-0">
                       <PatientAvatar
@@ -858,9 +875,26 @@ export function MessagesPage() {
             </ScrollArea>
           </aside>
 
-          <section className="flex min-h-0 min-w-0 flex-col">
+          <section className={`${isMobile && !mobileThreadOpen ? "hidden" : "flex"} min-h-0 min-w-0 flex-col`}>
             <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
               <div className="flex min-w-0 items-center gap-3">
+                {isMobile && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => {
+                      setMobileThreadOpen(false)
+                      setDetailsOpen(false)
+                      setThreadSearchOpen(false)
+                      setThreadSearch("")
+                    }}
+                    aria-label="Back to conversations"
+                    className="shrink-0"
+                  >
+                    <ArrowLeft className="size-4" />
+                  </Button>
+                )}
                 <span className="relative shrink-0">
                   <PatientAvatar conversation={selected} className="size-9" />
                 </span>

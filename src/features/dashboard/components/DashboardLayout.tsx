@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Outlet } from "react-router-dom"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { AppSidebar } from "./AppSidebar"
@@ -39,6 +39,52 @@ export function DashboardLayout() {
   const [pinStep, setPinStep] = useState<"create" | "verify">("create")
   const [pin, setPin] = useState("")
   const [createdPin, setCreatedPin] = useState("")
+  const mobileQuickCreateRef = useRef<HTMLButtonElement>(null)
+  const [mobileQuickCreateBottom, setMobileQuickCreateBottom] = useState(24)
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 767px)")
+    let frame = 0
+    const updatePosition = () => {
+      window.cancelAnimationFrame(frame)
+      frame = window.requestAnimationFrame(() => {
+        if (!media.matches || !mobileQuickCreateRef.current) return
+        const button = mobileQuickCreateRef.current
+        const right = 24
+        const size = 56
+        const viewportHeight = window.innerHeight
+        const viewportWidth = window.innerWidth
+        const targets = document.querySelectorAll<HTMLElement>(
+          "main button, main a, main input, main textarea, main select, main [role='button'], main form, [data-sidebar-inset] button, [data-sidebar-inset] input"
+        )
+        let bottom = 24
+        for (; bottom <= Math.min(288, viewportHeight - 160); bottom += 12) {
+          const left = viewportWidth - right - size
+          const top = viewportHeight - bottom - size
+          const overlapsAction = Array.from(targets).some((target) => {
+            if (target === button || button.contains(target) || !target.getClientRects().length) return false
+            const rect = target.getBoundingClientRect()
+            if (target.tagName === "FORM" && rect.height > 100) return false
+            return rect.right > left - 8 && rect.left < left + size + 8 &&
+              rect.bottom > top - 8 && rect.top < top + size + 8
+          })
+          if (!overlapsAction) break
+        }
+        setMobileQuickCreateBottom(Math.min(bottom, Math.max(24, viewportHeight - 160)))
+      })
+    }
+    updatePosition()
+    window.addEventListener("resize", updatePosition)
+    document.addEventListener("scroll", updatePosition, true)
+    const observer = new MutationObserver(updatePosition)
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener("resize", updatePosition)
+      document.removeEventListener("scroll", updatePosition, true)
+      observer.disconnect()
+    }
+  }, [])
 
   const continuePinSetup = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -159,7 +205,9 @@ export function DashboardLayout() {
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
-              className="md:hidden fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg bg-foreground text-background hover:bg-foreground/90 border p-0 z-50"
+              ref={mobileQuickCreateRef}
+              style={{ bottom: mobileQuickCreateBottom }}
+              className="md:hidden fixed right-6 h-14 w-14 rounded-full shadow-lg bg-foreground text-background hover:bg-foreground/90 border p-0 z-50 transition-[bottom] duration-200"
             >
               <PlusCircle className="size-6" />
               <span className="sr-only">Quick Create</span>
