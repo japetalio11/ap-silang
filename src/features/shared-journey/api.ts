@@ -80,6 +80,7 @@ export type PublicSharedJourneyRecord = {
     height_cm?: number | string | null
     bmi_1st_trimester?: number | string | null
     bmi_category?: string | null
+    completed_8anc?: boolean
     prev_caesarean?: boolean
     consecutive_miscarriages?: number | null
     stillbirth_history?: boolean
