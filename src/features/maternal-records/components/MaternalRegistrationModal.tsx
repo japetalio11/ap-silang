@@ -1,11 +1,7 @@
 import { useState, useRef, useEffect, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import { addDays, differenceInYears, format, isValid, parseISO } from "date-fns"
 import { z } from "zod"
-<<<<<<< HEAD
-import { Baby, Camera, Check, ChevronsUpDown, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
-=======
-import { Baby, Camera, Check, ClipboardList, HeartPulse, CircleHelp, ShieldAlert, UserRound, X } from "lucide-react"
->>>>>>> e1a256b (feat: modernize Silang UI and connect core maternal care workflows)
+import { Baby, Camera, Check, ChevronsUpDown, CircleHelp, ClipboardList, HeartPulse, ShieldAlert, UserRound, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DateInput } from "@/components/ui/date-input"
