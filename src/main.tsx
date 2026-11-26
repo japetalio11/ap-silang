@@ -22,6 +22,7 @@ import { MaternalRecordsPage } from "@/features/maternal-records/components/Mate
 import { MaternalProfilePage } from "@/features/maternal-records/components/MaternalProfilePage"
 import { ReferralsPage } from "@/features/referrals/components/ReferralsPage"
 import { ReferralGatewayPage } from "@/features/referrals/components/ReferralGatewayPage"
+import { SharedJourneyPage } from "@/features/shared-journey/components/SharedJourneyPage"
 import { MessagesPage } from "@/features/messages/components/MessagesPage"
 import { SettingsPage } from "@/features/dashboard/components/SettingsPage"
 import { SuperAdminLayout } from "@/features/dashboard/components/SuperAdminLayout"
@@ -67,6 +68,7 @@ function AppRoutes() {
     else if (pathname === "/dashboard/user-guide") pageTitle = "User Guide"
     else if (pathname === "/dashboard/feedback") pageTitle = "Feedback"
     else if (/^\/referral\/[^/]+$/.test(pathname)) pageTitle = "Secure Referral"
+    else if (/^\/shared-journey\/[^/]+$/.test(pathname) || /^\/m\/[^/]+$/.test(pathname)) pageTitle = "Shared Pregnancy Journey"
     else if (pathname === "/superadmin") pageTitle = "Superadmin Sign In"
     else if (/^\/superadmin\/facility\/[^/]+$/.test(pathname)) pageTitle = "Facility Information Hub"
     else if (/^\/superadmin\/users\/[^/]+$/.test(pathname)) pageTitle = "Staff Profile"
@@ -98,6 +100,8 @@ function AppRoutes() {
         <Route path="settings" element={<SuperAdminSettingsDialog />} />
       </Route>
       <Route path="/referral/:identifier" element={<ReferralGatewayPage />} />
+      <Route path="/shared-journey/:token" element={<SharedJourneyPage />} />
+      <Route path="/m/:token" element={<SharedJourneyPage />} />
       <Route path="/dashboard" element={<RequireAuth><DashboardLayout /></RequireAuth>}>
         <Route index element={<DashboardPage />} />
         <Route path="calendar" element={<CalendarPage />} />
