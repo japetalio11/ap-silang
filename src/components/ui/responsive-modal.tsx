@@ -10,12 +10,15 @@ import {
 } from "@/components/ui/dialog"
 import {
   Drawer,
+  DrawerClose,
   DrawerContent,
   DrawerDescription,
   DrawerHeader,
   DrawerTitle,
   DrawerTrigger,
 } from "@/components/ui/drawer"
+import { Button } from "@/components/ui/button"
+import { XIcon } from "lucide-react"
 
 interface ResponsiveModalProps {
   open?: boolean;
@@ -43,13 +46,14 @@ export function ResponsiveModal({
       <Drawer open={open} onOpenChange={onOpenChange}>
         {trigger && <DrawerTrigger asChild>{trigger}</DrawerTrigger>}
         <DrawerContent className="bg-background dark:bg-[#0a0a0a] border-t border-sidebar-border border-x-0 border-b-0 before:hidden rounded-t-xl overflow-hidden focus-visible:outline-none flex flex-col px-4 pb-4 max-h-[85dvh]">
+          <DrawerClose asChild><Button variant="ghost" size="icon-sm" aria-label="Close" className="absolute right-4 top-4 z-20"><XIcon className="size-4" /></Button></DrawerClose>
           {(title || description) && (
               <DrawerHeader className="shrink-0 px-0 pt-2 pb-4 text-left">
                 {title && <DrawerTitle className="text-base font-semibold text-foreground dark:text-white">{title}</DrawerTitle>}
                 {description && <DrawerDescription className="text-xs text-muted-foreground">{description}</DrawerDescription>}
               </DrawerHeader>
           )}
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain no-scrollbar pt-2">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pt-2">
             {children}
           </div>
         </DrawerContent>

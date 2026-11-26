@@ -77,6 +77,7 @@ export function DashboardLayout() {
         }}
       >
         <DialogContent
+          tour={false}
           showCloseButton={false}
           onEscapeKeyDown={(event) => event.preventDefault()}
           onPointerDownOutside={(event) => event.preventDefault()}

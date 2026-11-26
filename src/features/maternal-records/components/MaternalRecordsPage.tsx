@@ -544,13 +544,28 @@ export function MaternalRecordsPage() {
 
           <div className="flex flex-col gap-2 md:hidden">
             {isLoading ? <MobileTableCardSkeleton /> : pagedRows.map(({ record, name, latestPregnancy, aog, edd, riskLabel, address }) => (
-              <article key={record.mother_id} onClick={() => navigate(`/dashboard/maternal-records/${encodeURIComponent(record.mother_id)}`)} className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 dark:bg-black">
+              <article
+                key={record.mother_id}
+                role="link"
+                tabIndex={0}
+                aria-label={`Open ${name}'s maternal profile`}
+                onClick={(event) => {
+                  const target = event.target as HTMLElement
+                  if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                  navigate(`/dashboard/maternal-records/${encodeURIComponent(record.mother_id)}`)
+                }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                  event.preventDefault()
+                  navigate(`/dashboard/maternal-records/${encodeURIComponent(record.mother_id)}`)
+                }}
+                className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black"
+              >
                 <div className="flex min-w-0 items-start justify-between gap-2">
                   <div className="flex min-w-0 items-start gap-2">
                     <Checkbox aria-label={`Select ${name}`} checked={selectedMotherIds.includes(record.mother_id)} onClick={(event) => event.stopPropagation()} onCheckedChange={(checked) => setSelectedMotherIds((current) => checked === true ? Array.from(new Set([...current, record.mother_id])) : current.filter((id) => id !== record.mother_id))} className="border-sidebar-border" />
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium text-foreground">{name}</p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">{address || "Address not recorded"}</p>
                     </div>
                   </div>
                   <TableRowActions label={`Actions for ${name}`}>
@@ -562,9 +577,10 @@ export function MaternalRecordsPage() {
                   {riskLabel === "Not assessed" ? <MaternalNeutralBadge>Not assessed</MaternalNeutralBadge> : <StatusBadge status={riskLabel} />}
                   <MaternalNeutralBadge>{latestPregnancy ? `G${latestPregnancy.gravida ?? "—"} P${latestPregnancy.parity ?? "—"}` : "No pregnancy"}</MaternalNeutralBadge>
                 </div>
-                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs">
-                  <span className="text-muted-foreground">AOG</span><span>{aog}</span>
-                  <span className="text-muted-foreground">EDD</span><span>{edd && isValid(edd) ? format(edd, "MMM d, yyyy") : "—"}</span>
+                <div className="grid min-w-0 grid-cols-3 gap-3 text-xs">
+                  <div className="min-w-0"><p className="text-muted-foreground">AOG</p><p className="mt-1 font-medium text-foreground">{aog}</p></div>
+                  <div className="min-w-0"><p className="text-muted-foreground">EDD</p><p className="mt-1 font-medium text-foreground">{edd && isValid(edd) ? format(edd, "MMM d, yyyy") : "—"}</p></div>
+                  <div className="min-w-0"><p className="text-muted-foreground">Address</p><p className="mt-1 break-words font-medium text-foreground">{address || "Not recorded"}</p></div>
                 </div>
               </article>
             ))}

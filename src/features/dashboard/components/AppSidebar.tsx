@@ -15,14 +15,14 @@ import {
 } from "@/components/ui/sidebar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { ArrowLeftRight, Building2, CalendarDays, ChevronsUpDown, Download, FolderHeart, LayoutDashboard, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog } from "lucide-react"
+import { ArrowLeftRight, Building2, CalendarDays, ChevronsUpDown, FolderHeart, LayoutDashboard, MessageSquare, ShieldCheck, SlidersHorizontal, Smartphone, UserCog } from "lucide-react"
 import headerIcon from "@/assets/silang-sidebar.svg"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { backendAssetUrl } from "@/lib/api"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { StaffAvatar } from "@/features/team/components/StaffAvatar"
 import { db } from "@/lib/db/silangDatabase"
-import { usePwaInstall } from "@/hooks/use-pwa-install"
+import { InstallMobileAppDialog } from "./InstallMobileAppDialog"
 
 const navigationGroups = [
   {
@@ -53,7 +53,6 @@ const navigationGroups = [
     hideLabel: false,
     items: [
       { label: "Staff Management", path: "/dashboard/team", icon: UserCog },
-      { label: "Settings", path: "/dashboard/settings", icon: SlidersHorizontal },
     ],
   },
 ]
@@ -61,9 +60,9 @@ const navigationGroups = [
 export function AppSidebar() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { setOpenMobile } = useSidebar()
+  const { isMobile, setOpenMobile } = useSidebar()
   const { session, logout } = useAuthSession()
-  const { isInstallable, install } = usePwaInstall()
+  const [installAppOpen, setInstallAppOpen] = useState(false)
   const signedInName = session?.user
     ? [session.user.first_name, session.user.middle_name, session.user.last_name].filter(Boolean).join(" ")
     : "Staff member"
@@ -96,6 +95,12 @@ export function AppSidebar() {
       if (path === "/dashboard/settings") navigate(path, { state: { backgroundLocation: location } })
       else navigate(path)
     }, 350)
+  }
+
+  const handleOpenInstallApp = () => {
+    setOpenMobile(false)
+    if (isMobile) window.setTimeout(() => setInstallAppOpen(true), 250)
+    else setInstallAppOpen(true)
   }
 
   return (
@@ -162,7 +167,7 @@ export function AppSidebar() {
               <SidebarMenu>
                 <SidebarMenuItem>
                   <SidebarMenuButton
-                    onClick={() => navigate("/superadmin/overview")}
+                    onClick={() => handleNavigate("/superadmin/overview")}
                     className="bg-emerald-500/10 text-emerald-800 hover:bg-emerald-500/20 dark:bg-emerald-500/15 dark:text-emerald-300"
                     tooltip="Municipal Superadmin"
                   >
@@ -177,6 +182,32 @@ export function AppSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
+        <SidebarGroup className="p-0">
+          <SidebarGroupLabel className="group-data-[collapsible=icon]:mt-0 group-data-[collapsible=icon]:opacity-100 relative overflow-hidden">
+            <span className="transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-0 whitespace-nowrap">Preferences</span>
+            <div className="absolute inset-x-2 top-1/2 h-px -translate-y-1/2 bg-sidebar-border opacity-0 transition-opacity duration-200 ease-linear group-data-[collapsible=icon]:opacity-100" />
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={location.pathname === "/dashboard/settings"}
+                  onClick={() => handleNavigate("/dashboard/settings")}
+                  tooltip="Settings"
+                >
+                  <SlidersHorizontal className="mr-2" />
+                  <span>Settings</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton onClick={handleOpenInstallApp} tooltip="Install Silang Mobile for Mothers">
+                  <Smartphone className="mr-2" />
+                  <span className="truncate">Install Silang Mobile for Mothers</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
         <SidebarMenu>
           <SidebarMenuItem>
             <DropdownMenu>
@@ -198,22 +229,10 @@ export function AppSidebar() {
               </DropdownMenuTrigger>
               <DropdownMenuContent side="top" className="w-[--radix-dropdown-menu-trigger-width]">
                 <DropdownMenuLabel>My Account</DropdownMenuLabel>
-                {isInstallable && (
-                  <>
-                    <DropdownMenuItem
-                      onClick={install}
-                      className="cursor-pointer text-primary focus:text-primary font-medium"
-                    >
-                      <Download className="mr-2 size-4" />
-                      Install Web App
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                  </>
-                )}
                 {isUserSuperAdmin(session?.user.role) && (
                   <>
                     <DropdownMenuItem
-                      onClick={() => navigate("/superadmin/overview")}
+                      onClick={() => handleNavigate("/superadmin/overview")}
                       className="cursor-pointer text-emerald-600 dark:text-emerald-400"
                     >
                       <ShieldCheck className="mr-2 size-4" />
@@ -222,12 +241,13 @@ export function AppSidebar() {
                     <DropdownMenuSeparator />
                   </>
                 )}
-                <DropdownMenuItem onClick={() => { logout(); navigate("/", { replace: true }) }} className="cursor-pointer">Log out</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => { setOpenMobile(false); logout(); navigate("/", { replace: true }) }} className="cursor-pointer">Log out</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
+      <InstallMobileAppDialog open={installAppOpen} onOpenChange={setInstallAppOpen} />
     </Sidebar>
     </TooltipProvider>
   )

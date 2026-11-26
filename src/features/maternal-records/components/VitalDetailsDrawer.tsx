@@ -121,9 +121,7 @@ export function VitalDetailsDrawer({
           }
           description={`Visit #${visit.visit_number ?? "—"} · ${formatDate(visit.visit_date)} · ${visit.age_of_gestation_weeks ? `${visit.age_of_gestation_weeks}w AOG` : "Gestation not set"}`}
           trailing={
-            <>
-              <StatusBadge status={effectiveRiskLevel} />
-              <TooltipProvider delayDuration={500}>
+            <TooltipProvider delayDuration={500}>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -138,8 +136,7 @@ export function VitalDetailsDrawer({
                   </TooltipTrigger>
                   <TooltipContent>Close vital details</TooltipContent>
                 </Tooltip>
-              </TooltipProvider>
-            </>
+            </TooltipProvider>
           }
           className="px-5 sm:px-7"
         />
@@ -154,10 +151,13 @@ export function VitalDetailsDrawer({
                   </h3>
                   <p className="mt-1 text-xs text-muted-foreground">Maternal and fetal vital signs recorded at this consultation.</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={handleCopySummary} className="h-8 gap-1.5 text-xs">
-                  <ClipboardList className="size-3.5" />
-                  Copy Log
-                </Button>
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <StatusBadge status={effectiveRiskLevel} />
+                  <Button variant="outline" size="sm" onClick={handleCopySummary} className="h-8 gap-1.5 text-xs">
+                    <ClipboardList className="size-3.5" />
+                    Copy Log
+                  </Button>
+                </div>
               </div>
 
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">

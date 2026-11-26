@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom"
-import { AlertTriangle, ArrowLeft, ArrowRightLeft, CalendarDays, KeyRound, RefreshCw, UserCheck, UserX } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowRightLeft, CalendarDays, KeyRound, MoreVertical, RefreshCw, UserCheck, UserX } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { db } from "@/lib/db/silangDatabase"
 import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
@@ -254,7 +255,7 @@ export function SuperAdminStaffDetailPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col gap-4 overflow-y-auto px-4 pb-4 pt-4 text-foreground">
+    <div className="flex h-full min-h-0 w-full flex-col gap-6 overflow-y-auto px-4 pb-8 pt-6 text-foreground md:px-6">
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2">
         <Button
           variant="ghost"
@@ -278,60 +279,19 @@ export function SuperAdminStaffDetailPage() {
               <CalendarDays className="size-3.5" />
               Staff Schedule
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setTargetFacilityId("")
-                setTransferDialogOpen(true)
-              }}
-              className="h-8 gap-1.5 px-2.5 text-xs"
-            >
-              <ArrowRightLeft className="size-3.5" />
-              Transfer Facility
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setNewPassword("")
-                setPasswordDialogOpen(true)
-              }}
-              className="h-8 gap-1.5 px-2.5 text-xs"
-            >
-              <KeyRound className="size-3.5" />
-              Reset Password
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                if (staff.status === "Active") {
-                  setDeactivateDialogOpen(true)
-                } else {
-                  void changeActiveStatus(true)
-                }
-              }}
-              className="h-8 gap-1.5 px-2.5 text-xs"
-            >
-              {staff.status === "Active" ? (
-                <>
-                  <UserX className="size-3.5 text-rose-500" />
-                  Deactivate Account
-                </>
-              ) : (
-                <>
-                  <UserCheck className="size-3.5 text-emerald-500" />
-                  Activate Account
-                </>
-              )}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              className="size-8"
-              onClick={() => void loadStaff()}
-              title="Refresh profile"
-            >
-              <RefreshCw className="size-3.5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="size-8" aria-label="Staff actions"><MoreVertical className="size-4" /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => { setTargetFacilityId(""); setTransferDialogOpen(true) }}><ArrowRightLeft className="size-3.5" />Transfer Facility</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => { setNewPassword(""); setPasswordDialogOpen(true) }}><KeyRound className="size-3.5" />Reset Password</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void loadStaff()}><RefreshCw className="size-3.5" />Refresh</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant={staff.status === "Active" ? "destructive" : "default"} onSelect={() => staff.status === "Active" ? setDeactivateDialogOpen(true) : void changeActiveStatus(true)}>
+                  {staff.status === "Active" ? <UserX className="size-3.5" /> : <UserCheck className="size-3.5" />}
+                  {staff.status === "Active" ? "Deactivate Account" : "Activate Account"}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>
@@ -395,43 +355,43 @@ export function SuperAdminStaffDetailPage() {
         <section className="flex min-h-64 flex-col items-center justify-center gap-3 rounded-md border border-sidebar-border text-center">
           <h1 className="text-base font-semibold text-foreground">Personnel record not found</h1>
           <p className="text-xs text-muted-foreground">This staff profile may have been removed from the municipal registry.</p>
-          <Button variant="outline" onClick={handleBack} className="h-8 text-xs">
+          <Button variant="outline" onClick={handleBack} className="h-9 text-sm">
             {navState?.returnLabel ? `Back to ${navState.returnLabel}` : "Back to Staff Directory"}
           </Button>
         </section>
       )}
 
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Administrative Password Reset</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Reset Password</DialogTitle>
             <DialogDescription className="text-xs">
-              Assign a new temporary password for {staff?.name}.
+              Set a password for {staff?.name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">New Password</Label>
-              <Input
-                type="text"
-                placeholder="Enter new password (min. 6 characters)"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            {typeof navigator !== "undefined" && !navigator.onLine && (
-              <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-                Password resets require an active server connection to ensure credential security.
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  placeholder="Enter password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
-            )}
-          </div>
-          <DialogFooter className="gap-3 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
+              {typeof navigator !== "undefined" && !navigator.onLine && (
+                <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                  Password resets require an active server connection to ensure credential security.
+                </div>
+              )}
+            </div>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={handleResetPassword}
               disabled={submittingPassword || (typeof navigator !== "undefined" && !navigator.onLine)}
             >
@@ -442,31 +402,31 @@ export function SuperAdminStaffDetailPage() {
       </Dialog>
 
       <Dialog open={transferDialogOpen} onOpenChange={setTransferDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Reassign Staff to Another Facility</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Transfer Staff</DialogTitle>
             <DialogDescription className="text-xs">
               Transfer {staff?.name} from {staff?.facility} to a different healthcare station in Silang.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Destination Facility</Label>
-              <FacilitySearchSelect
-                facilities={facilities}
-                value={targetFacilityId}
-                onValueChange={setTargetFacilityId}
-                currentFacilityId={staff?.facilityId}
-                placeholder="Search clinic or health station..."
-              />
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Destination Facility <span className="text-destructive">*</span></Label>
+                <FacilitySearchSelect
+                  facilities={facilities}
+                  value={targetFacilityId}
+                  onValueChange={setTargetFacilityId}
+                  currentFacilityId={staff?.facilityId}
+                  placeholder="Search clinic or health station..."
+                />
+              </div>
             </div>
-          </div>
-          <DialogFooter className="gap-3 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setTransferDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setTransferDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 setTransferDialogOpen(false)
                 setConfirmTransferOpen(true)
@@ -480,17 +440,17 @@ export function SuperAdminStaffDetailPage() {
       </Dialog>
 
       <Dialog open={confirmTransferOpen} onOpenChange={setConfirmTransferOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
                 <AlertTriangle className="size-4" />
               </div>
               <DialogTitle className="text-base font-semibold text-foreground">
-                Confirm Staff Facility Transfer
+                Confirm Staff Transfer
               </DialogTitle>
             </div>
-            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+            <DialogDescription className="text-xs text-muted-foreground">
               Are you sure you want to transfer <span className="font-semibold text-foreground">{staff?.name}</span> ({staff?.role}) to{" "}
               <span className="font-semibold text-foreground">
                 {facilities.find((f) => f.facility_id === targetFacilityId)?.facility_name || "the selected facility"}
@@ -498,25 +458,24 @@ export function SuperAdminStaffDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
-            <p className="font-medium text-foreground">Effects of reassignment:</p>
-            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
-              <li>
-                <strong className="text-foreground">Active Station Change:</strong> Staff member will be assigned to the new facility and detached from their current station.
-              </li>
-              <li>
-                <strong className="text-foreground">Access Scope:</strong> Logins, patient lists, and daily clinical duties will be scoped to the new facility.
-              </li>
-              <li>
-                <strong className="text-foreground">Historical Preservation:</strong> All previous maternal records, checkups, and audit trails logged by this staff member at {staff?.facility} remain intact.
-              </li>
-            </ul>
-          </div>
-
-          <DialogFooter className="gap-3 sm:gap-3">
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Effects of reassignment:</p>
+              <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+                <li>
+                  <strong className="text-foreground">Active Station Change:</strong> Staff member will be assigned to the new facility and detached from their current station.
+                </li>
+                <li>
+                  <strong className="text-foreground">Access Scope:</strong> Logins, patient lists, and daily clinical duties will be scoped to the new facility.
+                </li>
+                <li>
+                  <strong className="text-foreground">Historical Preservation:</strong> All previous maternal records, checkups, and audit trails logged by this staff member at {staff?.facility} remain intact.
+                </li>
+              </ul>
+            </div>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
             <Button
               variant="outline"
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 setConfirmTransferOpen(false)
                 setTransferDialogOpen(true)
@@ -526,7 +485,7 @@ export function SuperAdminStaffDetailPage() {
               Back
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={handleTransferStaff}
               disabled={submittingTransfer}
             >
@@ -537,8 +496,8 @@ export function SuperAdminStaffDetailPage() {
       </Dialog>
 
       <Dialog open={deactivateDialogOpen} onOpenChange={setDeactivateDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
             <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-rose-100 dark:bg-rose-950/60">
                 <AlertTriangle className="size-4" />
@@ -547,33 +506,32 @@ export function SuperAdminStaffDetailPage() {
                 Deactivate Staff Account?
               </DialogTitle>
             </div>
-            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+            <DialogDescription className="text-xs text-muted-foreground">
               Are you sure you want to deactivate the account of <span className="font-semibold text-foreground">{staff?.name}</span> ({staff?.role})?
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
-            <p className="font-medium text-foreground">Effects of deactivation:</p>
-            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
-              <li>
-                <strong className="text-foreground">Session Termination:</strong> The user will be immediately signed out and prevented from accessing clinic portals and mobile applications.
-              </li>
-              <li>
-                <strong className="text-foreground">Access Revocation:</strong> Access to patient records, maternal health charts, and clinic appointments will be blocked.
-              </li>
-              <li>
-                <strong className="text-foreground">Data Preservation:</strong> Existing medical entries, clinical records, and audit trails created by this account remain safe and unaltered.
-              </li>
-              <li>
-                <strong className="text-foreground">Reversible:</strong> You can reactivate this account at any time.
-              </li>
-            </ul>
-          </div>
-
-          <DialogFooter className="gap-3 sm:gap-3">
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Effects of deactivation:</p>
+              <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+                <li>
+                  <strong className="text-foreground">Session Termination:</strong> The user will be immediately signed out and prevented from accessing clinic portals and mobile applications.
+                </li>
+                <li>
+                  <strong className="text-foreground">Access Revocation:</strong> Access to patient records, maternal health charts, and clinic appointments will be blocked.
+                </li>
+                <li>
+                  <strong className="text-foreground">Data Preservation:</strong> Existing medical entries, clinical records, and audit trails created by this account remain safe and unaltered.
+                </li>
+                <li>
+                  <strong className="text-foreground">Reversible:</strong> You can reactivate this account at any time.
+                </li>
+              </ul>
+            </div>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
             <Button
               variant="outline"
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => setDeactivateDialogOpen(false)}
               disabled={submittingDeactivation}
             >
@@ -581,7 +539,7 @@ export function SuperAdminStaffDetailPage() {
             </Button>
             <Button
               variant="destructive"
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => void changeActiveStatus(false)}
               disabled={submittingDeactivation}
             >

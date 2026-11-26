@@ -4,7 +4,7 @@ import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbP
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Bell, PlusCircle, Moon, Sun, UserPlus, Check, CalendarPlus, Stethoscope, Send, ShieldPlus, LoaderCircle } from "lucide-react"
+import { Bell, PlusCircle, Moon, Sun, UserPlus, Check, CalendarPlus, Stethoscope, Send, ShieldPlus, LoaderCircle, CalendarDays, ArrowLeftRight, HeartPulse, MessageCircle, FileText, ShieldAlert } from "lucide-react"
 import {
   Popover,
   PopoverContent,
@@ -45,6 +45,7 @@ import { silangSyncEngine } from "@/lib/sync/silangSyncEngine"
 import { getUserNotifications, markAllNotificationsRead, markNotificationRead, type NotificationRecord } from "@/features/dashboard/api/notifications"
 import { useSocket } from "@/context/SocketContext"
 import { toast } from "sonner"
+import { PageGuide } from "@/components/ui/contextual-tour"
 
 export function AppHeader() {
   const { theme, setTheme } = useTheme()
@@ -417,6 +418,7 @@ export function AppHeader() {
         </div>
 
         <div className="hidden md:flex items-center gap-2">
+          <PageGuide />
           <Button type="button" variant="outline" onClick={() => setIsSyncDrawerOpen(true)} className="h-8 px-2.5 text-xs font-medium gap-2 border-sidebar-border bg-background dark:bg-black">
             <span className="relative flex size-2" aria-hidden="true">
               {isOnline && <span className={`absolute inline-flex size-full motion-safe:animate-ping rounded-full ${syncState.isSyncing ? "bg-amber-400 opacity-90" : "bg-green-600 opacity-90"}`} />}
@@ -480,6 +482,7 @@ export function AppHeader() {
             </BreadcrumbList>
           </Breadcrumb>
           <div className="flex items-center gap-1">
+            <PageGuide />
             <Button type="button" variant="outline" onClick={() => setIsSyncDrawerOpen(true)} className="h-8 px-2 text-xs font-medium gap-1.5 border-sidebar-border bg-background dark:bg-black">
               <span className="relative flex size-2" aria-hidden="true">
                 {isOnline && <span className={`absolute inline-flex size-full motion-safe:animate-ping rounded-full ${syncState.isSyncing ? "bg-amber-400 opacity-90" : "bg-green-600 opacity-90"}`} />}
@@ -491,14 +494,6 @@ export function AppHeader() {
                 ? (syncState.pendingCount > 0 ? `Offline (${syncState.pendingCount})` : "Offline")
                 : (syncState.pendingCount > 0 ? `Online (${syncState.pendingCount})` : "Online")}
             </Button>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" aria-label="Quick Create" className="h-8 w-8 text-muted-foreground hover:text-foreground">
-                  <PlusCircle className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              {quickCreateMenuContent}
-            </DropdownMenu>
             <NotificationPopover
               notifications={meaningfulNotifications}
               visibleNotifications={visibleNotifications}
@@ -575,6 +570,7 @@ export function AppHeader() {
           navigate(`/dashboard/maternal-records/${mother.mother_id}?openConsultation=true`)
         }}
       />
+
     </TooltipProvider>
   )
 }
@@ -590,7 +586,18 @@ function notificationTime(value?: string | null) {
   return date.toLocaleDateString([], { month: "short", day: "numeric" })
 }
 
-function NotificationPopover({
+function notificationIcon(item: NotificationRecord) {
+  const category = `${item.category ?? ""} ${item.notification_type ?? ""} ${item.sender ?? ""} ${item.notification_message ?? ""}`.toLowerCase()
+  if (/appointment|schedule|visit/.test(category)) return CalendarDays
+  if (/referral|transfer|handover/.test(category)) return ArrowLeftRight
+  if (/risk|clinical|cdss|vital|danger/.test(category)) return HeartPulse
+  if (/message|chat|reply/.test(category)) return MessageCircle
+  if (/record|ehr|lab|prescri/.test(category)) return FileText
+  if (/security|account|permission/.test(category)) return ShieldAlert
+  return Bell
+}
+
+export function NotificationPopover({
   notifications,
   visibleNotifications,
   unreadCount,
@@ -626,11 +633,16 @@ function NotificationPopover({
         <PopoverTrigger asChild>
           <Button variant="ghost" size="icon" aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`} className="relative h-8 w-8 text-muted-foreground hover:text-foreground">
             <Bell className="size-4" />
-            {unreadCount > 0 && <span className="absolute right-0.5 top-0.5 size-2 rounded-full bg-primary ring-2 ring-background" aria-hidden="true" />}
+            {unreadCount > 0 && (
+              <span className="absolute right-0.5 top-0.5 flex size-2" aria-hidden="true">
+                <span className="absolute inline-flex size-full motion-safe:animate-ping rounded-full bg-red-500 opacity-90" />
+                <span className="relative inline-flex size-2 rounded-full bg-red-500 ring-2 ring-background" />
+              </span>
+            )}
           </Button>
         </PopoverTrigger>
       </TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
-      <PopoverContent align={mobile ? "center" : "end"} collisionPadding={mobile ? 0 : 8} className={`flex max-h-[min(78dvh,560px)] flex-col gap-3 overflow-hidden rounded-xl border-border p-4 shadow-lg ${mobile ? "w-screen" : "w-[calc(100vw-2rem)] sm:w-[380px]"}`}>
+      <PopoverContent align={mobile ? "center" : "end"} collisionPadding={mobile ? 0 : 8} className={`flex max-h-[min(78dvh,560px)] flex-col gap-2.5 overflow-hidden rounded-xl border-border p-3 shadow-lg ${mobile ? "w-screen" : "w-[calc(100vw-2rem)] sm:w-[380px]"}`}>
         <div className="flex items-center justify-between gap-3">
           <span className="text-sm font-semibold text-foreground">Notifications ({totalCount})</span>
           <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -644,27 +656,29 @@ function NotificationPopover({
             <Check className="size-3.5" />Mark all as read
           </Button>
         </div>
-        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto border-t border-border px-4 pt-2">
+        <div className="notification-list-scroll -mx-3 min-h-0 flex-1 overflow-y-auto border-t border-border px-0 pt-0">
           {loading && notifications.length === 0 ? (
             <div className="space-y-4 py-2" aria-label="Loading notifications">
               {[0, 1, 2].map((item) => <div key={item} className="space-y-2"><div className="flex items-center justify-between"><Skeleton className="h-6 w-36" /><Skeleton className="h-3 w-14" /></div><Skeleton className="h-4 w-full" /></div>)}
             </div>
           ) : visibleNotifications.length ? (
-            <div className="divide-y divide-border">
+            <div className="divide-y divide-border/70">
               {visibleNotifications.map((item) => {
                 const sender = item.sender || `${(item.category || item.notification_type || "System").replace(/[-_]/g, " ")} Service`
-                const initials = sender.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "N"
+                const NotificationIcon = notificationIcon(item)
                 return (
-                  <button key={item.notification_id} type="button" disabled={actionId === item.notification_id} onClick={() => onNotificationClick(item)} className={`group flex w-full flex-col gap-2 py-3 text-left transition-colors hover:bg-muted/40 disabled:opacity-60 ${!item.is_read ? "bg-muted/20" : ""}`}>
-                    <span className="flex items-center justify-between gap-3">
-                      <span className="flex min-w-0 items-center gap-2">
-                        <Avatar className="size-6 shrink-0"><AvatarFallback className="text-[10px]">{initials}</AvatarFallback></Avatar>
-                        <span className="truncate text-xs font-medium text-foreground">{sender}</span>
-                        {!item.is_read && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                  <button key={item.notification_id} type="button" disabled={actionId === item.notification_id} onClick={() => onNotificationClick(item)} className="group flex w-full gap-3 px-3 py-2.5 text-left transition-colors hover:bg-muted/30 disabled:opacity-60">
+                    <NotificationIcon className={`mt-0.5 size-4 shrink-0 ${item.is_read ? "text-muted-foreground" : "text-primary"}`} aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-3">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate text-xs font-medium text-foreground">{sender}</span>
+                          {!item.is_read && <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-label="Unread" />}
+                        </span>
+                        <span className="shrink-0 text-[11px] text-muted-foreground">{actionId === item.notification_id ? <LoaderCircle className="size-3 animate-spin" /> : notificationTime(item.notification_date)}</span>
                       </span>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">{actionId === item.notification_id ? <LoaderCircle className="size-3 animate-spin" /> : notificationTime(item.notification_date)}</span>
+                      <span className={`mt-1 block text-xs leading-relaxed ${item.is_read ? "text-muted-foreground" : "text-foreground"}`}>{item.notification_message}</span>
                     </span>
-                    <span className={`pl-8 text-xs leading-relaxed ${item.is_read ? "text-muted-foreground" : "text-foreground"}`}>{item.notification_message}</span>
                   </button>
                 )
               })}
@@ -699,9 +713,9 @@ function SelectMotherForConsultationDialog({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return mothers
-    return mothers.filter((m) => {
-      const name = `${m.user?.first_name ?? ""} ${m.user?.last_name ?? ""}`.toLowerCase()
-      const serial = (m.family_serial_no ?? "").toLowerCase()
+    return mothers.filter((mother) => {
+      const name = `${mother.user?.first_name ?? ""} ${mother.user?.last_name ?? ""}`.toLowerCase()
+      const serial = (mother.family_serial_no ?? "").toLowerCase()
       return name.includes(q) || serial.includes(q)
     })
   }, [mothers, search])
@@ -718,7 +732,7 @@ function SelectMotherForConsultationDialog({
         <Input
           placeholder="Search by mother's name or family serial..."
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(event) => setSearch(event.target.value)}
           className="h-9 text-xs"
           autoFocus
         />
@@ -756,9 +770,7 @@ function SelectMotherForConsultationDialog({
               )
             })
           ) : (
-            <div className="p-6 text-center text-xs text-muted-foreground">
-              No matching maternal records found.
-            </div>
+            <div className="p-6 text-center text-xs text-muted-foreground">No matching maternal records found.</div>
           )}
         </div>
       </div>

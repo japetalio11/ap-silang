@@ -31,14 +31,14 @@ const permissionModules: {
   permissions: { id: PermissionId; label: string; note?: string; warning?: boolean }[]
 }[] = [
   {
-    title: "Module 1: Maternal Registry & Intake",
+    title: "Maternal Registry & Intake",
     permissions: [
       { id: "maternal-create", label: "Create and edit Mother profiles." },
       { id: "maternal-view", label: "View baseline demographic data." },
     ],
   },
   {
-    title: "Module 2: Clinical Care & CDSS",
+    title: "Clinical Care & CDSS",
     permissions: [
       { id: "clinical-log", label: "Log Vital Signs and Encounter Notes." },
       { id: "risk-override", label: "Execute CDSS Risk Assessment & Override Triage", note: "Authorized for a midwife or admin.", warning: true },
@@ -46,14 +46,14 @@ const permissionModules: {
     ],
   },
   {
-    title: "Module 3: Inter-Clinic Referrals",
+    title: "Inter-Clinic Referrals",
     permissions: [
       { id: "referral-initiate", label: "Initiate outgoing e-Referrals to Hospitals." },
       { id: "referral-view", label: "View incoming referral statuses and transfer codes." },
     ],
   },
   {
-    title: "Module 4: Administration & Analytics",
+    title: "Administration & Analytics",
     permissions: [
       { id: "report-export", label: "Export DOH/FHSIS statistical reports." },
       { id: "team-manage", label: "Manage team members and RBAC settings." },
@@ -154,7 +154,7 @@ export function StaffProfileContent({
                 </div>
               </div>
 
-              <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 border-t border-sidebar-border pt-4 xl:grid-cols-4">
+              <div className="mt-5 grid grid-cols-2 gap-x-4 gap-y-4 xl:grid-cols-4">
                 <Detail label="Position" value={roles.find(({ id }) => id === roleForStaff(staff.role))?.label ?? "Nurse"} />
                 <Detail label="Assigned Facility" value={staff.facility} icon={Building2} />
                 <Detail label="Email" value={staff.email} icon={Mail} />
@@ -248,14 +248,14 @@ export function StaffProfileContent({
               <p className="text-xs leading-relaxed text-muted-foreground">{roleDescription}</p>
             </div>
 
-            <div className="mt-5 divide-y divide-sidebar-border border-y border-sidebar-border">
+            <div className="mt-5 space-y-5">
               {permissionModules.map((module) => (
-                <section key={module.title} className="py-4 first:pt-4 last:pb-1" aria-label={module.title}>
-                  <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{module.title}</h3>
+                <section key={module.title} aria-label={module.title}>
+                  <h3 className="text-xs font-semibold text-foreground">{module.title}</h3>
                   <div className="mt-3 flex flex-col gap-2.5">
                     {module.permissions.map(({ id, label, note, warning }) => (
                       <div key={id} className="flex items-start gap-2.5">
-                        <Checkbox id={`permission-${staff.id}-${id}`} checked={permissions[id]} disabled className="mt-0.5" />
+                        <Checkbox id={`permission-${staff.id}-${id}`} checked={permissions[id]} disabled className="mt-0.5 size-4 shrink-0" />
                         <div className="min-w-0">
                           <label htmlFor={`permission-${staff.id}-${id}`} className="cursor-pointer text-xs leading-relaxed text-foreground">{label}</label>
                           {warning && <AlertTriangle className="ml-1 inline size-3.5 text-amber-500" aria-label="Elevated permission" />}

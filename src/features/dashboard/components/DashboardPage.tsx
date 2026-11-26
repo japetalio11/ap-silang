@@ -256,6 +256,7 @@ export function DashboardPage() {
         </div>
 
         <Tabs value={appointmentView} onValueChange={(value) => setAppointmentView(value as AppointmentView)} className="w-full">
+          <div className="sticky top-0 z-20 -mx-4 flex flex-col gap-3 bg-background px-4 py-2 dark:bg-black">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <TabsList className="h-9 w-full justify-start gap-1 overflow-x-auto sm:w-max">
               {appointmentViews.map((view) => (
@@ -297,6 +298,7 @@ export function DashboardPage() {
             ))}
             {hasActiveFilters && <Button variant="ghost" onClick={() => { setSearch(""); setSelectedFilters({}) }} className="h-8 shrink-0 gap-2 px-2 text-xs font-medium text-muted-foreground"><RotateCcw className="size-3.5" />Reset Filter</Button>}
           </div>
+          </div>
 
           {appointmentViews.map((view) => (
             <TabsContent key={view.value} value={view.value} className="mt-3 flex flex-col gap-2">
@@ -331,12 +333,13 @@ export function DashboardPage() {
               <div className="grid gap-3 md:hidden">
                 {isLoading ? <MobileTableCardSkeleton count={3} /> : pageRows.map((row) => (
                   <article key={row.appointment.appointment_id} className="rounded-md border border-sidebar-border bg-background p-3 text-xs dark:bg-black">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0"><p className="truncate text-sm font-semibold text-foreground">{row.name}</p><p className="mt-1 text-muted-foreground">{row.start ? format(row.start, "MMM d, yyyy · h:mm a") : "Date not set"}</p></div>
-                      <StatusBadge status={row.status} label={formatStatusLabel(row.status)} />
+                    <p className="truncate font-medium text-foreground">{row.name}</p>
+                    <div className="mt-3 flex flex-wrap gap-1.5"><StatusBadge status={row.status} label={formatStatusLabel(row.status)} /></div>
+                    <div className="mt-3 grid grid-cols-3 gap-3">
+                      <div className="min-w-0"><p className="text-muted-foreground">Date & time</p><p className="mt-1 font-medium text-foreground">{row.start ? format(row.start, "MMM d, yyyy · h:mm a") : "Not set"}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Type</p><p className="mt-1 break-words font-medium text-foreground">{row.appointment.appointment_type || "Appointment"}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Purpose</p><p className="mt-1 break-words font-medium text-foreground">{row.appointment.reason || "—"}</p></div>
                     </div>
-                    <p className="mt-3 font-medium text-foreground">{row.appointment.appointment_type || "Appointment"}</p>
-                    {row.appointment.reason && <p className="mt-1 text-muted-foreground">{row.appointment.reason}</p>}
                   </article>
                 ))}
                 {!isLoading && pageRows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">No appointments in this view.</div>}

@@ -1,19 +1,23 @@
 import { useEffect, useMemo, useState } from "react"
 import { useLocation, useNavigate } from "react-router-dom"
-import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Wifi, ShieldCheck, Bell, Database, X, AlertTriangle, PowerOff, ShieldAlert } from "lucide-react"
+import { Building2, Download, Edit2, ExternalLink, Hospital, PlusCircle, RefreshCw, RotateCcw, Search, Wifi, ShieldCheck, Bell, Database, X, PowerOff } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
 import { TableRowActions } from "@/components/ui/table-row-actions"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Switch } from "@/components/ui/switch"
 import { useAuthSession } from "@/features/auth/auth-session"
@@ -59,6 +63,7 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState("all")
   const [query, setQuery] = useState("")
+  const [staffFilter, setStaffFilter] = useState<"all" | "assigned" | "unassigned">("all")
   const [selected, setSelected] = useState<string[]>([])
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
@@ -157,6 +162,9 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
     return kindFiltered.filter((facility) => {
       if (tab === "active" && facility.is_active === false) return false
       if (tab === "deactivated" && facility.is_active !== false) return false
+      const staffCount = facilityStaffCounts[facility.facility_id] ?? 0
+      if (staffFilter === "assigned" && staffCount === 0) return false
+      if (staffFilter === "unassigned" && staffCount > 0) return false
       const term = query.trim().toLowerCase()
       const matchesSearch =
         !term ||
@@ -165,11 +173,11 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         )
       return matchesSearch
     })
-  }, [kindFiltered, query, tab])
+  }, [kindFiltered, query, tab, staffFilter, facilityStaffCounts])
 
   useEffect(() => {
     setPage(1)
-  }, [query, tab])
+  }, [query, tab, staffFilter])
 
   const paginatedFacilities = useMemo(() => {
     const start = (page - 1) * pageSize
@@ -352,11 +360,20 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
   }
 
   return (
-    <section className="w-full space-y-3 px-4 py-4">
+    <section className="w-full space-y-4 px-4 pb-8 pt-4 text-foreground">
       <CachedDataBanner />
+      <div className="sticky top-0 z-20 -mx-4 flex flex-col gap-3 bg-background px-4 py-3 dark:bg-black">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
+        <Select value={tab} onValueChange={setTab}>
+          <SelectTrigger className="h-8 w-full md:hidden" aria-label="Facility status"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All {isRhu ? "RHUs" : "BHSs"} ({counts.total})</SelectItem>
+            <SelectItem value="active">Active ({counts.active})</SelectItem>
+            <SelectItem value="deactivated">Deactivated ({counts.deactivated})</SelectItem>
+          </SelectContent>
+        </Select>
+        <Tabs value={tab} onValueChange={setTab} className="hidden md:block">
+          <TabsList mobileSelect={false}>
             <TabsTrigger value="all">
               All {isRhu ? "RHUs" : "BHSs"} ({counts.total})
             </TabsTrigger>
@@ -421,22 +438,37 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder={`Search ${isRhu ? "by RHU name, address, or email..." : "by station, address, or contact..."}`}
-            className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
+            className="h-8 w-full pl-8 text-xs"
           />
         </div>
-        {query.trim().length > 0 && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="filter" size="filter" aria-label="Filter by staff assignment">
+              <PlusCircle className="size-3.5" /> Staff
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-48 p-3">
+            <div className="flex flex-col gap-3">
+              {([ ["all", "All facilities"], ["assigned", "With staff"], ["unassigned", "Without staff"] ] as const).map(([value, label]) => (
+                <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={staffFilter === value} onCheckedChange={() => setStaffFilter(value)} className="size-3.5 rounded-[4px] border-sidebar-border" />{label}</label>
+              ))}
+            </div>
+          </PopoverContent>
+        </Popover>
+        {(query.trim().length > 0 || staffFilter !== "all") && (
           <Button
             variant="ghost"
             className="h-8 shrink-0 gap-2 px-2 text-xs font-medium text-muted-foreground"
-            onClick={() => setQuery("")}
+            onClick={() => { setQuery(""); setStaffFilter("all") }}
           >
             <RotateCcw className="size-3.5" />
             Reset Filter
           </Button>
         )}
       </div>
+      </div>
 
-      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
+      <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -448,16 +480,16 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 />
               </TableHead>
               <TableHead>{isRhu ? "Rural Health Unit" : "Health Station"}</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Municipality / Address</TableHead>
-              <TableHead>Contact / Email</TableHead>
+              <TableHead>Address</TableHead>
+              <TableHead>Contact Number</TableHead>
+              <TableHead>Email</TableHead>
               <TableHead className="text-right">Staff</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
-            {paginatedFacilities.map((facility) => (
+            {loading ? <TableSkeletonRows columns={8} rows={6} /> : paginatedFacilities.map((facility) => (
               <TableRow
                 key={facility.facility_id}
                 data-state={selected.includes(facility.facility_id) ? "selected" : undefined}
@@ -468,7 +500,8 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                   navigate(`/superadmin/facility/${facility.facility_id}`, {
                     state: {
                       returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
-                      returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
+                      returnLabel: isRhu ? "RHU Management" : "BHS Management",
+                      facilityName: facility.facility_name,
                     },
                   })
                 }}
@@ -486,18 +519,10 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 </TableCell>
                 <TableCell>
                   <div className="font-medium text-foreground hover:underline">{facility.facility_name}</div>
-                  <div className="font-mono text-[11px] text-muted-foreground">{facility.facility_id.slice(0, 8)}...</div>
                 </TableCell>
-                <TableCell>
-                  <span className="rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 font-mono text-xs dark:bg-[#222]">
-                    {facility.type}
-                  </span>
-                </TableCell>
-                <TableCell className="text-xs text-muted-foreground">{facility.address}</TableCell>
-                <TableCell>
-                  <div className="text-xs">{facility.contact_number || "—"}</div>
-                  {facility.email && <div className="text-[11px] text-muted-foreground">{facility.email}</div>}
-                </TableCell>
+                <TableCell className="text-xs text-muted-foreground">{facility.address || "—"}</TableCell>
+                <TableCell className="text-xs">{facility.contact_number || "—"}</TableCell>
+                <TableCell className="text-xs text-muted-foreground">{facility.email || "—"}</TableCell>
                 <TableCell className="text-right font-medium">
                   {facilityStaffCounts[facility.facility_id] ?? 0}
                 </TableCell>
@@ -553,18 +578,18 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 </TableCell>
               </TableRow>
             ))}
-            {filtered.length === 0 && (
+            {!loading && filtered.length === 0 && (
               <TableEmptyState
                 colSpan={8}
                 icon={isRhu ? Hospital : Building2}
                 title={`No ${isRhu ? "rural health units" : "barangay health stations"} found`}
                 description={
-                  query.trim().length > 0
-                    ? "Adjust or reset your search query to see facility records."
+                  query.trim().length > 0 || staffFilter !== "all"
+                    ? "Adjust or reset the filters to see facility records."
                     : `Add a ${singular.toLowerCase()} to begin managing the municipal network.`
                 }
                 action={
-                  query.trim().length === 0 ? (
+                  query.trim().length === 0 && staffFilter === "all" ? (
                     <Button size="sm" onClick={() => openCreate()}>
                       <PlusCircle className="mr-1.5 size-4" />
                       Add {singular}
@@ -577,26 +602,40 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
         </Table>
       </div>
 
-      <div className="grid gap-3 md:hidden">
-        {paginatedFacilities.map((facility) => (
+      <div className="grid gap-3 md:hidden" aria-busy={loading}>
+        {loading ? <MobileTableCardSkeleton /> : paginatedFacilities.map((facility) => (
           <article
             key={facility.facility_id}
-            className="cursor-pointer rounded-md border border-sidebar-border bg-card p-4 text-xs transition-colors hover:bg-muted/50"
+            data-mobile-record
+            role="link"
+            tabIndex={0}
+            aria-label={`Open ${facility.facility_name} facility details`}
+            className="cursor-pointer rounded-md border border-sidebar-border bg-background p-3 text-xs transition-colors hover:bg-muted/50 dark:bg-black"
             onClick={(e) => {
               const target = e.target as HTMLElement
-              if (target.closest("button") || target.closest("[role='menuitem']")) return
+              if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
               navigate(`/superadmin/facility/${facility.facility_id}`, {
-                state: {
-                  returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management",
-                  returnLabel: isRhu ? "Rural Health Units" : "Barangay Health Stations",
-                },
+                state: { returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management", returnLabel: isRhu ? "RHU Management" : "BHS Management", facilityName: facility.facility_name },
+              })
+            }}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget || (e.key !== "Enter" && e.key !== " ")) return
+              e.preventDefault()
+              navigate(`/superadmin/facility/${facility.facility_id}`, {
+                state: { returnTo: isRhu ? "/superadmin/rhu-management" : "/superadmin/bhs-management", returnLabel: isRhu ? "RHU Management" : "BHS Management", facilityName: facility.facility_name },
               })
             }}
           >
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <div className="flex min-w-0 items-start gap-3">
+                <Checkbox
+                  aria-label={`Select ${facility.facility_name}`}
+                  checked={selected.includes(facility.facility_id)}
+                  onCheckedChange={(checked) => setSelected((items) => checked ? [...items, facility.facility_id] : items.filter((id) => id !== facility.facility_id))}
+                />
+                <div className="min-w-0">
                 <h3 className="truncate text-sm font-semibold text-foreground">{facility.facility_name}</h3>
-                <p className="mt-1 text-muted-foreground">{facility.type} · {facility.address || "Address not recorded"}</p>
+                </div>
               </div>
               <TableRowActions label={`Actions for ${facility.facility_name}`}>
                 <DropdownMenuItem
@@ -641,19 +680,18 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
                 )}
               </TableRowActions>
             </div>
-            <div className="mt-3 flex items-center justify-between gap-2">
-              <span className="text-muted-foreground">{facility.contact_number || facility.email || "No contact recorded"}</span>
-              <div className="flex items-center gap-2">
-                <StatusBadge
-                  status={facility.is_active === false ? "inactive" : "active"}
-                  label={facility.is_active === false ? "Deactivated" : "Active"}
-                />
-                <span>{facilityStaffCounts[facility.facility_id] ?? 0} staff</span>
-              </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <StatusBadge status={facility.is_active === false ? "inactive" : "active"} label={facility.is_active === false ? "Deactivated" : "Active"} />
+            </div>
+            <div className="mt-3 grid min-w-0 grid-cols-3 gap-3 text-xs">
+              <div className="min-w-0"><p className="text-muted-foreground">Address</p><p className="mt-1 break-words font-medium text-foreground">{facility.address || "Not recorded"}</p></div>
+              <div className="min-w-0"><p className="text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium text-foreground">{facility.contact_number || "—"}</p></div>
+              <div className="min-w-0"><p className="text-muted-foreground">Staff</p><p className="mt-1 font-medium text-foreground">{facilityStaffCounts[facility.facility_id] ?? 0}</p></div>
+              {facility.email && <div className="col-span-3 min-w-0"><p className="text-muted-foreground">Email</p><p className="mt-1 break-all font-medium text-foreground">{facility.email}</p></div>}
             </div>
           </article>
         ))}
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="rounded-md border border-sidebar-border p-6 text-center text-sm text-muted-foreground">
             No facilities in this view.
           </div>
@@ -670,61 +708,55 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       />
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>{editing ? `Edit ${singular}` : `Register ${singular}`}</DialogTitle>
-            <DialogDescription>Maintain facility registry details for the Silang municipal health network.</DialogDescription>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-xl">
+          <DialogHeader className="gap-1 pr-8 text-left">
+            <DialogTitle className="text-base font-semibold">{editing ? `Edit ${singular}` : `Register ${singular}`}</DialogTitle>
+            <DialogDescription className="text-xs">{editing ? "Update facility information." : "Add a facility to the municipal directory."}</DialogDescription>
           </DialogHeader>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label>
-                Facility name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.facility_name}
-                onChange={(event) => setForm({ ...form, facility_name: event.target.value })}
-                placeholder={isRhu ? "Rural Health Unit 1" : "San Isidro BHS"}
-              />
+            <div className="grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-medium">
+                  Facility name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={form.facility_name}
+                  onChange={(event) => setForm({ ...form, facility_name: event.target.value })}
+                  placeholder={isRhu ? "Rural Health Unit 1" : "San Isidro BHS"}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-medium">
+                  Address <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={form.address}
+                  onChange={(event) => setForm({ ...form, address: event.target.value })}
+                  placeholder={isRhu ? "Pili, Camarines Sur" : "Barangay San Isidro, Pili"}
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Contact Number</Label>
+                <Input
+                  value={form.contact_number}
+                  onChange={(event) => setForm({ ...form, contact_number: event.target.value })}
+                  placeholder="09XX XXX XXXX"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Email</Label>
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm({ ...form, email: event.target.value })}
+                  placeholder="facility@silang.ph"
+                  className="h-9 text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>
-                Facility type <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.type}
-                onChange={(event) => setForm({ ...form, type: event.target.value })}
-                placeholder={isRhu ? "RHU" : "BHS"}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label>
-                Address / Location <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={form.address}
-                onChange={(event) => setForm({ ...form, address: event.target.value })}
-                placeholder={isRhu ? "Pili, Camarines Sur" : "Barangay San Isidro, Pili"}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Contact number</Label>
-              <Input
-                value={form.contact_number}
-                onChange={(event) => setForm({ ...form, contact_number: event.target.value })}
-                placeholder="09XX XXX XXXX"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Official Email</Label>
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(event) => setForm({ ...form, email: event.target.value })}
-                placeholder="facility@silang.ph"
-              />
-            </div>
-          </div>
-          <DialogFooter>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
             <Button variant="outline" disabled={submitting} onClick={() => setDialogOpen(false)}>
               Cancel
             </Button>
@@ -736,61 +768,22 @@ function FacilityManagementPage({ kind }: { kind: FacilityKind }) {
       </Dialog>
 
       <Dialog open={!!statusTarget && !!statusAction} onOpenChange={(open) => !open && setStatusTarget(null)}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              {statusAction === "deactivate" ? (
-                <div className="flex size-9 items-center justify-center rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="size-5" />
-                </div>
-              ) : (
-                <div className="flex size-9 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-                  <ShieldCheck className="size-5" />
-                </div>
-              )}
-              <DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+              <DialogTitle className="text-base font-semibold">
                 {statusAction === "deactivate"
                   ? `Deactivate ${statusTarget?.facility_name}?`
                   : `Reactivate ${statusTarget?.facility_name}?`}
               </DialogTitle>
-            </div>
-            <DialogDescription className="pt-2 text-xs leading-relaxed">
+            <DialogDescription className="text-xs leading-relaxed">
               {statusAction === "deactivate"
-                ? "Deactivating this facility enforces institutional safeguards across the municipal health network:"
+                ? "Staff at this facility will lose access. Clinical records remain available."
                 : "Reactivating this facility will restore institutional access and allow staff members to log in and resume clinical care services."}
             </DialogDescription>
           </DialogHeader>
 
-          {statusAction === "deactivate" && statusTarget && (
-            <div className="space-y-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-300">
-              <div className="flex items-start gap-2">
-                <PowerOff className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>
-                  <strong>Staff Access Locked:</strong> All staff assigned to this facility ({facilityStaffCounts[statusTarget.facility_id] ?? 0} staff) will immediately be prevented from logging in.
-                </span>
-              </div>
-              <div className="flex items-start gap-2">
-                <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>
-                  <strong>Maternal Care Unassigned:</strong> Any mothers currently assigned or enrolled at this facility will be unassigned so their care can be safely transferred.
-                </span>
-              </div>
-              <div className="flex items-start gap-2">
-                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                <span>
-                  <strong>Data Preservation:</strong> All historical clinical checkups, birth records, and audit logs remain securely preserved.
-                </span>
-              </div>
-            </div>
-          )}
-
-          {typeof navigator !== "undefined" && !navigator.onLine && (
-            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-              Offline mode: Status change will be saved to device memory and synchronized when reconnected.
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-3">
+            {statusAction === "deactivate" && statusTarget && <p className="text-xs text-muted-foreground">{facilityStaffCounts[statusTarget.facility_id] ?? 0} assigned staff member(s) will be affected.</p>}
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
             <Button variant="outline" disabled={statusSubmitting} onClick={() => setStatusTarget(null)}>
               Cancel
             </Button>
@@ -907,12 +900,20 @@ export function SuperAdminSettingsDialog() {
           <X className="size-4" />
         </Button>
         <div className="grid h-full min-h-0 w-full grid-cols-1 gap-0 md:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto border-b border-sidebar-border bg-muted/30 p-4 md:border-b-0 md:border-r md:px-5 md:py-6">
+          <aside className="flex min-h-0 min-w-0 flex-col gap-4 border-b border-sidebar-border bg-muted/30 p-4 md:overflow-y-auto md:border-b-0 md:border-r md:px-5 md:py-6">
             <DialogHeader className="items-start pr-8 text-left">
               <DialogTitle className="text-base font-semibold">Settings</DialogTitle>
               <DialogDescription className="text-xs">Manage network administration preferences.</DialogDescription>
             </DialogHeader>
-            <nav aria-label="Settings sections" className="mt-3 flex gap-1 overflow-x-auto md:mt-5 md:flex-col">
+            <div className="md:hidden">
+              <Select value={section} onValueChange={setSection}>
+                <SelectTrigger aria-label="Settings section" className="h-9 w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {settingsSections.map(({ value, label }) => <SelectItem key={value} value={value}>{label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <nav aria-label="Settings sections" className="mt-5 hidden flex-col gap-1 md:flex">
               {settingsSections.map(({ value, label, Icon }) => (
                 <button
                   key={value}
@@ -931,14 +932,14 @@ export function SuperAdminSettingsDialog() {
               ))}
             </nav>
           </aside>
-          <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto p-4 pt-12 md:p-6">
+          <div className="flex min-h-0 min-w-0 flex-col overflow-y-auto p-4 md:p-5">
             <div className="mb-5 pr-9">
               <h2 className="text-sm font-semibold">{current.label}</h2>
               <p className="mt-1 text-xs text-muted-foreground">{current.description}</p>
             </div>
-            <div className="space-y-3">
+            <div className="space-y-1">
               {current.rows.map((row) => (
-                <div key={row.id} className="flex items-center justify-between gap-4 rounded-md border border-sidebar-border p-3">
+                <div key={row.id} className="flex items-center justify-between gap-4 rounded-md px-2 py-3 hover:bg-muted/40">
                   <div className="min-w-0">
                     <p className="text-xs font-medium">{row.title}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">{row.description}</p>

@@ -38,7 +38,7 @@ export function TableRowActions({
           <TooltipContent>More actions</TooltipContent>
         </Tooltip>
       </TooltipProvider>
-      <DropdownMenuContent align="end" className="w-52 rounded-lg border border-border/70 bg-popover p-1.5 shadow-md">
+      <DropdownMenuContent align="end" className="min-w-52 w-max max-w-[calc(100vw-2rem)] rounded-lg border border-border/70 bg-popover p-1.5 shadow-md">
         {children}
       </DropdownMenuContent>
     </DropdownMenu>

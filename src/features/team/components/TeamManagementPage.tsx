@@ -215,7 +215,7 @@ export function TeamManagementPage() {
         <div className="sticky top-0 z-10 flex flex-col gap-4 bg-background dark:bg-black p-4 pl-3 pr-4 pb-4">
           {/* Tabs */}
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="w-full min-w-0 flex-1 overflow-x-auto pb-2 -mb-2 sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="w-full min-w-0 flex-1 overflow-x-auto pb-2 -mb-2 sm:w-auto">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full md:w-max">
               <TabsList className="h-9 w-full md:w-max justify-start gap-1 *:flex-1 md:*:flex-initial">
                 <TabsTrigger value="all" className="text-xs font-medium px-2 py-1 h-full">All Staff ({staffTabCounts.all})</TabsTrigger>
@@ -345,16 +345,27 @@ export function TeamManagementPage() {
           <div className="flex flex-col gap-2 md:hidden">
             {loading ? <MobileTableCardSkeleton /> : filteredStaff.map((staff) => (
               <article
-                key={staff.id} 
-                className="flex min-w-0 flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 cursor-pointer transition-colors hover:bg-accent dark:bg-black dark:hover:bg-white/5"
-                onClick={() => navigate(`/dashboard/team/${staff.id}`)}
+                key={staff.id}
+                role="link"
+                tabIndex={0}
+                aria-label={`Open ${staff.name}'s staff profile`}
+                className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black dark:hover:bg-white/5"
+                onClick={(event) => {
+                  const target = event.target as HTMLElement
+                  if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                  navigate(`/dashboard/team/${staff.id}`)
+                }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                  event.preventDefault()
+                  navigate(`/dashboard/team/${staff.id}`)
+                }}
               >
                 <div className="flex min-w-0 items-start justify-between gap-2">
                   <div className="flex min-w-0 items-start gap-2">
                     <Checkbox aria-label={`Select ${staff.name}`} checked={selectedStaffIds.includes(staff.id)} onClick={(event) => event.stopPropagation()} onCheckedChange={(checked) => setSelectedStaffIds((current) => checked === true ? Array.from(new Set([...current, staff.id])) : current.filter((id) => id !== staff.id))} className="border-sidebar-border" />
                     <div className="min-w-0">
                       <p className="truncate text-xs font-medium text-foreground">{staff.name}</p>
-                      <p className="mt-1 truncate text-xs text-muted-foreground">{staff.email}</p>
                     </div>
                   </div>
                   <TableRowActions label={`Actions for ${staff.name}`} className="-mt-1">
@@ -367,10 +378,11 @@ export function TeamManagementPage() {
                   </TableRowActions>
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5"><StatusBadge status={staff.status} /></div>
-                <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-2 text-xs">
-                  <span className="text-muted-foreground">Role</span><span className="truncate">{staff.role}</span>
-                  <span className="text-muted-foreground">Facility</span><span className="truncate">{staff.facility}</span>
-                  <span className="text-muted-foreground">Contact</span><span>{staff.phone}</span>
+                <div className="grid min-w-0 grid-cols-3 gap-3 text-xs">
+                  <div className="min-w-0"><p className="text-muted-foreground">Role</p><p className="mt-1 break-words font-medium text-foreground">{staff.role}</p></div>
+                  <div className="min-w-0"><p className="text-muted-foreground">Facility</p><p className="mt-1 break-words font-medium text-foreground">{staff.facility}</p></div>
+                  <div className="min-w-0"><p className="text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium text-foreground">{staff.phone}</p></div>
+                  <div className="col-span-3 min-w-0"><p className="text-muted-foreground">Email</p><p className="mt-1 break-all font-medium text-foreground">{staff.email}</p></div>
                 </div>
               </article>
             ))}

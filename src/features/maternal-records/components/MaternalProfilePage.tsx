@@ -49,6 +49,7 @@ import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAu
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
 import { db } from "@/lib/db/silangDatabase"
 import { backendAssetUrl } from "@/lib/api"
+import { safeArchiveName, saveBlob } from "@/lib/zip-download"
 import { CreateAppointmentModal, type AppointmentMotherOption } from "@/features/calendar/components/CreateAppointmentModal"
 import type { AppointmentFormValues } from "@/features/calendar/components/CreateAppointmentModal"
 import { createAppointment } from "@/features/calendar/api"
@@ -344,7 +345,23 @@ function ProfileTable({ headers, rows, emptyState, renderRowAction, onRowClick }
         {paginatedRows.map((row, localIndex) => {
           const actualIndex = startIndex + localIndex
           return (
-            <article key={actualIndex} className="rounded-md border border-sidebar-border bg-card p-4 text-xs">
+            <article
+              key={actualIndex}
+              role={onRowClick ? "link" : undefined}
+              tabIndex={onRowClick ? 0 : undefined}
+              aria-label={onRowClick ? `Open ${String(row[0])} details` : undefined}
+              onClick={onRowClick ? (event) => {
+                const target = event.target as HTMLElement
+                if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                onRowClick(actualIndex)
+              } : undefined}
+              onKeyDown={onRowClick ? (event) => {
+                if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                event.preventDefault()
+                onRowClick(actualIndex)
+              } : undefined}
+              className={`rounded-md border border-sidebar-border bg-card p-4 text-xs ${onRowClick ? "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
+            >
               <div className="flex items-start justify-between gap-3">
                 <button type="button" disabled={!onRowClick} onClick={() => onRowClick?.(actualIndex)} className="min-w-0 flex-1 text-left text-sm font-semibold text-foreground disabled:cursor-default">{row[0]}</button>
                 {renderRowAction?.(actualIndex)}
@@ -451,6 +468,7 @@ export function MaternalProfilePage() {
   const [deliveryEntries, setDeliveryEntries] = useState<Array<{ delivery: MaternalDelivery; pregnancy: MaternalPregnancy }>>([])
   const [pregnancyRowsState, setPregnancyRowsState] = useState<ReactNode[][]>([])
   const [laboratoryRowsState, setLaboratoryRowsState] = useState<string[][]>([])
+  const [downloadingLabRecordIds, setDownloadingLabRecordIds] = useState<string[]>([])
   const [previewEhrRecord, setPreviewEhrRecord] = useState<MaternalLabRecord | null>(null)
   const [appointmentToCancel, setAppointmentToCancel] = useState<MaternalAppointment | null>(null)
   const [appointmentToDelete, setAppointmentToDelete] = useState<MaternalAppointment | null>(null)
@@ -895,6 +913,22 @@ export function MaternalProfilePage() {
   }
 
   const patientName = [maternalRecord?.user?.first_name, maternalRecord?.user?.middle_name, maternalRecord?.user?.last_name].filter(Boolean).join(" ") || "Maternal record"
+
+  const downloadLabRecord = async (lab: MaternalLabRecord) => {
+    if (!lab.file_url) return
+    setDownloadingLabRecordIds((current) => [...new Set([...current, lab.screening_id])])
+    try {
+      const response = await fetch(resolveAttachmentUrl(lab.file_url))
+      if (!response.ok) throw new Error(`Download failed (${response.status})`)
+      saveBlob(await response.blob(), safeArchiveName(getAttachmentName(lab.file_url, lab.screening_type || "Health record")))
+      toast.success("Health record downloaded")
+    } catch {
+      toast.error("Could not download this health record")
+    } finally {
+      setDownloadingLabRecordIds((current) => current.filter((id) => id !== lab.screening_id))
+    }
+  }
+
   useEffect(() => {
     if (maternalRecord) document.title = `${patientName} - Silang`
   }, [maternalRecord, patientName])
@@ -1281,10 +1315,6 @@ export function MaternalProfilePage() {
                 <Eye className="size-3.5" />
                 <span>Read-Only Oversight</span>
               </div>
-              <Button variant="outline" onClick={() => setIsEhrExportOpen(true)} className="h-8 gap-1.5 border-sidebar-border px-2.5 text-xs">
-                <Download className="size-3.5" />
-                Export EHR Record
-              </Button>
             </>
           ) : (
             <>
@@ -1298,7 +1328,7 @@ export function MaternalProfilePage() {
                 </TooltipProvider>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuItem onClick={() => setIsReferralOpen(true)}><ArrowLeftRight />Initiate Referral</DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setIsEhrExportOpen(true)}><Download />Export Clinical Record</DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setIsEhrExportOpen(true)}><Download />Export Clinical Record</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsChangeStaffOpen(true)}><UserCog />Change Staff</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsEditProfileOpen(true)}><Pencil />Edit Profile</DropdownMenuItem>
                   <DropdownMenuItem onClick={() => setIsUploadAvatarOpen(true)}><Camera />Change Profile Photo</DropdownMenuItem>
@@ -1385,7 +1415,7 @@ export function MaternalProfilePage() {
               <p className="mt-1 text-xs font-normal text-muted-foreground">Review appointments, consultation vitals, deliveries, pregnancies, and health records.</p>
             </div>
             <Tabs value={historyTab} onValueChange={setHistoryTab} className="w-full min-w-0">
-              <div className="flex w-full min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="sticky top-0 z-20 flex w-full min-w-0 flex-col gap-2 bg-background py-2 dark:bg-black sm:flex-row sm:items-center sm:justify-between">
                 <TabsList className="h-9 w-max max-w-full justify-start gap-1 overflow-x-auto">
                   <TabsTrigger value="appointments" className="h-full flex-initial px-3 text-xs">Appointments ({appointmentEntries.length})</TabsTrigger>
                   <TabsTrigger value="deliveries" className="h-full flex-initial px-3 text-xs">Deliveries ({deliveryEntries.length})</TabsTrigger>
@@ -1394,8 +1424,8 @@ export function MaternalProfilePage() {
                   <TabsTrigger value="prescriptions" className="h-full flex-initial px-3 text-xs">Prescriptions ({maternalRecord.supplements?.length ?? 0})</TabsTrigger>
                 </TabsList>
                 <TooltipProvider>
-                  <div className="ml-auto flex shrink-0 items-center gap-2">
-                    <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Export clinical history" onClick={() => setIsEhrExportOpen(true)} className="size-8 border-sidebar-border"><Download className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Export</TooltipContent></Tooltip>
+                    <div className="ml-auto flex shrink-0 items-center gap-2">
+                    <Button variant="outline" size="icon" aria-label="Export clinical record" title="Export clinical record" onClick={() => setIsEhrExportOpen(true)} className="size-8 shrink-0 border-sidebar-border"><Download className="size-3.5" /></Button>
                     <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon" aria-label="Refresh clinical history" onClick={refreshProfile} className="size-8 border-sidebar-border"><RefreshCw className="size-3.5" /></Button></TooltipTrigger><TooltipContent>Refresh</TooltipContent></Tooltip>
                     {!isSuperAdminView && (
                       <>
@@ -1410,7 +1440,7 @@ export function MaternalProfilePage() {
                 </TooltipProvider>
               </div>
               <TabsContent value="deliveries" className="mt-3 flex w-full min-w-0 flex-col gap-3">
-                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="sticky top-16 z-10 flex w-full flex-nowrap items-center gap-2 overflow-x-auto bg-background py-2 dark:bg-black">
                   <ToolbarSearch placeholder="Search by delivery date or attendant..." value={deliverySearch} onChange={setDeliverySearch} />
                   <ToolbarFilter label="Outcome / Delivery Type" options={["Live birth · Vaginal", "Live birth · Cesarean", "Stillbirth", "Miscarriage"]} selected={deliveryFilters} onChange={setDeliveryFilters} />
                   {hasDeliveryFilters && <ResetFilterButton onClick={resetDeliveryFilters} />}
@@ -1438,7 +1468,7 @@ export function MaternalProfilePage() {
                 />
               </TabsContent>
               <TabsContent value="appointments" className="mt-3 flex w-full min-w-0 flex-col gap-3">
-                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="sticky top-16 z-10 flex w-full flex-nowrap items-center gap-2 overflow-x-auto bg-background py-2 dark:bg-black">
                   <ToolbarSearch placeholder="Search appointments or visits..." value={appointmentSearch} onChange={setAppointmentSearch} />
                   <ToolbarFilter label="Status" options={["Scheduled", "Completed", "Cancelled", "Missed"]} selected={appointmentStatusFilters} onChange={setAppointmentStatusFilters} />
                   <ToolbarFilter label="Appointment Type" options={["ANC follow-up", "Laboratory", "Ultrasound", "Postpartum", "Consultation"]} selected={appointmentTypeFilters} onChange={setAppointmentTypeFilters} />
@@ -1492,7 +1522,7 @@ export function MaternalProfilePage() {
               </TabsContent>
 
               <TabsContent value="pregnancies" className="mt-3 flex w-full min-w-0 flex-col gap-3">
-                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="sticky top-16 z-10 flex w-full flex-nowrap items-center gap-2 overflow-x-auto bg-background py-2 dark:bg-black">
                   <ToolbarSearch placeholder="Search by G/P, LMP, or EDD..." value={pregnancySearch} onChange={setPregnancySearch} />
                   <ToolbarFilter label="Status" options={["Active", "Completed", "Postpartum"]} selected={pregnancyStatusFilters} onChange={setPregnancyStatusFilters} />
                   {(pregnancySearch.trim() || pregnancyStatusFilters.length > 0) && <ResetFilterButton onClick={() => { setPregnancySearch(""); setPregnancyStatusFilters([]) }} />}
@@ -1526,7 +1556,7 @@ export function MaternalProfilePage() {
                 />
               </TabsContent>
               <TabsContent value="ehr" className="mt-3 flex w-full min-w-0 flex-col gap-3">
-                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="sticky top-16 z-10 flex w-full flex-nowrap items-center gap-2 overflow-x-auto bg-background py-2 dark:bg-black">
                   <ToolbarSearch placeholder="Search health records..." value={laboratorySearch} onChange={setLaboratorySearch} />
                   {laboratorySearch.trim() && <ResetFilterButton onClick={() => setLaboratorySearch("")} />}
                 </div>
@@ -1538,7 +1568,7 @@ export function MaternalProfilePage() {
                           <TableHead className="w-12 pl-4 text-center"><Checkbox aria-label="Select all health records" checked={allLabRowsSelected} onCheckedChange={(checked) => setSelectedLabRows(checked === true ? filteredLaboratoryRows.map((_, index) => index) : [])} className="border-sidebar-border" /></TableHead>
                           <TableHead className="px-2 text-xs font-medium">Test / Attachment</TableHead>
                           <TableHead className="w-32 px-2 text-xs font-medium">Date</TableHead>
-                          <TableHead aria-label="Actions" className="w-12 px-1" />
+                          <TableHead aria-label="Actions" className="w-20 px-1" />
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1564,7 +1594,11 @@ export function MaternalProfilePage() {
                               </div>
                             </TableCell>
                             <TableCell className="px-2 text-muted-foreground">{date}</TableCell>
-                            <TableCell className="w-12 px-1" onClick={(event) => event.stopPropagation()}>
+                            <TableCell className="w-20 px-1" onClick={(event) => event.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-1">
+                              {record?.file_url && <TooltipProvider><Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon" aria-label={`Download ${test}`} title={`Download ${test}`} disabled={downloadingLabRecordIds.includes(screeningId)} onClick={() => void downloadLabRecord(record)} className="size-8">
+                                <Download className="size-4" />
+                              </Button></TooltipTrigger><TooltipContent>Download</TooltipContent></Tooltip></TooltipProvider>}
                               <TableRowActions label={`Actions for ${test}`}>
                                 {hasAttachment && <DropdownMenuItem onSelect={openPreview}>Preview Attachment</DropdownMenuItem>}
                                 <DropdownMenuItem onSelect={() => { if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(test) }}>Copy Test Name</DropdownMenuItem>
@@ -1576,6 +1610,7 @@ export function MaternalProfilePage() {
                                   </>
                                 )}
                               </TableRowActions>
+                              </div>
                             </TableCell>
                           </TableRow>
                         })}
@@ -1596,11 +1631,16 @@ export function MaternalProfilePage() {
                             <span className="block truncate text-xs text-muted-foreground">{fileName}</span>
                             <span className="mt-1 block text-xs text-muted-foreground">{date}</span>
                           </button>
+                          <div className="flex shrink-0 items-center gap-1">
+                          {record?.file_url && <Button variant="ghost" size="icon" aria-label={`Download ${test}`} title={`Download ${test}`} disabled={downloadingLabRecordIds.includes(screeningId)} onClick={() => void downloadLabRecord(record)} className="size-8">
+                            <Download className="size-4" />
+                          </Button>}
                           <TableRowActions label={`Actions for ${test}`}>
                             {record?.file_url && <DropdownMenuItem onSelect={openPreview}>Preview Attachment</DropdownMenuItem>}
                             <DropdownMenuItem onSelect={() => { if (navigator.clipboard?.writeText) void navigator.clipboard.writeText(test) }}>Copy Test Name</DropdownMenuItem>
                             <DropdownMenuItem variant="destructive" onSelect={() => setLabFileToDelete(screeningId)}>Delete Health Record</DropdownMenuItem>
                           </TableRowActions>
+                          </div>
                         </div>
                       </div>
                     })}
@@ -1620,7 +1660,7 @@ export function MaternalProfilePage() {
                 </div>
               </TabsContent>
               <TabsContent value="prescriptions" className="mt-3 flex w-full min-w-0 flex-col gap-3">
-                <div className="flex w-full flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+                <div className="sticky top-16 z-10 flex w-full flex-nowrap items-center gap-2 overflow-x-auto bg-background py-2 dark:bg-black">
                   <ToolbarSearch placeholder="Search prescriptions..." value={prescriptionSearch} onChange={setPrescriptionSearch} />
                   {prescriptionSearch.trim() && <ResetFilterButton onClick={() => setPrescriptionSearch("")} />}
                 </div>
@@ -1700,6 +1740,8 @@ export function MaternalProfilePage() {
         pregnancy={appointmentPregnancy}
         consultation={appointmentVisit}
         supplements={appointmentSupplements}
+        onAddPrescription={!isSuperAdminView ? () => setIsPrescriptionOpen(true) : undefined}
+        onRefresh={() => { void refreshProfile() }}
         onEdit={!isSuperAdminView && (selectedAppointment || appointmentVisit) ? () => {
           setAppointmentForEdit(selectedAppointment ?? null)
           setVisitForEdit(appointmentVisit ?? null)

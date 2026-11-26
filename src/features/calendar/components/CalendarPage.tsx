@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import { TableRowActions } from "@/components/ui/table-row-actions"
+import { StatusBadge } from "@/components/ui/status-badge"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { verifyCurrentUserPassword } from "@/features/auth/password-verification"
 import { getMaternalRecords } from "@/features/maternal-records/api"
@@ -219,21 +220,27 @@ export function CalendarPage() {
   }
 
   const handleSelectSlot = ({ start }: { start: Date }) => {
-    setSelectedDate(start)
-    setViewDate(start)
     const day = start.getDay()
     const dateStr = format(start, "yyyy-MM-dd")
-    const isClosed = closedDates.some((item) => item.date === dateStr)
-    if (isClosed) {
-      toast.error("Facility is closed on this date. Appointments cannot be scheduled.")
+    const closedInfo = closedDates.find((item) => item.date === dateStr)
+    if (closedInfo) {
+      toast.error("Clinic is closed.")
       return
     }
+    setSelectedDate(start)
+    setViewDate(start)
     if (!isMobileRef.current && day !== 0 && day !== 6) {
       setIsCreateModalOpen(true)
     }
   }
 
   const handleSelectMonthDate = (date: Date) => {
+    const dateStr = format(date, "yyyy-MM-dd")
+    const closedInfo = closedDates.find((item) => item.date === dateStr)
+    if (closedInfo) {
+      toast.error("Clinic is closed.")
+      return
+    }
     setSelectedDate(date)
     setViewDate(date)
     setIsDateAppointmentsOpen(true)
@@ -302,21 +309,16 @@ export function CalendarPage() {
                   <div
                     key={`${weekIndex}-${day.toISOString()}`}
                     onClick={() => handleSelectMonthDate(day)}
-                    className={`group flex min-h-0 min-w-0 cursor-pointer flex-col p-1.5 transition-colors sm:p-2 ${dayIndex < 4 ? 'border-r border-sidebar-border' : ''} ${weekIndex < monthWeeks.length - 1 ? 'border-b border-sidebar-border' : ''} ${isSelected ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-muted/30 dark:hover:bg-white/5'} ${!isCurrentMonth ? 'text-muted-foreground/50' : ''} ${closedInfo ? 'bg-destructive/5' : ''}`}
+                    className={`group flex min-h-0 min-w-0 cursor-pointer flex-col p-1.5 transition-colors sm:p-2 ${dayIndex < 4 ? 'border-r border-sidebar-border' : ''} ${weekIndex < monthWeeks.length - 1 ? 'border-b border-sidebar-border' : ''} ${isSelected ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-muted/30 dark:hover:bg-white/5'} ${!isCurrentMonth ? 'text-muted-foreground/50' : ''}`}
                   >
                     <div className="flex items-center justify-between">
                       <span className={`mb-1 flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-medium ${isSelected ? 'bg-foreground text-background' : isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/50'}`}>
                         {format(day, 'd')}
                       </span>
                       {closedInfo && (
-                        <span className="rounded bg-destructive/15 px-1 py-0.2 text-[9px] font-semibold text-destructive">
-                          Closed
-                        </span>
+                        <span title={closedInfo.reason}><StatusBadge status="Closed" /></span>
                       )}
                     </div>
-                    {closedInfo && (
-                      <p className="line-clamp-1 text-[10px] text-destructive/80 font-medium">{closedInfo.reason}</p>
-                    )}
                     <div className="flex min-h-0 flex-col gap-1 overflow-y-auto">
                       {dayEvents.slice(0, isMobile ? 1 : 3).map((event) => (
                         <CustomEvent key={event.id} event={event} onClick={handleSelectEvent} compact />

@@ -19,6 +19,7 @@ import { ApiError } from "@/lib/api"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { toast } from "sonner"
+import { PageGuide } from "@/components/ui/contextual-tour"
 
 type GoogleTokenResult = { access_token?: string; error?: string }
 
@@ -193,6 +194,7 @@ export function AuthForm() {
 
   return (
     <main className="h-dvh w-full overflow-hidden bg-background p-1 text-xs text-foreground sm:p-2" style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}>
+      <div className="fixed right-3 top-3 z-20"><PageGuide /></div>
       <div className="flex h-full min-h-0 w-full items-center justify-center">
         <section className="flex h-full min-h-0 w-full max-w-[420px] flex-col justify-center overflow-y-auto px-4 py-3 selection:bg-accent selection:text-accent-foreground sm:px-8 sm:py-4">
           <div className="mx-auto flex min-h-0 w-full max-w-[330px] flex-col justify-center py-2">

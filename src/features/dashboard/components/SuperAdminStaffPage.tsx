@@ -4,6 +4,8 @@ import {
   ExternalLink,
   KeyRound,
   MoreVertical,
+  Download,
+  PlusCircle,
   RefreshCw,
   RotateCcw,
   Search,
@@ -13,10 +15,12 @@ import {
   Users,
 } from "lucide-react"
 import { toast } from "sonner"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { CachedDataBanner } from "@/components/ui/cached-data-banner"
+import { Checkbox } from "@/components/ui/checkbox"
+import { TableEmptyState } from "@/components/ui/table-empty-state"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
 import {
   Dialog,
   DialogContent,
@@ -35,6 +39,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
@@ -62,6 +68,7 @@ export function SuperAdminStaffPage() {
   const [statusFilter, setStatusFilter] = useState("all")
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
+  const [selectedRows, setSelectedRows] = useState<string[]>([])
 
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [selectedStaff, setSelectedStaff] = useState<StaffItem | null>(null)
@@ -189,215 +196,122 @@ export function SuperAdminStaffPage() {
     }
   }
 
-  const activeCount = useMemo(() => staffList.filter((s) => s.is_active).length, [staffList])
-  const deactivatedCount = useMemo(() => staffList.filter((s) => !s.is_active).length, [staffList])
+  const exportStaff = () => {
+    const rows = [
+      ["Name", "Email", "Role", "Facility", "Contact", "Status"],
+      ...filteredStaff.map((staff) => [
+        `${staff.first_name} ${staff.last_name}`,
+        staff.email || "",
+        staff.role,
+        staff.facility?.facility_name || "",
+        staff.phone_number || "",
+        staff.is_active ? "Active" : "Deactivated",
+      ]),
+    ]
+    const csv = `\ufeff${rows.map((row) => row.map((value) => `"${value.replaceAll('"', '""')}"`).join(",")).join("\r\n")}`
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
+    const link = document.createElement("a")
+    link.href = url
+    link.download = "silang-staff.csv"
+    link.click()
+    URL.revokeObjectURL(url)
+    toast.success("Staff directory exported")
+  }
 
   return (
-    <section className="w-full space-y-4 px-4 py-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight text-foreground">
-            Municipal Staff & Access Control
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Centralized directory of healthcare workers, role management, and security credentials across all Silang facilities.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-8 gap-1.5"
-          onClick={() => {
-            loadData()
-            toast.success("Staff list refreshed")
-          }}
-          disabled={loading}
-        >
-          <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-          Refresh
-        </Button>
-      </div>
-
+    <section className="w-full space-y-4 px-4 pb-8 pt-4 text-foreground">
       <CachedDataBanner message="Viewing cached municipal personnel directory. Offline role modifications and account toggles will queue and synchronize once connection is restored." />
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Card className="border-sidebar-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Total Staff Registered</CardTitle>
-            <Users className="size-4 text-primary" />
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{staffList.length}</div>
-            <p className="text-[11px] text-muted-foreground">Across all RHUs and Barangay stations</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-sidebar-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Active Personnel</CardTitle>
-            <UserCheck className="size-4 text-emerald-600 dark:text-emerald-400" />
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{activeCount}</div>
-            <p className="text-[11px] text-muted-foreground">Authorized for clinical care & sync</p>
-          </CardContent>
-        </Card>
-
-        <Card className="border-sidebar-border bg-card">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 pt-4">
-            <CardTitle className="text-xs font-medium text-muted-foreground">Suspended / Inactive</CardTitle>
-            <UserX className="size-4 text-rose-500" />
-          </CardHeader>
-          <CardContent className="pb-4">
-            <div className="text-2xl font-bold">{deactivatedCount}</div>
-            <p className="text-[11px] text-muted-foreground">Deactivated accounts</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <div className="relative w-full sm:w-[260px]">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search staff by name, email, phone..."
-            className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
-          />
-        </div>
-
-        <Select value={facilityFilter} onValueChange={setFacilityFilter}>
-          <SelectTrigger className="h-8 w-full text-xs sm:w-[180px]">
-            <SelectValue placeholder="All Facilities" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Facilities</SelectItem>
-            {facilities.map((f) => (
-              <SelectItem key={f.facility_id} value={f.facility_id}>
-                {f.facility_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        <Select value={roleFilter} onValueChange={setRoleFilter}>
-          <SelectTrigger className="h-8 w-full text-xs sm:w-[140px]">
-            <SelectValue placeholder="All Roles" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Roles</SelectItem>
-            <SelectItem value="Admin">Admin</SelectItem>
-            <SelectItem value="Doctor">Doctor</SelectItem>
-            <SelectItem value="Midwife">Midwife</SelectItem>
-            <SelectItem value="Nurse">Nurse</SelectItem>
-            <SelectItem value="HealthWorker">HealthWorker</SelectItem>
-          </SelectContent>
-        </Select>
-
+      <div className="sticky top-0 z-20 -mx-4 flex flex-col gap-4 bg-background px-4 py-3 dark:bg-black">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="h-8 w-full text-xs sm:w-[130px]">
-            <SelectValue placeholder="All Status" />
-          </SelectTrigger>
+          <SelectTrigger className="h-8 w-full md:hidden" aria-label="Staff status"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="true">Active Only</SelectItem>
-            <SelectItem value="false">Inactive Only</SelectItem>
+            <SelectItem value="all">All Staff</SelectItem>
+            <SelectItem value="true">Active</SelectItem>
+            <SelectItem value="false">Deactivated</SelectItem>
           </SelectContent>
         </Select>
-
-        {(query.trim().length > 0 || facilityFilter !== "all" || roleFilter !== "all" || statusFilter !== "all") && (
-          <Button
-            variant="ghost"
-            className="h-8 shrink-0 gap-2 px-2 text-xs font-medium text-muted-foreground"
-            onClick={() => {
-              setQuery("")
-              setFacilityFilter("all")
-              setRoleFilter("all")
-              setStatusFilter("all")
-            }}
-          >
-            <RotateCcw className="size-3.5" />
-            Reset Filters
-          </Button>
+        <Tabs value={statusFilter} onValueChange={setStatusFilter} className="hidden md:block">
+          <TabsList mobileSelect={false}>
+            <TabsTrigger value="all">All Staff</TabsTrigger>
+            <TabsTrigger value="true">Active</TabsTrigger>
+            <TabsTrigger value="false">Deactivated</TabsTrigger>
+          </TabsList>
+        </Tabs>
+        <div className="ml-auto flex items-center gap-2">
+          <Button variant="outline" size="icon" className="size-8" onClick={exportStaff} disabled={loading || filteredStaff.length === 0} aria-label="Export staff" title="Export staff"><Download className="size-4" /></Button>
+          <Button variant="outline" size="icon" className="size-8" onClick={loadData} disabled={loading} aria-label="Refresh staff" title="Refresh staff"><RefreshCw className={`size-4 ${loading ? "animate-spin" : ""}`} /></Button>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-[320px]">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, email, or phone..." className="h-8 w-full pl-8 text-xs" />
+        </div>
+        <Popover>
+          <PopoverTrigger asChild><Button variant="filter" size="filter"><PlusCircle className="size-3.5" />Facility</Button></PopoverTrigger>
+          <PopoverContent align="start" className="w-56 p-3"><div className="flex flex-col gap-3">
+            {[["all", "All facilities"], ...facilities.map((facility) => [facility.facility_id, facility.facility_name])].map(([value, label]) => (
+              <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={facilityFilter === value} onCheckedChange={() => setFacilityFilter(value)} className="size-3.5 rounded-[4px] border-sidebar-border" />{label}</label>
+            ))}
+          </div></PopoverContent>
+        </Popover>
+        <Popover>
+          <PopoverTrigger asChild><Button variant="filter" size="filter"><PlusCircle className="size-3.5" />Role</Button></PopoverTrigger>
+          <PopoverContent align="start" className="w-48 p-3"><div className="flex flex-col gap-3">
+            {[["all", "All roles"], ["Admin", "Admin"], ["Doctor", "Doctor"], ["Midwife", "Midwife"], ["Nurse", "Nurse"], ["HealthWorker", "Health worker"]].map(([value, label]) => (
+              <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={roleFilter === value} onCheckedChange={() => setRoleFilter(value)} className="size-3.5 rounded-[4px] border-sidebar-border" />{label}</label>
+            ))}
+          </div></PopoverContent>
+        </Popover>
+        {(query.trim() || facilityFilter !== "all" || roleFilter !== "all") && (
+          <Button variant="ghost" className="h-8 gap-2 px-2 text-xs text-muted-foreground" onClick={() => { setQuery(""); setFacilityFilter("all"); setRoleFilter("all") }}><RotateCcw className="size-3.5" />Reset Filter</Button>
         )}
       </div>
+      </div>
 
-      <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
+      <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 px-3"><Checkbox aria-label="Select all staff on this page" checked={paginatedStaff.length > 0 && paginatedStaff.every((staff) => selectedRows.includes(staff.user_id))} onCheckedChange={(checked) => setSelectedRows(checked ? [...new Set([...selectedRows, ...paginatedStaff.map((staff) => staff.user_id)])] : selectedRows.filter((id) => !paginatedStaff.some((staff) => staff.user_id === id)))} /></TableHead>
               <TableHead>Staff Member</TableHead>
-              <TableHead>Assigned Facility</TableHead>
-              <TableHead>Role</TableHead>
-              <TableHead>Contact</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-[80px] text-right">Actions</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Assigned Facility</TableHead>
+              <TableHead>Contact</TableHead>
+              <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center text-xs text-muted-foreground">
-                  Loading municipal personnel directory...
-                </TableCell>
-              </TableRow>
+              <TableSkeletonRows columns={7} rows={4} checkboxColumn />
             ) : filteredStaff.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="h-32 text-center text-xs text-muted-foreground">
-                  No personnel matching search or filter parameters.
-                </TableCell>
-              </TableRow>
+              <TableEmptyState colSpan={7} icon={Users} title="No staff found" description="Adjust your search or filters to see staff members." />
             ) : (
               paginatedStaff.map((staff) => {
-                const initials = `${staff.first_name?.[0] || ""}${staff.last_name?.[0] || ""}`.toUpperCase()
                 return (
                   <TableRow
                     key={staff.user_id}
                     className="cursor-pointer hover:bg-muted/50"
                     onClick={(e) => {
                       const target = e.target as HTMLElement
-                      if (target.closest("button") || target.closest("[role='menuitem']")) return
+                      if (target.closest("button") || target.closest("[role='checkbox']") || target.closest("[role='menuitem']")) return
                       navigate(`/superadmin/users/${staff.user_id}`, {
                         state: { returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" },
                       })
                     }}
                   >
-                    <TableCell>
-                      <div className="flex items-center gap-2.5">
-                        <Avatar className="size-8 rounded-full border border-border">
-                          {staff.profile_url && <AvatarImage src={staff.profile_url} />}
-                          <AvatarFallback className="text-[11px] font-medium">{initials || "ST"}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex flex-col">
-                          <span className="text-xs font-medium hover:underline">
-                            {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">{staff.email || "No email"}</span>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex flex-col">
-                        <span className="text-xs font-medium">{staff.facility?.facility_name || "Unassigned"}</span>
-                        <span className="text-[11px] text-muted-foreground">{staff.facility?.type || "Central"}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <span className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium">
-                        <Shield className="size-3 text-muted-foreground" />
-                        {staff.role}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {staff.phone_number || "—"}
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={staff.is_active ? "active" : "inactive"} />
-                    </TableCell>
+                    <TableCell className="px-3"><Checkbox aria-label={`Select ${staff.first_name} ${staff.last_name}`} checked={selectedRows.includes(staff.user_id)} onCheckedChange={(checked) => setSelectedRows((rows) => checked ? [...rows, staff.user_id] : rows.filter((id) => id !== staff.user_id))} /></TableCell>
+                    <TableCell><div className="flex flex-col"><span className="text-xs font-medium hover:underline">{staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}</span><span className="text-xs text-muted-foreground">{staff.email || "No email"}</span></div></TableCell>
+                    <TableCell><StatusBadge status={staff.is_active ? "active" : "inactive"} /></TableCell>
+                    <TableCell><span className="inline-flex rounded-md bg-muted px-2 py-0.5 text-xs font-medium">{staff.role}</span></TableCell>
+                    <TableCell className="text-xs">{staff.facility?.facility_name || "Unassigned"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{staff.phone_number || "—"}</TableCell>
                     <TableCell className="text-right">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-7">
+                          <Button variant="ghost" size="icon" className="size-7" aria-label="More actions">
                             <MoreVertical className="size-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -462,27 +376,39 @@ export function SuperAdminStaffPage() {
 
       <div className="space-y-2 md:hidden">
         {loading ? (
-          <div className="flex h-32 items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
-            Loading municipal personnel directory...
-          </div>
+          <MobileTableCardSkeleton count={3} />
         ) : filteredStaff.length === 0 ? (
-          <div className="flex h-32 items-center justify-center rounded-lg border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
+          <div className="flex h-32 items-center justify-center rounded-md border border-sidebar-border bg-card p-6 text-center text-xs text-muted-foreground">
             No personnel matching search or filter parameters.
           </div>
         ) : (
           paginatedStaff.map((staff) => {
-            const initials = `${staff.first_name?.[0] || ""}${staff.last_name?.[0] || ""}`.toUpperCase()
             return (
               <article
                 key={staff.user_id}
-                className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                data-mobile-record
+                role="link"
+                tabIndex={0}
+                aria-label={`Open ${staff.first_name} ${staff.last_name}'s staff profile`}
+                className="cursor-pointer rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black"
+                onClick={(event) => {
+                  const target = event.target as HTMLElement
+                  if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                  navigate(`/superadmin/users/${staff.user_id}`, {
+                    state: { returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" },
+                  })
+                }}
+                onKeyDown={(event) => {
+                  if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                  event.preventDefault()
+                  navigate(`/superadmin/users/${staff.user_id}`, {
+                    state: { returnTo: "/superadmin/users", returnLabel: "Staff & Access Control" },
+                  })
+                }}
               >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <Avatar className="size-9 rounded-full border border-border shrink-0">
-                      {staff.profile_url && <AvatarImage src={staff.profile_url} />}
-                      <AvatarFallback className="text-xs font-medium">{initials || "ST"}</AvatarFallback>
-                    </Avatar>
+                    <Checkbox aria-label={`Select ${staff.first_name} ${staff.last_name}`} checked={selectedRows.includes(staff.user_id)} onCheckedChange={(checked) => setSelectedRows((rows) => checked ? [...rows, staff.user_id] : rows.filter((id) => id !== staff.user_id))} />
                     <div className="min-w-0">
                       <Link
                         to={`/superadmin/users/${staff.user_id}`}
@@ -491,13 +417,12 @@ export function SuperAdminStaffPage() {
                       >
                         {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
                       </Link>
-                      <p className="truncate text-[11px] text-muted-foreground">{staff.email || "No email"}</p>
                     </div>
                   </div>
 
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                      <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="More actions">
                         <MoreVertical className="size-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
@@ -557,19 +482,18 @@ export function SuperAdminStaffPage() {
                   </DropdownMenu>
                 </div>
 
-                <div className="mt-2 text-xs">
-                  <span className="text-muted-foreground">Facility: </span>
-                  <span className="font-medium text-foreground">{staff.facility?.facility_name || "Unassigned"}</span>
-                  <span className="text-[11px] text-muted-foreground"> ({staff.facility?.type || "Central"})</span>
-                </div>
-
-                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-[11px]">
+                <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
                   <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-medium">
                     <Shield className="size-3 text-muted-foreground" />
                     {staff.role}
                   </span>
-                  <span className="text-muted-foreground">{staff.phone_number || "No contact"}</span>
                   <StatusBadge status={staff.is_active ? "active" : "inactive"} />
+                </div>
+                <div className="mt-3 grid min-w-0 grid-cols-3 gap-3 text-xs">
+                  <div className="min-w-0"><p className="text-muted-foreground">Facility</p><p className="mt-1 break-words font-medium text-foreground">{staff.facility?.facility_name || "Unassigned"}</p></div>
+                  <div className="min-w-0"><p className="text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium text-foreground">{staff.phone_number || "—"}</p></div>
+                  <div className="min-w-0"><p className="text-muted-foreground">Facility type</p><p className="mt-1 break-words font-medium text-foreground">{staff.facility?.type || "Central"}</p></div>
+                  <div className="col-span-3 min-w-0"><p className="text-muted-foreground">Email</p><p className="mt-1 break-all font-medium text-foreground">{staff.email || "—"}</p></div>
                 </div>
               </article>
             )
@@ -579,6 +503,7 @@ export function SuperAdminStaffPage() {
 
       <TablePaginationFooter
         rowCount={filteredStaff.length}
+        selectedCount={selectedRows.length}
         page={page}
         pageSize={pageSize}
         onPageChange={setPage}
@@ -586,35 +511,35 @@ export function SuperAdminStaffPage() {
       />
 
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Change Personnel Role</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Change Role</DialogTitle>
             <DialogDescription className="text-xs">
-              Update authorization role for {selectedStaff?.first_name} {selectedStaff?.last_name}.
+              Choose a role for {selectedStaff?.first_name} {selectedStaff?.last_name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">New Role</Label>
-              <Select value={newRole} onValueChange={setNewRole}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select new role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin (Facility Administrator)</SelectItem>
-                  <SelectItem value="Doctor">Doctor (Physician)</SelectItem>
-                  <SelectItem value="Midwife">Midwife (Clinical Provider)</SelectItem>
-                  <SelectItem value="Nurse">Nurse (Clinical Staff)</SelectItem>
-                  <SelectItem value="HealthWorker">HealthWorker (BHW)</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Role <span className="text-destructive">*</span></Label>
+                <Select value={newRole} onValueChange={setNewRole}>
+                  <SelectTrigger className="h-9 w-full text-xs">
+                    <SelectValue placeholder="Select new role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Doctor">Doctor</SelectItem>
+                    <SelectItem value="Midwife">Midwife</SelectItem>
+                    <SelectItem value="Nurse">Nurse</SelectItem>
+                    <SelectItem value="HealthWorker">Health Worker</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" size="sm" onClick={() => setRoleDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setRoleDialogOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleRoleChange} disabled={submittingRole}>
+            <Button className="h-8 px-3 text-xs" onClick={handleRoleChange} disabled={submittingRole}>
               {submittingRole ? "Updating..." : "Save Role"}
             </Button>
           </DialogFooter>
@@ -622,30 +547,30 @@ export function SuperAdminStaffPage() {
       </Dialog>
 
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Administrative Password Reset</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Reset Password</DialogTitle>
             <DialogDescription className="text-xs">
-              Set a temporary password for {selectedStaff?.first_name} {selectedStaff?.last_name}.
+              Set a password for {selectedStaff?.first_name} {selectedStaff?.last_name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">New Password</Label>
-              <Input
-                type="text"
-                placeholder="Enter new password (min. 6 characters)"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="h-8 text-xs font-mono"
-              />
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  placeholder="Enter password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
             </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleResetPassword} disabled={submittingPassword}>
+            <Button className="h-8 px-3 text-xs" onClick={handleResetPassword} disabled={submittingPassword}>
               {submittingPassword ? "Resetting..." : "Confirm Reset"}
             </Button>
           </DialogFooter>

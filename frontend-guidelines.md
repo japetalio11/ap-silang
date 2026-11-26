@@ -1,196 +1,212 @@
 # Silang Frontend Guidelines
 
-Use this document as the design reference when adding or changing frontend UI. It records the shared system already present in the app and establishes defaults for new work. Prefer the existing shadcn components and semantic theme tokens over one-off Tailwind colors or new component styles.
+Use this document as the design reference when adding or changing UI in the main Silang clinic system. It describes the maternal and birth-monitoring product, its established layout patterns, and the shared component defaults. Prefer existing shadcn components and semantic theme tokens over one-off styles.
 
-## Product UI
+## Product and Interface Principles
 
-- Silang is a compact, desktop-first operations workspace for campaigns, calendar availability, team management, analytics, and dashboard tasks.
-- Keep the interface quiet and information-dense: clear labels, restrained borders, small controls, minimal decoration, and strong contrast for the primary action or selected item.
-- Reuse familiar patterns across feature areas. A filter, tab, modal, table, or sidepeek should behave and look like its counterparts elsewhere in the app.
-- Build responsive layouts deliberately. Preserve readable labels and usable control sizes on mobile; allow horizontal scrolling for dense tables or tab groups when needed rather than compressing their contents until they become hard to use.
+- Silang supports maternal records, prenatal and postpartum care, appointments, referrals, staff workflows, messaging, and facility settings.
+- Keep the interface calm and operational: clear hierarchy, compact readable information, restrained surfaces, and color reserved for primary actions, clinical risk, and state.
+- Reuse patterns across features. Tabs, filters, tables, badges, forms, drawers, empty states, and loading states should behave and look like their established counterparts.
+- Preserve the information hierarchy and spacing of the source pattern when adapting it. Do not add nested cards, redundant copy, decorative separators, or repeated patient metadata just to fill space.
+- Responsive design is part of the pattern. Keep desktop tables dense and aligned; on phones use stacked records, bottom sheets, and controls sized for touch.
+
+## Main-System Structure
+
+The normal application surface follows this hierarchy:
+
+1. **App shell:** collapsible sidebar, compact top bar, and route content area.
+2. **Top bar:** breadcrumbs on the left; global online/sync status, notifications, theme control, and Quick Create on the right.
+3. **Feature content:** tabs and page actions, then search and filters, then the table, calendar, or other main content.
+4. **Details and forms:** profile pages, drawers, dialogs, or mobile bottom sheets, depending on the task.
+
+- The sidebar groups destinations by workflow and keeps facility identity near the top and the account switcher at the bottom.
+- Breadcrumbs identify the current page. Do not repeat a large page heading when it adds no information or conflicts with the established content layout.
+- Keep global navigation in the shell. Feature pages should not add a second global navigation bar.
+- Align breadcrumbs, tabs, toolbars, tables, and pagination to shared left and right edges. Avoid nested horizontal padding that makes sibling rows start or end at different positions.
 
 ## Source of Truth
 
-- Global theme variables, font setup, base element styles, and calendar overrides live in `src/index.css`.
-- shadcn is configured in `components.json` with the `radix-mira` style, neutral base colors, CSS variables, and Lucide icons. Use the existing components in `src/components/ui/` and `@/lib/utils` (`cn`) for composition.
-- Feature UI lives in `src/features/<feature>/components/`. Check a nearby feature implementation before inventing a new pattern.
-- Shared shell pieces are `AppHeader`, `AppSidebar`, and `DashboardLayout`. Shared primitives include `Button`, `Input`, `Textarea`, `Tabs`, `Card`, `Dialog`, and `ResponsiveModal`.
-- Theme switching uses the `.dark` class and semantic CSS variables. Theme-aware classes should work in both modes; avoid hard-coded surface colors unless a deliberate brand or status color is needed.
+- Global theme variables, typography, base element styles, radius tokens, and responsive sheet rules live in `src/index.css`.
+- shadcn is configured in `components.json`. Use existing primitives in `src/components/ui/` and `cn` from `@/lib/utils`.
+- Feature UI lives in `src/features/<feature>/components/`. Check the nearest established feature before introducing a new pattern.
+- The shared shell is implemented by `AppHeader`, `AppSidebar`, and `DashboardLayout`.
+- Shared primitives include `Button`, `Input`, `Textarea`, `Select`, `Tabs`, `Card`, `Dialog`, `Sheet`, `ResponsiveModal`, `StatusBadge`, table action menus, empty states, pagination, skeletons, tooltips, and Sonner toasts.
+- Theme switching uses the `.dark` class and semantic CSS variables. Prefer theme tokens over literal surface colors. Preserve a local color only when it represents an intentional brand or status treatment already used by the feature.
 
 ## Typography
 
-### Titles and Descriptions
+### Font and Rendering
 
-- Use a consistent title hierarchy on every page, modal, drawer, and major content section. Page titles use `text-2xl font-semibold text-foreground`; modal and drawer titles use `text-base font-semibold text-foreground`; section and card titles use `text-sm font-semibold text-foreground`.
-- Give primary page, modal, and drawer titles a concise supporting description directly beneath the title. Use `text-sm` for page-level descriptions and `text-xs` for modal/drawer descriptions, both `font-normal text-muted-foreground`. Descriptions should explain the purpose or context without repeating the title.
-- Major content section titles should also have a short description when the section's purpose is not self-evident. Keep it directly below the title with the standard label-to-control spacing; omit filler copy for obvious utility groups and table column headers.
-- Do not place decorative or redundant icons beside title text. Reserve icons for navigation, actions, status, and individual detail labels. Keep title color, weight, and spacing consistent across light and dark themes using semantic tokens.
+- Use **Inter Variable** (`font-sans`) for web interface text. It is loaded in `src/index.css`.
+- Global text rendering applies grayscale antialiasing, optimized text rendering, and disables variable optical sizing. Do not add page-specific font-smoothing overrides.
+- The Silang wordmark may use the bundled **Etna** face (`font-etna`) and its established brand treatment. Do not use Etna for general interface copy.
+- Use **JetBrains Mono** (`font-mono`) for transfer codes and other machine-readable identifiers. Role labels and ordinary names use the interface font.
 
-### Font
+### Three Interface Sizes
 
-- Use **Inter Variable** (`font-sans`) for interface text. It is loaded in `src/index.css`.
-- Global rendering uses grayscale antialiasing, optimized text rendering, and disables variable optical sizing to keep Inter crisp in light and dark themes. Do not add per-page font-smoothing overrides.
-- The Silang wordmark may use the bundled **Etna** face (`font-etna`) and its established dark green treatment. Do not use Etna for general interface copy.
-- Use **JetBrains Mono** (`font-mono`) for codes and other machine-readable identifiers.
+Use only these three sizes for web interface text. Build hierarchy with these sizes, the three approved weights, color, and spacing rather than one-off font sizes:
 
-### Four UI Sizes
-
-Use only these four interface text sizes throughout the system. The compact sizing used by the dashboard controls, maternal records, and top bar is the baseline; use the larger levels only for clear heading hierarchy. Use color, weight, and spacing instead of introducing one-off sizes:
-
-| Size | Tailwind | Use |
+| Level | Tailwind | Use |
 | --- | --- | --- |
-| Compact | `text-xs` (12px) | Labels, inputs, buttons, table content, tabs, helper copy, navigation, and metadata |
-| Standard | `text-sm` (14px) | Section headings, card titles, and supporting copy |
-| Strong | `text-base` (16px) | Modal and subsection titles |
-| Page | `text-2xl` (24px) | Page titles and the strongest short heading |
+| Compact | `text-xs` (12px) | Labels, inputs, buttons, table content, tabs, helper copy, navigation, badges, and metadata |
+| Standard | `text-sm` (14px) | Body/supporting copy, row titles, and section/card headings |
+| Emphasis | `text-base` (16px) | Dialog/drawer titles and the strongest short headings or values |
 
-- Use only three weights: `font-normal` for body and supporting text, `font-medium` for controls and labels, and `font-semibold` for titles or important values. Do not use `font-bold` or add lighter/heavier weights.
-- If compact labels look crowded, add a small positive tracking adjustment to that label (for example, `tracking-wide` at `text-xs`). Keep normal body copy at standard tracking; do not apply wider tracking globally.
-- Prefer `text-foreground` for primary content and `text-muted-foreground` for secondary content. Do not use weight alone to make every label compete with its heading.
-- Chart ticks, calendar annotations, badges, and other dense interface details also use the four-size scale; do not add sub-12px text exceptions.
+- Use only three weights: `font-normal` for body and supporting text, `font-medium` for controls and labels, and `font-semibold` for titles or key values. Do not use `font-bold` or lighter/heavier weights.
+- Keep most operational UI compact, as in Maternal Records and the top bar. Use the emphasis level sparingly.
+- Do not use `text-[10px]` or other sub-12px exceptions. Use color, spacing, or an icon to distinguish compact metadata instead.
+- Keep default tracking for body copy. If a short compact label looks crowded, use a subtle positive tracking adjustment on that label only.
+- Use `text-foreground` for primary content and `text-muted-foreground` for secondary content. Do not make every label compete with a heading by increasing weight.
 
-## Color and Theme
+## Color, Theme, and Radius
 
-### Semantic Neutrals
+### Semantic Surfaces
 
-Use semantic tokens so surfaces respond to light and dark mode:
+- `bg-background` is the page canvas and standard app surface.
+- `bg-card` is for a distinct card or raised content region. Avoid putting cards inside cards without a clear grouping need.
+- `bg-muted` and `bg-secondary` are quiet gray group backgrounds, table headers, and secondary controls.
+- Shared shadcn inputs use `bg-background`, a subtle `border-input`, and `placeholder:text-muted-foreground` in light mode; dark mode uses the established `dark:bg-input/30` treatment.
+- Shared selects use the same surface and height as inputs. Their option menu uses `bg-popover` and `text-popover-foreground`.
+- Use `border-border` or `border-sidebar-border` for outlines and separators. Use the sidebar token for shell/navigation divisions where established.
+- Use `text-foreground` and `text-muted-foreground` for primary and supporting text.
+- Use `bg-primary text-primary-foreground` for primary actions. The shared web primary palette is neutral black/white; Silang green is a brand accent, not the default button color.
 
-- `bg-background` for the page canvas and standard app surfaces.
-- `bg-card` for cards and raised content areas.
-- `bg-muted` / `bg-secondary` for quiet gray group backgrounds, table headers, and secondary controls.
-- Use the shared shadcn `Input` and `Textarea` colors everywhere: `bg-background` with a subtle `border-input` in light mode, `dark:bg-input/30` in dark mode, and `placeholder:text-muted-foreground`. Avoid page-level fill and placeholder color overrides; input groups may keep their transparent inner controls.
-- Use the shared shadcn `SelectTrigger` surface to match inputs: `bg-background` in light mode and `dark:bg-input/30` in dark mode. Keep the option menu on `bg-popover` with `text-popover-foreground`; avoid local muted-fill overrides on select triggers.
-- `border-border` or `border-sidebar-border` for separators and component outlines. Prefer the semantic token; use the sidebar token for shell/navigation divisions where it is already established.
-- `text-foreground` and `text-muted-foreground` for primary and secondary text.
-- Use `bg-primary text-primary-foreground` for primary actions. The base theme is neutral black/white, with the primary theme variables defined in `src/index.css`.
+### Light and Dark Themes
 
-### Light and Dark Mode
+- Light mode uses a white canvas and cards, restrained light-gray secondary surfaces, noticeable input surfaces, and readable placeholders.
+- Dark mode uses dark neutral canvas/card surfaces, slightly lighter input fills that read as editable, and muted placeholders. Text uses semantic foreground tokens.
+- Do not add a literal `dark:bg-[#...]` when a semantic token expresses the same surface. Retain an existing explicit dark surface only when it is a deliberate part of that feature's established treatment.
+- Segmented view tabs use a muted group surface. In light mode the selected tab is black with white text; unselected tabs use muted text. Keep the dark equivalent theme-aware.
+- Avoid adding gradients, colored shadows, or large decorative color blocks to ordinary operational UI.
 
-- Light mode uses a white canvas and cards, restrained light-gray secondary surfaces, white inputs with subtle gray borders, and clear placeholder contrast.
-- Dark mode uses dark neutral canvas/card surfaces, dark input fills with low-contrast neutral borders, and muted placeholders. Text reverses through the semantic foreground tokens.
-- Do not hard-code `dark:bg-[#...]` for a new component when a semantic token expresses the same surface. Some existing shell and calendar areas still use explicit dark neutrals; retain them only when matching that established surface is necessary.
-- Tabs that use the workspace/filter segmented style have a muted gray list background. In light mode, the selected tab is black with white text; unselected tabs use muted text. Keep the established dark-mode treatment for dark surfaces.
-- The login workspace tabs follow that same selected black/white treatment in light mode. Apply it consistently to feature filter tabs.
+### Brand and Status Colors
 
-### Brand and Status Color
+- Use Silang green `#003f2c` for the established brand mark/wordmark treatment and selected brand illustrations. Do not substitute it for the neutral primary action palette.
+- Use the shared `StatusBadge` for clinical risk, referral, appointment, delivery, staffing, and availability states.
+- Keep badge shape compact (`rounded-sm`), with tight padding, medium text, and an appropriate icon. Use green for positive/completed states, orange for pending or in-progress states, red for urgent or blocked states, and neutral gray for inactive or archived states. Badge labels use normal title capitalization, never all caps.
+- Preserve the distinction between a status badge and a neutral role/identifier badge. Role badges use the compact muted treatment; transfer codes use the same compact visual family with monospace type.
+- Use color with a text label and, where appropriate, an icon. Meaning must not depend on color alone.
+- Progress bars that communicate completion use the established red-to-orange-to-green progression; do not show a completed green state before progress warrants it.
+- Status colors should come from the shared mapping or semantic tokens. Avoid new per-page hex values for statuses.
 
-- The Silang wordmark and brand mark use **Silang green `#003f2c`** in their established logo treatment. This is a brand accent, not a replacement for the neutral primary action palette across the app.
-- Use brand green deliberately for logo/identity and selected small brand illustrations. Do not introduce additional competing accent colors for ordinary controls.
-- Status colors (success, warning, error, information) should be consistent and legible in both themes. Prefer existing semantic status tokens or the same status color already used in the feature; do not invent a new shade per page. Pair color with readable text or an icon so meaning does not depend on color alone.
-- Use the shared `StatusBadge` for record, campaign, staffing, and availability states. Keep the compact Referrals badge shape (`rounded-sm`, tight padding) with a status-specific Lucide icon and a consistent semantic color (green for positive, orange for ongoing or pending, red for urgent or blocked, and neutral for archived states).
-- Workflow progress indicators should move through a red-to-orange-to-green gradient as completion advances; do not use solid green from the first step. Keep the percentage or step label in a color that matches the current progress stage.
-- Avoid gradients, decorative color blocks, and colored shadows unless the existing screen or a clear product need calls for them.
+## Spacing, Placement, and Alignment
 
-## Spacing, Layout, and Shape
+- Use the regular Tailwind spacing scale. Common spacing is `gap-2` between controls, `gap-4` between related groups, and `gap-6` between sections or cards.
+- Standard feature pages use `px-4` on phones and usually `md:px-6` or `md:px-8` on larger screens. Use a centered max-width only when it improves the content; data-heavy pages should retain the width needed by their columns. The Dashboard overview is intentionally narrower than list pages.
+- Keep shared horizontal padding on sibling wrappers. Tabs, toolbars, tables, and pagination should align to the same page gutter without extra nested padding.
+- The common operational control height is `h-8`. Inputs, select triggers, filter buttons, and neighboring standard buttons should match. Use smaller controls only when the whole compact group uses that size.
+- Keep labels close to their controls with a consistent `gap-1.5` to `space-y-2` rhythm. Do not let a label touch its input or create a larger gap for one field in an otherwise aligned form.
+- In two-column forms, align labels and controls row by row. If a field is intentionally full-width, span the full row; passwords and long text inputs should not appear arbitrarily narrower than adjacent fields.
+- Use `rounded-md` for controls and compact elements. Use the established card/overlay radius for larger surfaces. Avoid mixing several radii in one view.
+- Prefer subtle borders and row separators over heavy shadows. Most cards are flat, with a semantic surface and light outline.
+- Check all four edges of cards and overlays. Padding at the bottom and right should match the top and left unless the layout deliberately anchors a footer or action.
+- Avoid redundant information. If the surrounding page identifies a selected mother, do not repeat serial number, age, or other profile details beneath the selected name unless that information helps distinguish choices.
 
-- Use Tailwind's regular spacing scale and align neighboring components to shared edges. Common app spacing is `gap-2` for controls, `gap-4` for related content, and `gap-6` for sections/cards; avoid arbitrary values unless a component needs precise alignment.
-- Standard feature pages generally use compact mobile gutters (`px-4`) and wider desktop gutters (`md:px-6` or `md:px-8`). Use a centered max-width only when the content benefits from it. The dashboard overview is intentionally narrower than analytics and data-heavy pages; choose width based on the content, not a single global max-width.
-- Align sticky tabs, toolbars, tables, and pagination to the same page gutter. Put the shared horizontal padding on their sibling wrappers and avoid adding another nested gutter that shifts the table or controls out of alignment.
-- Keep form rows and filters compact. Standard action/filter inputs and buttons are usually `h-8`; smaller table or inline controls may be shorter when surrounding density requires it. Ensure touch targets remain comfortable on mobile.
-- Select triggers and dropdown fields should match the height of adjacent inputs. Use the shared `h-8` default for standard fields, and only use a smaller height when all controls in that compact group share it.
-- Keep field labels consistently separated from their input, select, or segmented control with `gap-1.5`, matching the maternal registration form. Avoid controls touching their labels or adding a second margin that makes the gap uneven.
-- For backend-connected forms, mark every required field in its label with a red asterisk. Validate with Zod through React Hook Form and the shared shadcn `Form`, `FormField`, `FormControl`, and `FormMessage` components; expose field errors accessibly and use the shared input invalid state. Keep optional fields explicitly marked `(Optional)` and do not rely on browser-only validation.
-- Use `rounded-md` for controls and compact elements; `rounded-lg` or `rounded-xl` for cards and overlays. Avoid mixing many radii in one view.
-- Separate dense data with subtle borders, row dividers, or muted headers rather than heavy shadows. Cards are generally flat (`shadow-none` or a restrained shadow) with a semantic surface and light outline.
-- Keep related labels and controls close together. Use consistent internal padding across sibling cards, form fields, drawers, and sidepeeks; check all four edges, especially the bottom edge near footers or actions.
-- For horizontal card carousels, preserve the existing snap behavior and enough side padding for the next card to peek into view when that interaction is useful.
+## Forms and Validation
 
-## Shared Components and Interaction
+- Use the shared shadcn `Button`, `Input`, `Textarea`, `Select`, and form primitives rather than recreating focus, disabled, or invalid states.
+- Select triggers should match adjacent inputs in height, width, typography, border, and surface. Do not use a narrow select beside a full-width input unless the field itself is genuinely short.
+- For backend-connected forms, mark every required field with a red asterisk in its label. Validate with Zod and React Hook Form through the shared shadcn form components. Keep field errors accessible and use the shared invalid state.
+- Mark optional fields with subtle `(Optional)` text. Do not infer a required field from placeholder text.
+- For UI-only work, do not add validation behavior unless requested. Keep visual required markers distinct from form functionality.
+- Use the shared `DateInput` in `src/components/ui/date-input.tsx` for single-date entry. Show `MM/DD/YYYY`, accept typed digits with automatic slash insertion, and allow calendar selection. Store valid values as ISO `yyyy-MM-dd` when needed.
+- Date-specific limits belong to the field (for example, birth date and LMP cannot be in the future); preserve the shared date-input pattern. Date-range selection may use the range calendar UI.
 
-### Buttons and Inputs
+## Tabs, Filters, and List Toolbars
 
-- Use the shared shadcn `Button`, `Input`, `Textarea`, `Select`, and related primitives rather than recreating their focus, disabled, and invalid states.
-- Keep button hierarchy clear: primary actions use the default primary variant; secondary actions use outline/secondary; low-priority actions use ghost; destructive actions use destructive styling.
-- Maintain the shared compact control height and typography. Avoid making adjacent buttons different heights without a clear hierarchy or responsive reason.
-- Inputs must look editable at a glance. Retain the light-gray fill and border in both themes, placeholder contrast, focus ring, disabled treatment, and invalid treatment from the shared primitive.
-- Keep prefilled form selections concise: show the selected value once, and omit repeated metadata when the surrounding page already identifies the record (for example, do not repeat a mother's serial number and age beneath her preselected name).
-- Do not add required-field validation or other behavior to a UI-only task unless requested. Keep visual affordance separate from unrequested form logic.
+- Use `Tabs`, `TabsList`, and `TabsTrigger` from `@/components/ui/tabs` for stateful view switching.
+- Keep tab labels text-only. Put icons in navigation, actions, filters, and status badges—not tabs.
+- Counts appear in parentheses, such as `Appointments (3)`. Do not add count badges or other extra tab decorations.
+- Use the shared `Button` filter variant with `size="filter"` for filter pills. This is the Maternal Records reference for height, dashed border, plus icon, spacing, and theme colors.
+- Reuse the muted segmented background for related views. On phone widths, use the shared labeled select treatment for long tab groups instead of compressing them.
+- Use tabs to switch related views, not as a replacement for primary navigation.
 
-### Tooltips
+### Standard Two-Row List Hierarchy
 
-- Add a shadcn tooltip to icon-only buttons and links when their purpose is not unmistakable from nearby context (for example, copy, export, refresh, pagination, theme, and close controls).
-- Keep an accessible `aria-label` on every icon-only control; a tooltip supplements but does not replace its accessible name.
-- Use concise action wording that matches the control. Avoid tooltips on controls that already have a clear visible text label, and do not repeat the same label unnecessarily.
-- Use a short hover delay (around 500 ms) and avoid native `title` attributes when a shadcn tooltip is available.
+Use this layout for list/table pages unless a specific workflow has an established variation:
 
-### Toast Feedback
+1. **View/action row:** tabs on the left; utility actions and one primary action aligned to the far right.
+2. **Query row:** search first, filter buttons directly beside it, and `Reset Filter` only while search or filters are active.
+3. **Data area:** table directly below the query row, with pagination immediately underneath.
 
-- Use the shared Sonner toaster for successful create, update, and delete actions, and for incoming patient messages.
-- Use concise Sonner feedback for transient system outcomes such as an external sign-in popup being closed. Keep field validation inline with `FormMessage` and avoid duplicating the same error in both a toast and the form.
-- Do not add persistent or inline page UI for general reminders, account/workspace mismatches, or action-level/API errors. Notify the user with a toast; reserve inline form messaging for field-specific validation errors.
-- Show success feedback only after the action completes; do not toast when opening a form, advancing a step, or cancelling an action.
-- Keep messages short and specific (for example, “Appointment created” or “Maternal record deleted”).
+- Keep the two rows and data area aligned to the same horizontal edges.
+- Use compact `h-8` controls and the shared filter variant. Do not place a separate Clear button inside each filter menu; one Reset Filter clears active search and filters.
+- Keep labels concise and stable. Do not add per-filter count suffixes unless the feature already has that convention.
+- Avoid a third toolbar row or unpredictable wrapping. At narrow widths, reflow or use the established mobile controls rather than allowing isolated actions to wrap onto their own row.
+- Appointment lists may place their action group inline with the view tabs as an established variant. Calendar navigation remains at the upper left, with actions/view controls at the upper right and filters below.
 
-### Date Inputs
+## Tables, Cards, Empty States, and Loading
 
-- Use the shared `DateInput` from `src/components/ui/date-input.tsx` for single-date entry throughout the system. It matches the maternal Date of Birth field: a compact `h-8` input with a calendar icon button and shadcn calendar popover.
-- Always show the `MM/DD/YYYY` placeholder. Accept typed digits with automatic slash insertion and allow date selection from the calendar. Store valid dates as ISO `yyyy-MM-dd` strings where a value is needed.
-- Keep future-date limits specific to the field (for example, Date of Birth and LMP cannot be in the future); do not change the shared visual pattern for those constraints.
-- Date-range pickers remain range controls and may use the calendar range UI. Do not use native `type="date"` inputs, text-only date fields, date dropdowns, or calendar buttons that display a formatted date instead of the shared input for single-date entry.
+- Use compact table typography, concise headings, subtle row dividers, and consistent row heights. Keep related values together as primary and muted secondary lines.
+- Every table starts with a selection checkbox column at the far left, including profile sub-tabs. Include a matching select-all checkbox in the header.
+- Put row actions at the far right with a compact vertical-ellipsis trigger and the shared `TableRowActions` menu. Do not show an `Actions` header.
+- Row menus begin with concise, row-specific commands; do not add an “Actions” label above them. Use separators only between meaningful command groups, with destructive actions in the final group.
+- A row click should open its associated profile/detail view where the workflow calls for it. Stop event propagation on checkboxes, links, and row action triggers.
+- On phones, replace dense tables with stacked cards that follow the Inter-Clinic Referrals mobile record pattern: primary record detail first, compact secondary information, clear status, selection when needed, and equivalent row actions. Do not force horizontal desktop-table scrolling on a phone.
+- Keep an appropriate mobile card skeleton while loading. For desktop, use the shared table skeleton. Loading placeholders should be quiet, compact, and shaped like the content they replace.
+- For empty tables, retain the column headers and show the empty state in the table body. Use `TableEmptyState`/`EmptyStateContent`: muted icon tile, concise feature-specific title and description, and one relevant action when useful. Filtered-empty states should explain that the search or filters can be adjusted.
+- Place `TablePaginationFooter` directly below the table with no separator line. Selection count stays at the left; rows-per-page, page count, and navigation stay grouped at the right. Keep it aligned to the table edges and use the shared component.
+- Keep table header and row heights proportionate. Headers should not be taller than the content rows without a clear reason.
 
-### Tabs and Filters
+## Badges and Identifiers
 
-- Use `Tabs`, `TabsList`, and `TabsTrigger` from `@/components/ui/tabs` for stateful tab navigation.
-- Keep tab labels text-only throughout the system. Use icons in navigation, actions, filters, and status badges, not inside tabs.
-- Use the shared `Button` `filter` variant with `size="filter"` for filter pills so height, dashed border, spacing, and theme colors match Maternal Records.
-- Reuse the segmented muted background for peer filters or view switches. In light mode, selected is black/white and unselected is muted text; keep dark mode theme-aware.
-- Keep labels concise. On phone widths, view tabs become one labeled select dropdown through the shared `TabsList`; do not squeeze or horizontally scroll a long tab strip.
-- Use tabs for switching related views, not as a substitute for primary navigation.
+- Use `StatusBadge` for clinical risk, referral lifecycle, appointments, deliveries, pregnancy outcome, staff status, and availability.
+- Use the standard title capitalization in every badge (for example, `High Risk`, `Pending`, `Delivered`). Do not render all-caps status labels.
+- A “Not Assessed” or role-like classification should use the neutral badge style, not the visual treatment of a clinical warning.
+- The delivered pregnancy state uses the positive green/check treatment; alive newborn state also uses positive green/check; deceased uses neutral gray.
+- Codes and machine-readable identifiers use JetBrains Mono only when they function as codes (for example, transfer codes). Do not apply monospace to staff roles or ordinary labels.
 
-### Table and List Toolbar Hierarchy
+## Modals, Drawers, and Bottom Sheets
 
-- Use a two-row toolbar for table and list pages. Row one places view tabs on the left and utility actions on the far right; keep the main page action with the related utility action when the workflow calls for it (for example, Create Maternal Record beside Scan QR).
-- Row two places the search input first, with filter buttons directly beside it. Show `Reset Filter` only while a search or filter is active.
-- Filter popovers use the same checkbox selection behavior and spacing. Do not place individual `Clear` buttons inside each filter popover; provide one `Reset Filter` control beside the filters to clear all active search and filter criteria at once. Keep filter labels stable without per-filter count suffixes.
-- Keep both rows aligned to the table's horizontal edges. Use compact `h-8` controls, dashed outline filter buttons with the circular plus icon, and the shared muted input fill. Avoid adding a third toolbar row or letting controls wrap unpredictably; allow horizontal scrolling on narrow screens where necessary.
-- For calendar-based appointment views, preserve the date navigation in the upper-left and filters in the lower-left. Place view controls and actions in the upper-right so the layout retains the same two-row hierarchy.
+### Shared Behavior
 
-### Cards, Tables, and Data
+- Use `ResponsiveModal` for content that should be a centered dialog on desktop and a bottom sheet on mobile. Use `Dialog` or `Drawer` directly only when the workflow needs specialized behavior.
+- Every drawer header should share the main-system header alignment: title and optional description aligned consistently, close control at the far right, and a bottom border that lines up with the shell/content edge.
+- A title icon is optional. Use one only when it adds clear context; do not add a decorative icon beside every title.
+- Do not add a top border to the first section below a drawer header; the header’s bottom border already separates it. Later section separators span the full drawer width, edge to edge inside the panel, while content remains inset.
+- Standard right-side drawers use the Inter-Clinic Referrals width: 75% of the viewport, capped at 24rem (384px). Keep explicitly designed exceptions, such as Appointment Details, at their established width.
+- Do not wrap every section in a card. Use spacing and clear typography for hierarchy; use a surface or border only when it distinguishes a meaningful group.
 
-- Use the shared `Card` primitives when their spacing and structure fit. If a feature uses a custom bordered panel, keep its surface, border, radius, and padding consistent with nearby cards.
-- Data tables should favor compact typography, clear column headings, subtle row separators, aligned numbers, and responsive overflow. Keep table actions close to the relevant row or table toolbar. On phones, render the same data as stacked cards with the primary field first, labeled secondary details, selection when applicable, and the same row actions. Do not make users scroll a desktop table sideways on a phone.
-- Every data table starts with a row-selection checkbox column at the far left, including tables in profile sub-tabs. Include a select-all checkbox in the header and matching row checkboxes; keep the action column at the far right without a visible header.
-- Row action cells use a compact vertical-ellipsis trigger and the shared `TableRowActions` menu. Start directly with concise, row-specific commands; do not add an `Actions` heading or a separator above the first command. Use subtle separators only between distinct command groups, mark destructive commands with the destructive variant, and keep them in the final group. Stop row-click propagation from the trigger.
-- Destructive or high-impact actions such as deleting a record, cancelling a transfer or appointment, or deactivating an account must open a confirmation dialog before proceeding. State the exact record and consequence, require password entry, and use a clearly worded destructive confirmation button. Never execute these actions directly from a context menu.
-- When a table has no rows, keep its column headers visible and render a centered empty state inside the table body. Use the shared `TableEmptyState`/`EmptyStateContent` primitives: a quiet icon tile, short feature-specific title and description, and one relevant next action when useful. On mobile card lists, use the same content in a restrained bordered region. Use reset/filter guidance when the empty result comes from active search or filters.
-- Put a consistent pagination footer directly below every data table with a `gap-4` (16px) and no separator line: selected-row count on the left; rows-per-page, page count, and first/previous/next/last controls grouped on the right. Use the shared `TablePaginationFooter` primitive so spacing, select sizing, and disabled states remain consistent.
-- Use consistent status badges and compact metadata styles. Keep status text legible and avoid relying on a colored dot alone.
-- Staff roles use the short labels `Nurse`, `Midwife`, and `Admin`. Render role badges with the compact bordered muted treatment used for referral codes, but use the standard interface font rather than monospace.
-- Charts should use the existing chart primitives and theme-aware text/grid colors. Keep chart legends, axes, and tooltips readable at the smallest supported viewport.
+### Scrolling and Actions
 
-### Modals, Drawers, and Sidepeeks
+- Keep the header fixed and the body/content region scrollable. Keep primary and dismissive actions visible in a fixed footer when the sheet is long enough to scroll.
+- On mobile, use a full-width bottom sheet with safe-area spacing and rounded top corners. The content—not the header—must scroll.
+- Match internal padding across all four sides. Check footer alignment and bottom padding so actions are not clipped or crowded.
+- Do not use separators between modal action buttons or add a border above the footer. Use whitespace, alignment, and distinct button variants to establish hierarchy.
+- Put secondary/dismissive actions to the left and the primary action to the right when the footer has room. Use a 12–16px gap; intentionally stack or expand actions on narrow screens.
+- Destructive or high-impact actions require a confirmation dialog before execution. State the exact record and consequence, require password confirmation when the flow calls for it, and use a clearly worded destructive action.
+- Preserve keyboard focus, Escape behavior, and accessible names. Do not remove close behavior unless the workflow explicitly requires a non-dismissible step.
 
-- Use `ResponsiveModal` for content that should become a dialog on desktop and a Vaul drawer on mobile. Existing `DialogContent` follows the same bottom-sheet placement on phones. Use the underlying `Dialog` or `Drawer` when a screen needs specialized behavior, and keep its content within the visible viewport and safe area.
-- Use the shared `DrawerHeading` for drawer headers: a 32px rounded icon tile with a subtle sidebar-border ring, followed by a left-aligned title and supporting description. Keep the icon, title, and description vertically centered and use the same compact typography across drawers; place close or status controls at the far right without displacing the text.
-- Standard right-side drawers use the Inter-Clinic Referrals width: 75% of the viewport, capped at 24rem (384px). Keep specialized wide detail drawers, such as Appointment Details, at their explicitly designed width.
-- Do not add a top border to the first content section directly below `DrawerHeading`; its bottom border already separates the header. Add section separators only between later content sections, and avoid doubled borders at adjacent section edges.
-- Desktop dialogs are centered, outlined, compact, and use a restrained shadow. Mobile drawers have rounded top corners, safe bottom spacing, and an internal scroll region when content exceeds the viewport.
-- Match overlay padding on all sides and keep action buttons grouped consistently. Account for mobile safe areas and avoid placing the only action below an inaccessible edge.
-- Modal action buttons must have clear space and hierarchy, never divider lines, borders, or boxed separators between buttons. Use distinct button variants for secondary and primary actions, with a 12–16px gap when grouped. Place the dismissive or secondary action on the left and the primary action on the right when the footer has room; stack or expand controls intentionally on narrow screens.
-- Keep modal footers free of separator lines, including a border above the action row. Use clear padding, alignment, a 12–16px button gap, and distinct button styles to define the action area.
-- Sidepeeks slide from the right on desktop and should align to the app shell without adding a second heavy card frame around the whole panel. On mobile, present the same content in the established drawer pattern.
-- Drawer section separators span the full content width, edge to edge inside the drawer. Keep text and controls inset with section padding rather than shortening the separator to the content column width. Apply this to appointment, referral, and offline-sync drawers.
-- Only remove a close control or prevent dismissal when the flow explicitly requires it. Preserve clear focus and keyboard behavior for normal dialogs.
+## Navigation, Tooltips, and Feedback
 
-## Application Shell and Responsive Behavior
+- Keep breadcrumbs and global actions in the top bar. Sidebar labels, active states, icon sizes, and section spacing should match the shared shell.
+- On mobile, selecting any sidebar destination or action closes the sidebar bottom sheet before navigating or opening the next surface.
+- Use Lucide icons from `lucide-react` unless the feature has an established branded asset. Keep icon size and stroke treatment consistent inside a group; do not use emoji for core actions.
+- Give every icon-only `Button` a concise `aria-label`; the shared button shows that label in a shadcn tooltip on hover and keyboard focus. Use `tooltip` when the visible explanation should differ from the accessible label. Keep explicit tooltips for controls outside the shared button primitive.
+- Use the contextual guide pattern for task walkthroughs. Tours dim the surrounding interface, explain one real control at a time, and reset to the first step when closed or completed.
+- Reserve a separate control slot for the guide in every overlay header. Place the guide immediately left of the close button, keep at least a 4px gap, and reserve enough right padding in the title so neither control overlaps text. When a surface provides its own close button, position the guide to its left rather than adding another close button.
+- Clamp tour popovers to the visible viewport or overlay, and keep the guide controls reachable on narrow screens.
+- Use the shared Sonner toaster for successful creates, updates, deletes, incoming patient messages, and transient system outcomes. Show success only after completion. Keep field-specific validation inline and avoid duplicating the same error in a toast.
+- Do not add persistent reminder banners or extra page UI for transient action/API errors; use a toast unless the user needs to correct a specific field.
 
-- The dashboard shell consists of a collapsible sidebar, a compact top header, and a scrollable route content region. Preserve that separation so the shell stays stable while feature content changes.
-- Keep sidebar navigation labels, active state, icon sizing, and dividers consistent. Use Lucide icons from `lucide-react` and match the neighboring icon size/stroke treatment.
-- Keep breadcrumbs and shell actions in the header. Avoid duplicating global navigation inside feature pages.
-- On mobile, use the existing sidebar/drawer behavior and place floating quick actions clear of bottom navigation and safe areas.
-- For calendar, keep view controls, toolbar actions, event cards, and calendar grid styling aligned with the existing calendar components. Dense event details may use compact metadata so events remain scannable.
-- Preserve keyboard focus visibility, accessible labels for icon-only controls, meaningful image alt text, and clear disabled/selected states.
+## Main Feature References
 
-## Icons, Motion, and Decoration
+Use these as the first references when a new pattern is needed:
 
-- Use `lucide-react` icons unless the feature already has a branded asset. Use consistent sizes within a control group and do not use emoji as a replacement for core interface icons.
-- Motion should clarify state changes or navigation and remain brief. Follow existing shadcn enter/exit animations and avoid adding motion that delays routine actions.
-- Avoid excessive shadows, ornamental borders, or decorative empty space that pushes important operational information below the fold.
+1. **Maternal Records** — list hierarchy, toolbar rows, filters, checkboxes, status badges, empty states, mobile records, and pagination.
+2. **Create Maternal Record** — field labels, required markers, form spacing, sectioning, and guided flow.
+3. **Mother Profile** — patient identity, obstetric summary, clinical risk context, and patient-specific history.
+4. **Inter-Clinic Referral drawer** — transfer lifecycle, detail hierarchy, status presentation, and drawer structure.
+5. **Settings modal** — section navigation within a responsive overlay.
+6. **Dashboard** — compact overview metrics and upcoming appointment list.
+7. **Calendar** — date navigation, weekday grid, appointment pills, and closed-day behavior.
+8. **Messages** — two-column conversation list/chat and independent scroll regions.
 
 ## Before Adding a New Pattern
 
-1. Check the matching feature and the shared primitives for an existing implementation.
-2. Prefer a semantic theme token and shared component over a page-specific style.
-3. Match typography, control height, border, radius, spacing, and selected/hover/focus states with the nearest existing UI.
-4. Check both light and dark themes and a narrow viewport.
-5. Keep this guide aligned when a deliberate system-wide design decision changes.
+1. Check the matching feature and shared primitive for an existing implementation.
+2. Confirm the pattern’s hierarchy: what is global, what belongs to the current tab, and what belongs to the record or row.
+3. Prefer semantic theme tokens and shared components over local colors and duplicate controls.
+4. Match typography, spacing, control height, badge meaning, radius, and alignment with the nearest reference.
+5. Check light and dark themes, loading/empty/error states, keyboard access, and narrow mobile layouts.
+6. Update this guide when a deliberate system-wide decision changes.

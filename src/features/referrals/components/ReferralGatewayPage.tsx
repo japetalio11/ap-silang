@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useState, type FormEvent, type ReactNode } from "react"
 import { useParams } from "react-router-dom"
-import { Activity, Building2, CalendarDays, Clock3, Download, Ellipsis, FileText, HeartPulse, Hospital, MapPin, Moon, Printer, RefreshCw, ShieldCheck, Sun, UserRound, ZoomIn, ZoomOut, X } from "lucide-react"
+import { Activity, Building2, CalendarDays, Clock3, Download, FileText, HeartPulse, Hospital, MapPin, Moon, Printer, RefreshCw, ShieldCheck, Sun, UserRound, ZoomIn, ZoomOut, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { Checkbox } from "@/components/ui/checkbox"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
@@ -22,7 +21,9 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { useTheme } from "@/components/theme-provider"
 import { createReferral, getPublicReferral, respondToPublicReferral, type PublicReferralRecord } from "../api"
 import { backendAssetUrl } from "@/lib/api"
+import { createZipBlob, safeArchiveName, saveBlob } from "@/lib/zip-download"
 import silangLogo from "@/assets/silang-sidebar.svg"
+import { PageGuide } from "@/components/ui/contextual-tour"
 
 const pinSchema = z.string().regex(/^\d{6}$/, "Enter the 6-digit transfer code.")
 const initiateReferralSchema = z.object({
@@ -78,7 +79,7 @@ function HandoverTable({ headers, rows, emptyTitle, emptyDescription }: { header
             </TableRow>
           </TableHeader>
           <TableBody>
-            {visibleRows.map((row) => <TableRow key={row.id} className={`border-sidebar-border hover:bg-muted/50 ${row.onClick ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`} onClick={row.onClick} onKeyDown={row.onClick ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); row.onClick?.() } } : undefined} tabIndex={row.onClick ? 0 : undefined}>
+            {visibleRows.map((row) => <TableRow key={row.id} className={`border-sidebar-border hover:bg-muted/50 ${row.onClick ? "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`} onClick={row.onClick} onKeyDown={row.onClick ? (event) => { if ((event.key === "Enter" || event.key === " ") && !(event.target as HTMLElement).closest("button, a, input, [role='checkbox']")) { event.preventDefault(); row.onClick?.() } } : undefined} tabIndex={row.onClick ? 0 : undefined}>
               <TableCell className="w-12 py-3 pl-4 text-center" onClick={(event) => event.stopPropagation()}><Checkbox aria-label={`Select record ${row.id}`} checked={selected.includes(row.id)} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))} className="border-sidebar-border" /></TableCell>
               {row.cells.map((cell, index) => <TableCell key={`${row.id}-${index}`} className="max-w-64 whitespace-normal px-2 py-3 text-xs leading-relaxed align-middle">{cell}</TableCell>)}
             </TableRow>)}
@@ -88,16 +89,35 @@ function HandoverTable({ headers, rows, emptyTitle, emptyDescription }: { header
       </div>
     </div>
     <div className="space-y-2 md:hidden">
-      {visibleRows.map((row) => <div key={row.id} className="rounded-md border border-sidebar-border bg-background p-3">
+      {visibleRows.map((row) => <article
+        key={row.id}
+        role={row.onClick ? "button" : undefined}
+        tabIndex={row.onClick ? 0 : undefined}
+        aria-label={row.onClick ? `Open record ${row.id}` : undefined}
+        onClick={row.onClick ? (event) => {
+          const target = event.target as HTMLElement
+          if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+          row.onClick?.()
+        } : undefined}
+        onKeyDown={row.onClick ? (event) => {
+          if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+          event.preventDefault()
+          row.onClick?.()
+        } : undefined}
+        className={`rounded-md border border-sidebar-border bg-background p-3 dark:bg-black ${row.onClick ? "cursor-pointer transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" : ""}`}
+      >
         <div className="flex items-start gap-3">
-          <Checkbox aria-label={`Select record ${row.id}`} checked={selected.includes(row.id)} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))} className="mt-1 border-sidebar-border" />
-          <div className="min-w-0 flex-1" role={row.onClick ? "button" : undefined} tabIndex={row.onClick ? 0 : undefined} onClick={row.onClick} onKeyDown={row.onClick ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); row.onClick?.() } } : undefined}>
-            {row.cells.map((cell, index) => <div key={`${row.id}-${index}`} className="flex min-w-0 items-start justify-between gap-3 py-1.5 text-xs">
-              <span className="shrink-0 text-muted-foreground">{headers[index]}</span><div className="min-w-0 break-words text-right font-medium">{cell}</div>
-            </div>)}
+          <Checkbox aria-label={`Select record ${row.id}`} checked={selected.includes(row.id)} onClick={(event) => event.stopPropagation()} onCheckedChange={(checked) => setSelected((current) => checked ? [...new Set([...current, row.id])] : current.filter((id) => id !== row.id))} className="mt-1 border-sidebar-border" />
+          <div className="min-w-0 flex-1">
+            <div className="min-w-0 font-medium text-foreground">{row.cells[0]}</div>
+            <div className="mt-3 grid min-w-0 grid-cols-3 gap-3 text-xs">
+              {row.cells.slice(1).map((cell, index) => <div key={`${row.id}-${index + 1}`} className="min-w-0">
+                <p className="text-muted-foreground">{headers[index + 1]}</p><div className="mt-1 break-words font-medium text-foreground">{cell}</div>
+              </div>)}
+            </div>
           </div>
         </div>
-      </div>)}
+      </article>)}
       {rows.length === 0 && <div className="rounded-md border border-sidebar-border p-6 text-center text-xs"><p className="font-medium">{emptyTitle}</p><p className="mt-1 text-muted-foreground">{emptyDescription}</p></div>}
     </div>
     <TablePaginationFooter rowCount={rows.length} selectedCount={selected.length} page={page} pageSize={pageSize} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1) }} />
@@ -166,9 +186,9 @@ function HandoverEhrPreview({ record, onClose }: { record: HandoverEhrRecord | n
 function ThemeToggleButton({ isDarkMode, onToggle, className = "relative size-8" }: { isDarkMode: boolean; onToggle: () => void; className?: string }) {
   return <Button
     type="button"
-    variant="outline"
+    variant="ghost"
     size="icon"
-    className={className}
+    className={`${className} text-muted-foreground hover:text-foreground`}
     aria-label="Toggle theme"
     title={isDarkMode ? "Switch to light mode" : "Switch to dark mode"}
     onClick={onToggle}
@@ -189,6 +209,8 @@ export function ReferralGatewayPage() {
   const [isSubmittingPin, setIsSubmittingPin] = useState(false)
   const [isResponding, setIsResponding] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
+  const [isDownloadingHealthRecords, setIsDownloadingHealthRecords] = useState(false)
+  const [downloadingRecordIds, setDownloadingRecordIds] = useState<string[]>([])
   const [pinError, setPinError] = useState("")
   const [previewEhrRecord, setPreviewEhrRecord] = useState<HandoverEhrRecord | null>(null)
   const closeEhrPreview = useCallback(() => setPreviewEhrRecord(null), [])
@@ -201,8 +223,7 @@ export function ReferralGatewayPage() {
 
   useLayoutEffect(() => {
     const previousTheme = localStorage.getItem("theme") as "light" | "dark" | "system" | null
-    const savedTheme = localStorage.getItem("referral_theme")
-    const targetTheme = savedTheme === "dark" ? "dark" : "light"
+    const targetTheme = "dark"
     document.documentElement.classList.remove("light", "dark")
     document.documentElement.classList.add(targetTheme)
     setTheme(targetTheme)
@@ -334,27 +355,19 @@ export function ReferralGatewayPage() {
     }
   }
 
-  const exportReferral = () => {
-    if (!record) return
-    const rows = [
-      ["Field", "Value"],
-      ["Patient", patientName],
-      ["Family serial no.", record.patient?.family_serial_no || ""],
-      ["Status", status],
-      ["Risk level", latestVitals?.risk_level || "Not assessed"],
-      ["Origin facility", record.referring_facility?.name || ""],
-      ["Destination facility", record.destination_facility?.name || ""],
-      ["Date referred", record.date_referred || ""],
-      ["Clinical summary", fullClinicalSummary],
-    ]
-    const csv = rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\r\n")
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }))
-    const anchor = document.createElement("a")
-    anchor.href = url
-    anchor.download = `${patientName.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-referral.csv`
-    anchor.click()
-    URL.revokeObjectURL(url)
-    toast.success("Referral exported")
+  const printHandoverSection = (title: string, body: string) => {
+    const printWindow = window.open("", "_blank")
+    if (!printWindow) {
+      toast.error("Allow pop-ups to print this handover")
+      return
+    }
+    printWindow.document.write(`<!doctype html><html><head><title>${title}</title><style>body{font:14px Arial,sans-serif;color:#111;margin:32px}h1{font-size:20px}table{border-collapse:collapse;width:100%;margin-top:16px}td,th{text-align:left;padding:8px;border-bottom:1px solid #ddd}</style></head><body><h1>${title}</h1>${body}<script>window.onload=()=>window.print()</script></body></html>`)
+    printWindow.document.close()
+  }
+  const printClinicalSummary = () => printHandoverSection(`${patientName} · Clinical Summary`, `<p><b>Facility:</b> ${valueOr(record?.referring_facility?.name)} → ${valueOr(record?.destination_facility?.name)}</p><p><b>Risk:</b> ${valueOr(latestVitals?.risk_level, "Not assessed")}</p><p>${fullClinicalSummary}</p>`)
+  const printPrescriptions = () => {
+    const rows = (record?.supplements ?? []).map((item) => `<tr><td>${item.supplement_type}</td><td>${prettyDate(item.date_given)}</td><td>${item.tablets_given_count ?? "Not recorded"}</td><td>${item.is_completed ? "Completed" : "Active"}</td></tr>`).join("")
+    printHandoverSection(`${patientName} · Prescriptions`, `<table><thead><tr><th>Medication / Supplement</th><th>Date</th><th>Quantity</th><th>Status</th></tr></thead><tbody>${rows || "<tr><td colspan='4'>No prescriptions shared.</td></tr>"}</tbody></table>`)
   }
 
   const currentStatus = (record?.status ?? "pending").toLowerCase().replaceAll("_", " ")
@@ -362,11 +375,95 @@ export function ReferralGatewayPage() {
   const isReferred = ["rejected", "declined", "cancelled"].includes(currentStatus)
   const lifecycleTitle = isAdmitted ? "Admitted" : isReferred ? "Referred" : currentStatus.replace(/\b\w/g, (letter) => letter.toUpperCase())
   const canAccept = !isAdmitted && !isReferred
-  const ehrRows: HandoverTableRow[] = (record?.lab_screenings ?? []).map((screening, index) => ({
-    id: screening.screening_id || `ehr-${index}`,
-    onClick: screening.file_url ? () => setPreviewEhrRecord(screening) : undefined,
-    cells: [valueOr(screening.screening_type), prettyDate(screening.date_of_screening), valueOr(screening.result), screening.file_url ? <span className="max-w-48 truncate underline decoration-muted-foreground/50 underline-offset-2">{attachmentName(screening.file_url, "Open attachment")}</span> : valueOr(screening.remarks)],
-  }))
+  const ehrRecords = record?.lab_screenings ?? []
+  const downloadableEhrRecords = ehrRecords.filter((screening) => screening.file_url)
+
+  const downloadHealthRecord = async (screening: HandoverEhrRecord, index: number) => {
+    if (!screening.file_url) return
+    const recordId = screening.screening_id || `ehr-${index}`
+    setDownloadingRecordIds((current) => [...new Set([...current, recordId])])
+    try {
+      const response = await fetch(attachmentUrl(screening.file_url))
+      if (!response.ok) throw new Error(`Download failed (${response.status})`)
+      const blob = await response.blob()
+      saveBlob(blob, safeArchiveName(attachmentName(screening.file_url, screening.screening_type || `health-record-${index + 1}`)))
+      toast.success("Health record downloaded")
+    } catch {
+      toast.error("Could not download this health record")
+    } finally {
+      setDownloadingRecordIds((current) => current.filter((id) => id !== recordId))
+    }
+  }
+
+  const getHealthRecordArchiveEntries = async () => Promise.all(
+    downloadableEhrRecords.map(async (screening, index) => {
+      const response = await fetch(attachmentUrl(screening.file_url))
+      if (!response.ok) throw new Error(`Download failed (${response.status})`)
+      const name = attachmentName(screening.file_url, screening.screening_type || `health-record-${index + 1}`)
+      return {
+        name: `Health Records/${String(index + 1).padStart(2, "0")}-${safeArchiveName(name)}`,
+        data: new Uint8Array(await response.arrayBuffer()),
+      }
+    }),
+  )
+
+  const downloadHealthRecordsZip = async () => {
+    setIsDownloadingHealthRecords(true)
+    try {
+      const healthFiles = await getHealthRecordArchiveEntries()
+      if (healthFiles.length === 0) {
+        toast.info("No health record files to download")
+        return
+      }
+      saveBlob(createZipBlob(healthFiles), "health-records.zip")
+      toast.success("Health records ZIP downloaded")
+    } catch {
+      toast.error("Could not download the health records ZIP")
+    } finally {
+      setIsDownloadingHealthRecords(false)
+    }
+  }
+
+  const downloadReferralHandoverZip = async () => {
+    setIsDownloadingHealthRecords(true)
+    try {
+      const healthFiles = await getHealthRecordArchiveEntries()
+      if (healthFiles.length === 0) {
+        healthFiles.push({ name: "Health Records/README.txt", data: new TextEncoder().encode("No health record attachments are available for this referral.") })
+      }
+      const escapeHtml = (value: unknown) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;")
+      const summaryDocument = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(patientName)} - Clinical Summary</title></head><body><h1>${escapeHtml(patientName)} · Clinical Summary</h1><p><b>Origin:</b> ${escapeHtml(valueOr(record?.referring_facility?.name))}</p><p><b>Destination:</b> ${escapeHtml(valueOr(record?.destination_facility?.name))}</p><p><b>Risk:</b> ${escapeHtml(valueOr(latestVitals?.risk_level, "Not assessed"))}</p><p><b>Referred:</b> ${escapeHtml(prettyDate(record?.date_referred, true))}</p><h2>Clinical notes</h2><p>${escapeHtml(fullClinicalSummary).replaceAll("\n", "<br>")}</p></body></html>`
+      const prescriptionRows = (record?.supplements ?? []).map((item) => `<tr><td>${escapeHtml(item.supplement_type)}</td><td>${escapeHtml(prettyDate(item.date_given))}</td><td>${escapeHtml(item.tablets_given_count ?? "Not recorded")}</td><td>${item.is_completed ? "Completed" : "Active"}</td></tr>`).join("")
+      const prescriptionsDocument = `<!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(patientName)} - Prescriptions</title><style>body{font:14px Arial,sans-serif}table{border-collapse:collapse;width:100%}td,th{text-align:left;padding:8px;border-bottom:1px solid #ddd}</style></head><body><h1>${escapeHtml(patientName)} · Prescriptions</h1><table><thead><tr><th>Medication / Supplement</th><th>Date</th><th>Quantity</th><th>Status</th></tr></thead><tbody>${prescriptionRows || "<tr><td colspan='4'>No prescriptions shared.</td></tr>"}</tbody></table></body></html>`
+      const files = [
+        { name: "Clinical Summary.html", data: new TextEncoder().encode(summaryDocument) },
+        { name: "Prescriptions.html", data: new TextEncoder().encode(prescriptionsDocument) },
+        ...healthFiles,
+      ]
+      const motherName = record?.patient?.name?.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "") || "maternal-records"
+      saveBlob(createZipBlob(files), `${motherName}-referral-handover.zip`)
+      toast.success("Referral handover ZIP downloaded")
+    } catch {
+      toast.error("Could not download the referral handover ZIP")
+    } finally {
+      setIsDownloadingHealthRecords(false)
+    }
+  }
+
+  const ehrRows: HandoverTableRow[] = ehrRecords.map((screening, index) => {
+    const id = screening.screening_id || `ehr-${index}`
+    return {
+      id,
+      onClick: screening.file_url ? () => setPreviewEhrRecord(screening) : undefined,
+      cells: [
+        valueOr(screening.screening_type),
+        prettyDate(screening.date_of_screening),
+        valueOr(screening.result),
+        screening.file_url ? <span className="max-w-48 truncate underline decoration-muted-foreground/50 underline-offset-2">{attachmentName(screening.file_url, "Open attachment")}</span> : valueOr(screening.remarks),
+        screening.file_url ? <Button variant="ghost" size="icon" aria-label={`Download ${attachmentName(screening.file_url)}`} title="Download health record" disabled={downloadingRecordIds.includes(id)} onClick={(event) => { event.stopPropagation(); void downloadHealthRecord(screening, index) }}><Download className="size-4" /></Button> : null,
+      ],
+    }
+  })
   const prescriptionRows: HandoverTableRow[] = (record?.supplements ?? []).map((supplement, index) => ({
     id: supplement.supplement_id || `prescription-${index}`,
     cells: [valueOr(supplement.supplement_type), prettyDate(supplement.date_given), valueOr(supplement.tablets_given_count, "Not recorded"), <StatusBadge status={supplement.is_completed ? "Completed" : "Active"} />],
@@ -386,8 +483,8 @@ export function ReferralGatewayPage() {
     <Card className="w-full max-w-md"><CardHeader><CardTitle className="text-base">Referral link unavailable</CardTitle><p className="text-sm text-muted-foreground">This link may be invalid or no longer available.</p></CardHeader></Card>
   </main>
 
-  if (!hasAccess) return <main className="relative flex min-h-screen items-center justify-center bg-muted/30 px-4 py-8 text-foreground">
-    <div className="absolute top-4 right-4 flex items-center gap-2">
+  if (!hasAccess) return <main className="relative flex min-h-dvh items-center justify-center bg-background px-4 py-8 text-foreground">
+    <div className="absolute right-4 top-4 z-20">
       <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} className="relative size-8 border-sidebar-border bg-background" />
     </div>
     <Card className="w-full max-w-sm shadow-none">
@@ -438,8 +535,8 @@ export function ReferralGatewayPage() {
 
   return <main className="flex h-dvh flex-col overflow-hidden bg-background text-foreground">
     <Sheet open={isMobileTransferOpen} onOpenChange={setIsMobileTransferOpen}>
-    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b bg-white dark:bg-black px-3 sm:px-4 print:hidden">
-      <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+    <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center justify-between border-b bg-white px-0 dark:bg-black print:hidden">
+      <div className="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 sm:px-4">
         <div className="flex shrink-0 items-center gap-2">
           <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent">
             <img src={silangLogo} alt="Silang Logo" className="size-full object-contain" />
@@ -450,54 +547,47 @@ export function ReferralGatewayPage() {
         </div>
         <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           <ThemeToggleButton isDarkMode={isDarkMode} onToggle={toggleTheme} />
-          <Button type="button" variant="outline" size="icon" className="hidden sm:inline-flex size-8" aria-label="Export referral" title="Export referral" onClick={exportReferral}><Download className="size-3.5" /></Button>
-          <Button type="button" variant="outline" size="icon" className="hidden sm:inline-flex size-8" aria-label="Refresh referral" title="Refresh referral" disabled={isRefreshing} onClick={() => void refreshReferral()}><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
+          <div aria-hidden="true" className="mx-1 h-5 border-l border-border" />
+          <Button type="button" variant="outline" size="icon" className="size-8" aria-label="Refresh referral" title="Refresh referral" disabled={isRefreshing} onClick={() => void refreshReferral()}><RefreshCw className={`size-3.5 ${isRefreshing ? "animate-spin" : ""}`} /></Button>
+          <Button type="button" variant="outline" className="h-8 gap-1.5 px-2.5 text-xs" onClick={() => window.print()}><Printer className="size-3.5" />Print Transfer Form</Button>
+          <Button type="button" disabled={isDownloadingHealthRecords} className="h-8 gap-1.5 px-2.5 text-xs" onClick={() => void downloadReferralHandoverZip()}><Download className="size-3.5" />{isDownloadingHealthRecords ? "Preparing ZIP…" : "Export Referral Handover"}</Button>
           <SheetTrigger asChild>
             <Button type="button" size="sm" className="h-8 gap-1.5 px-2.5 text-xs font-medium lg:hidden">
               <ShieldCheck className="size-3.5 shrink-0" />
               <span>Transfer</span>
             </Button>
           </SheetTrigger>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button type="button" variant="outline" size="icon" className="size-8" aria-label="More handover actions" title="More actions"><Ellipsis className="size-4" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-48">
-              <DropdownMenuItem className="sm:hidden" onSelect={() => void refreshReferral()} disabled={isRefreshing}>
-                <RefreshCw className={`mr-2 size-4 ${isRefreshing ? "animate-spin" : ""}`} />
-                <span>Refresh Referral</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem className="sm:hidden" onSelect={exportReferral}>
-                <Download className="mr-2 size-4" />
-                <span>Export Referral</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => window.print()}>
-                <Printer className="mr-2 size-4" />
-                <span>Print Transfer Form</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
-      <div className="hidden h-full w-[min(75vw,24rem)] shrink-0 items-center justify-start gap-2 bg-sidebar px-4 text-sidebar-foreground lg:flex lg:border-l lg:border-sidebar-border">
-        <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent ring-1 ring-sidebar-border">
-          <Hospital className="size-4 text-sidebar-foreground/70" aria-hidden="true" />
+      <div className="hidden h-full w-[min(75vw,24rem)] shrink-0 items-center justify-between gap-3 bg-sidebar px-5 text-sidebar-foreground lg:flex lg:border-l lg:border-sidebar-border">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-transparent ring-1 ring-sidebar-border">
+            <Hospital className="size-4 text-sidebar-foreground/70" aria-hidden="true" />
+          </div>
+          <div className="flex min-w-0 flex-col text-left">
+            <span className="truncate text-xs font-medium">{valueOr(record.destination_facility?.name, "Bicol Medical Center")}</span>
+            <span className="truncate text-xs text-sidebar-foreground/70">Recipient</span>
+          </div>
         </div>
-        <div className="flex min-w-0 flex-col text-left">
-          <span className="truncate text-xs font-medium">{valueOr(record.destination_facility?.name, "Bicol Medical Center")}</span>
-          <span className="truncate text-xs text-sidebar-foreground/70">Recipient</span>
-        </div>
+        <PageGuide />
       </div>
     </header>
 
     <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_24rem]">
       <section aria-label="Referral handover content" className="min-h-0 min-w-0 overflow-y-auto bg-white px-4 py-4 text-foreground dark:bg-black sm:px-5">
         <Tabs defaultValue="summary" className="w-full min-w-0 pb-6">
-          <TabsList className="h-9 w-max max-w-full justify-start gap-1 overflow-x-auto">
-            <TabsTrigger value="summary" className="h-full flex-none px-3 text-xs">Clinical Summary (1)</TabsTrigger>
-            <TabsTrigger value="ehr" className="h-full flex-none px-3 text-xs">Health Records ({record.lab_screenings?.length ?? 0})</TabsTrigger>
-            <TabsTrigger value="prescriptions" className="h-full flex-none px-3 text-xs">Prescriptions ({record.supplements?.length ?? 0})</TabsTrigger>
-          </TabsList>
+          <div className="sticky top-0 z-20 -mx-4 flex w-full min-w-0 items-center justify-between gap-3 bg-white px-4 py-2 dark:bg-black sm:-mx-5 sm:px-5">
+            <TabsList className="h-9 w-max max-w-full justify-start gap-1 overflow-x-auto">
+              <TabsTrigger value="summary" className="h-full flex-none px-3 text-xs">Clinical Summary (1)</TabsTrigger>
+              <TabsTrigger value="ehr" className="h-full flex-none px-3 text-xs">Health Records ({record.lab_screenings?.length ?? 0})</TabsTrigger>
+              <TabsTrigger value="prescriptions" className="h-full flex-none px-3 text-xs">Prescriptions ({record.supplements?.length ?? 0})</TabsTrigger>
+            </TabsList>
+            <div className="ml-auto flex shrink-0 items-center gap-2">
+              <TabsContent value="summary" className="m-0"><Button size="sm" className="h-8 gap-1.5 text-xs" onClick={printClinicalSummary}><Printer className="size-3.5" />Print Summary</Button></TabsContent>
+              <TabsContent value="ehr" className="m-0"><Button disabled={downloadableEhrRecords.length === 0 || isDownloadingHealthRecords} onClick={() => void downloadHealthRecordsZip()} className="h-8 gap-1.5 px-2.5 text-xs"><Download className="size-3.5" />{isDownloadingHealthRecords ? "Preparing ZIP…" : "Download Health Records"}</Button></TabsContent>
+              <TabsContent value="prescriptions" className="m-0"><Button className="h-8 gap-1.5 px-2.5 text-xs" onClick={printPrescriptions}><Printer className="size-3.5" />Print Prescriptions</Button></TabsContent>
+            </div>
+          </div>
 
           <TabsContent value="summary" className="mt-4 min-w-0">
             <div className="space-y-6">
@@ -507,7 +597,7 @@ export function ReferralGatewayPage() {
                     <h2 id="handover-clinical-summary" className="text-sm font-semibold text-foreground">Clinical summary</h2>
                     <p className="mt-0.5 truncate text-xs text-muted-foreground">Patient information shared for this transfer.</p>
                   </div>
-                  <StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} className="shrink-0" />
+                  <StatusBadge status={valueOr(latestVitals?.risk_level, "Not assessed")} />
                 </div>
                 <dl className="mt-4 grid min-w-0 grid-cols-2 gap-x-5 gap-y-4 md:grid-cols-3 xl:grid-cols-4">
                   <ClinicalField label="Patient" value={patientName} />
@@ -543,10 +633,6 @@ export function ReferralGatewayPage() {
                   <ClinicalField label="Chief complaint" value={valueOr(latestVitals?.chief_complaint, reasonField(fullClinicalSummary, "CC") || "Not recorded")} />
                   <ClinicalField label="Requested clinical action" value={reasonField(fullClinicalSummary, "Requested clinical action") || "Not recorded"} />
                 </dl>
-                <details className="group mt-4 text-xs">
-                  <summary className="w-fit cursor-pointer font-medium text-foreground underline-offset-4 hover:underline focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">View complete handover notes</summary>
-                  <p className="mt-3 max-w-3xl whitespace-pre-wrap break-words text-sm font-normal leading-6 text-foreground">{fullClinicalSummary}</p>
-                </details>
               </section>
 
               <section aria-labelledby="handover-pregnancy-history" className="border-t border-border/70 pt-5">
@@ -571,7 +657,7 @@ export function ReferralGatewayPage() {
           </TabsContent>
 
           <TabsContent value="ehr" className="mt-4 min-w-0">
-            <HandoverTable headers={["Test", "Date", "Result", "File / Notes"]} rows={ehrRows} emptyTitle="No health records shared" emptyDescription="Laboratory results and attached records included with this referral will appear here." />
+            <HandoverTable headers={["Test", "Date", "Result", "File / Notes", ""]} rows={ehrRows} emptyTitle="No health records shared" emptyDescription="Laboratory results and attached records included with this referral will appear here." />
           </TabsContent>
           <TabsContent value="prescriptions" className="mt-4 min-w-0">
             <HandoverTable headers={["Medication / Supplement", "Date", "Quantity", "Status"]} rows={prescriptionRows} emptyTitle="No prescriptions shared" emptyDescription="Prescriptions and supplements included with this referral will appear here." />
@@ -610,7 +696,7 @@ export function ReferralGatewayPage() {
         </div>
 
         <div className="mt-auto shrink-0 border-t border-sidebar-border bg-sidebar px-5 py-3">
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex items-center justify-between gap-2">
             <Button type="button" variant="outline" className="h-9 text-xs" onClick={() => setIsInitiateReferralOpen(true)}>Initiate Referral</Button>
             <Button type="button" disabled={isResponding || !canAccept} onClick={() => void updateStatus("admitted")} className="h-9 text-xs">{isResponding ? "Accepting…" : "Accept Transfer"}</Button>
           </div>

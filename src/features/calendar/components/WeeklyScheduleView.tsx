@@ -3,6 +3,7 @@ import type { AppEvent } from "./types"
 import type { ClosedDateRecord } from "../closed-dates"
 import { CustomEvent } from "./CustomEvent"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { StatusBadge } from "@/components/ui/status-badge"
 
 interface WeeklyScheduleViewProps {
   viewDate: Date
@@ -92,26 +93,24 @@ export function WeeklyScheduleView({ viewDate, selectedDate, events, closedDates
               return (
                 <div
                   key={day.toISOString()}
-                  className={`relative flex min-w-0 flex-1 flex-col transition-colors ${idx < days.length - 1 ? 'border-r border-sidebar-border' : ''} ${isActiveDay ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-white/5'} ${closedInfo ? 'bg-destructive/5' : ''}`}
+                  className={`relative flex min-w-0 flex-1 flex-col transition-colors ${idx < days.length - 1 ? 'border-r border-sidebar-border' : ''} ${isActiveDay ? 'bg-white/5 dark:bg-white/10' : 'hover:bg-white/5'}`}
                 >
-                  <div
+                  <button
+                    type="button"
                     onClick={() => onSelectDate(day)}
-                    className={`flex flex-col items-center py-4 shrink-0 h-20 border-b border-sidebar-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 dark:bg-black/95 sticky top-0 z-20 cursor-pointer relative ${closedInfo ? 'bg-destructive/10 dark:bg-destructive/15' : ''}`}
+                    title={closedInfo ? `Clinic closed: ${closedInfo.reason}` : format(day, "EEEE, MMMM d")}
+                    className="sticky top-0 z-20 flex h-20 shrink-0 cursor-pointer flex-col items-center justify-center gap-0.5 border-b border-sidebar-border bg-background/95 px-1 backdrop-blur supports-[backdrop-filter]:bg-background/80 dark:bg-black/95"
                   >
-                    <span className="text-xs font-medium text-foreground dark:text-white/70">
-                      {format(day, 'E')}
-                    </span>
-                    <div className={`mt-1 flex size-9 shrink-0 items-center justify-center rounded-full text-lg font-semibold ${isActiveDay ? 'bg-black text-white dark:bg-white dark:text-black' : 'text-foreground dark:text-white'}`}>
+                    <span className="text-[10px] font-medium leading-3 text-muted-foreground">{format(day, 'EEEE')}</span>
+                    <span className={`flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${isActiveDay ? 'bg-foreground text-background' : 'text-foreground'}`}>
                       {format(day, 'd')}
-                    </div>
+                    </span>
                     {closedInfo && (
-                      <span className="mt-0.5 rounded bg-destructive/20 px-1 text-[9px] font-semibold text-destructive">
-                        Closed
-                      </span>
+                      <StatusBadge status="Closed" className="max-w-full truncate text-[10px]" />
                     )}
-                  </div>
+                  </button>
 
-                  <div className={`relative shrink-0 ${closedInfo ? 'cursor-not-allowed bg-destructive/5' : 'cursor-pointer'}`} style={{ height: `${scheduleHeight}px` }} onClick={() => onSelectDate(day)}>
+                  <div className={`relative shrink-0 ${closedInfo ? 'cursor-not-allowed' : 'cursor-pointer'}`} style={{ height: `${scheduleHeight}px` }} onClick={() => onSelectDate(day)}>
 
                     {Array.from({ length: scheduleEndHour - scheduleStartHour + 1 }).map((_, i) => (
                       <div key={i} className="absolute w-full border-t border-sidebar-border/30 pointer-events-none" style={{ top: `${i * 60}px` }}></div>

@@ -48,7 +48,7 @@ function reasonValue(reason: string, label: string) {
   return line?.slice(label.length).replace(/^\s*:?\s*/, "").trim() || "Not recorded"
 }
 
-function mapReferral(record: ReferralApiRecord): Referral {
+export function mapReferral(record: ReferralApiRecord): Referral {
   const pregnancy = record.pregnancy
   const mother = pregnancy?.mother
   const user = mother?.user
@@ -315,7 +315,7 @@ export function ReferralsPage() {
     <div className="relative flex h-full w-full min-w-0 flex-col overflow-y-auto text-foreground">
       <div className="sticky top-0 z-10 flex flex-col gap-3 bg-background p-4 dark:bg-black">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="w-full min-w-0 overflow-x-auto pb-1 sm:w-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+          <div className="w-full min-w-0 overflow-x-auto pb-1 sm:w-auto">
             <ReferralTabs value={activeTab} onChange={setActiveTab} counts={referralTabCounts} />
           </div>
           <div className="flex shrink-0 items-center justify-end gap-2">
@@ -327,7 +327,7 @@ export function ReferralsPage() {
           </div>
         </div>
 
-        <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+        <div className="flex min-w-0 flex-nowrap items-center gap-2 overflow-x-auto pb-1">
           <div className="relative min-w-0 max-w-md flex-1 sm:min-w-[240px]">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
             <Input aria-label="Search referrals" placeholder="Search referrals..." value={search} onChange={(event) => setSearch(event.target.value)} className="h-8 w-full bg-muted/70 pl-8 text-xs dark:bg-muted/60" />
@@ -416,7 +416,23 @@ export function ReferralsPage() {
 
         <div className="flex flex-col gap-2 xl:hidden">
           {isLoading ? <MobileTableCardSkeleton /> : filteredReferrals.map((referral) => (
-            <article key={referral.id} onClick={() => openReferral(referral)} className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 dark:bg-black">
+            <article
+              key={referral.id}
+              role="link"
+              tabIndex={0}
+              aria-label={`Open ${referral.mother} referral details`}
+              onClick={(event) => {
+                const target = event.target as HTMLElement
+                if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                openReferral(referral)
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                event.preventDefault()
+                openReferral(referral)
+              }}
+              className="flex min-w-0 cursor-pointer flex-col gap-3 rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black"
+            >
               <div className="flex min-w-0 items-start justify-between gap-2">
                 <div className="flex min-w-0 items-start gap-2">
                   <Checkbox aria-label={`Select ${referral.mother} referral`} checked={selectedRows.includes(referral.id)} onClick={(event) => event.stopPropagation()} onCheckedChange={() => setSelectedRows((current) => current.includes(referral.id) ? current.filter((id) => id !== referral.id) : [...current, referral.id])} />

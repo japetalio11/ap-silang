@@ -67,13 +67,16 @@ export function FacilitySearchSelect({
           className="h-8 pl-8 pr-7 text-xs bg-muted/40"
         />
         {search && (
-          <button
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label="Clear facility search"
             onClick={() => setSearch("")}
-            className="absolute right-2 top-2 text-muted-foreground hover:text-foreground"
+            className="absolute right-1 top-1 text-muted-foreground hover:text-foreground"
           >
             <X className="size-3.5" />
-          </button>
+          </Button>
         )}
       </div>
 

@@ -68,9 +68,10 @@ const tabsListVariants = cva(
 function TabsList({
   className,
   variant = "default",
+  mobileSelect = true,
   ...props
 }: React.ComponentProps<typeof TabsPrimitive.List> &
-  VariantProps<typeof tabsListVariants>) {
+  VariantProps<typeof tabsListVariants> & { mobileSelect?: boolean }) {
   const mobileTabs = React.useContext(MobileTabsContext)
   const options = React.Children.toArray(props.children)
     .filter((child): child is React.ReactElement<React.ComponentProps<typeof TabsPrimitive.Trigger>> =>
@@ -81,7 +82,7 @@ function TabsList({
     }))
   return (
     <>
-    {mobileTabs && options.length > 1 && (
+    {mobileSelect && mobileTabs && options.length > 1 && (
       <Select value={mobileTabs.value ?? options[0].value} onValueChange={mobileTabs.onValueChange}>
         <SelectTrigger aria-label="Choose view" className="h-8 w-full min-w-0 text-xs md:hidden">
           <SelectValue />
@@ -94,7 +95,7 @@ function TabsList({
     <TabsPrimitive.List
       data-slot="tabs-list"
       data-variant={variant}
-      className={cn(tabsListVariants({ variant }), options.length > 1 && "max-md:hidden", className)}
+      className={cn(tabsListVariants({ variant }), mobileSelect && options.length > 1 && "max-md:hidden", className)}
       {...props}
     />
     </>

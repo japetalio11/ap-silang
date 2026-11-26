@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect, type ChangeEvent, type FormEvent, type ReactNode } from "react"
 import { addDays, differenceInYears, format, isValid, parseISO } from "date-fns"
 import { z } from "zod"
+<<<<<<< HEAD
 import { Baby, Camera, Check, ChevronsUpDown, ClipboardList, HeartPulse, ShieldAlert, UserRound } from "lucide-react"
+=======
+import { Baby, Camera, Check, ClipboardList, HeartPulse, CircleHelp, ShieldAlert, UserRound, X } from "lucide-react"
+>>>>>>> e1a256b (feat: modernize Silang UI and connect core maternal care workflows)
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { DateInput } from "@/components/ui/date-input"
@@ -94,6 +98,16 @@ const stepHeadings = [
 ]
 const stepIcons = [UserRound, Baby, ShieldAlert, HeartPulse, ClipboardList]
 const chronicConditionOptions = ["Heart Disease", "Diabetes", "Tuberculosis", "Asthma", "Goiter"]
+
+const maternalTour = [
+  { formStep: 0, target: "[data-tour='registration-steps']", title: "Follow the five sections", description: "The sections on the left show your progress. You can revisit a section at any time." },
+  { formStep: 0, target: "#firstName", title: "Start with the mother's identity", description: "Enter her legal name and contact details. Fields marked with a red asterisk are required." },
+  { formStep: 1, target: "#lastMenstrualPeriod", title: "Record the current pregnancy", description: "Enter the last menstrual period. The estimated due date will be calculated, and you can adjust it if needed." },
+  { formStep: 2, target: "#previousCesarean", title: "Review obstetric history", description: "Select any previous complications that apply. Leave the others unchecked." },
+  { formStep: 3, target: "#chronic-heart-disease", title: "Note ongoing conditions", description: "Select the mother's pre-existing conditions so they are available in her clinical record." },
+  { formStep: 4, target: "#firstTrimesterBmi", title: "Add clinical indicators", description: "Record the available BMI and history details. You can leave optional fields blank." },
+  { formStep: 4, target: "[data-tour='registration-finish']", title: "Finish the record", description: "Review any section using the navigation, then select Finish to save the maternal record." },
+] as const
 
 function Field({ id, label, required = false, error, children }: { id: string; label: ReactNode; required?: boolean; error?: string; children: ReactNode }) {
   return (
@@ -234,6 +248,8 @@ export function MaternalRegistrationModal({
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [tourIndex, setTourIndex] = useState<number | null>(null)
+  const [tourPosition, setTourPosition] = useState<{ top: number; left: number; arrowLeft: number; above: boolean; spotlight: { top: number; left: number; width: number; height: number } } | null>(null)
   const stepOffset = mode === "pregnancy" ? 1 : 0
   const activeStep = step + stepOffset
   const visibleSteps = mode === "pregnancy" ? steps.slice(1) : steps
@@ -247,18 +263,61 @@ export function MaternalRegistrationModal({
         : "text-emerald-700 dark:text-emerald-300"
 
   useEffect(() => {
-    if (!values.dateOfBirth) return
-    const calculatedGroup = calculateAgeGroup(values.dateOfBirth)
-    if (calculatedGroup && calculatedGroup !== values.ageGroup) {
-      setValues((current) => ({ ...current, ageGroup: calculatedGroup }))
-      setErrors((current) => {
-        if (!current.ageGroup) return current
-        const next = { ...current }
-        delete next.ageGroup
-        return next
+    if (!open || tourIndex === null || mode !== "maternal") return
+    const tourStep = maternalTour[tourIndex]
+    if (step !== tourStep.formStep) return
+    let frame = 0
+    const place = () => {
+      const root = document.querySelector<HTMLElement>("[data-tour='maternal-registration']")
+      const target = root?.querySelector<HTMLElement>(tourStep.target)
+      if (!target || !root) return
+      const bounds = target.getBoundingClientRect()
+      const dialogBounds = root.getBoundingClientRect()
+      const width = Math.min(320, dialogBounds.width - 32)
+      const targetCenter = bounds.left + bounds.width / 2 - dialogBounds.left
+      const left = Math.max(16, Math.min(targetCenter - width / 2, dialogBounds.width - width - 16))
+      const targetTop = bounds.top - dialogBounds.top
+      const targetBottom = bounds.bottom - dialogBounds.top
+      const above = dialogBounds.height - targetBottom < 230 && targetTop > 230
+      const top = above ? Math.max(16, targetTop - 214) : Math.max(16, Math.min(dialogBounds.height - 214, targetBottom + 12))
+      const spotlightLeft = Math.max(4, bounds.left - dialogBounds.left - 5)
+      const spotlightTop = Math.max(4, targetTop - 5)
+      setTourPosition({
+        top,
+        left,
+        arrowLeft: Math.max(18, Math.min(targetCenter - left, width - 18)),
+        above,
+        spotlight: {
+          top: spotlightTop,
+          left: spotlightLeft,
+          width: Math.min(bounds.width + 10, dialogBounds.width - spotlightLeft - 4),
+          height: Math.min(bounds.height + 10, dialogBounds.height - spotlightTop - 4),
+        },
       })
     }
-  }, [values.dateOfBirth, values.ageGroup])
+    const target = document.querySelector<HTMLElement>("[data-tour='maternal-registration']")?.querySelector<HTMLElement>(tourStep.target)
+    target?.scrollIntoView({ block: "nearest", behavior: "smooth" })
+    frame = window.requestAnimationFrame(() => window.requestAnimationFrame(place))
+    window.addEventListener("resize", place)
+    window.addEventListener("scroll", place, true)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.removeEventListener("resize", place)
+      window.removeEventListener("scroll", place, true)
+    }
+  }, [open, mode, step, tourIndex])
+
+  const moveTour = (nextIndex: number) => {
+    setTourPosition(null)
+    setTourIndex(nextIndex)
+    setStep(maternalTour[nextIndex].formStep)
+  }
+
+  const closeTour = () => {
+    setTourIndex(null)
+    setTourPosition(null)
+    setStep(0)
+  }
 
   const update = <K extends keyof RegistrationValues>(key: K, value: RegistrationValues[K]) => {
     setValues((current) => ({ ...current, [key]: value }))
@@ -276,6 +335,8 @@ export function MaternalRegistrationModal({
     setStep(0)
     setErrors({})
     setIsSubmitting(false)
+    setTourIndex(null)
+    setTourPosition(null)
   }
 
   const changeOpen = (nextOpen: boolean) => {
@@ -363,13 +424,16 @@ export function MaternalRegistrationModal({
 
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
-      <DialogContent className="maternal-registration-sheet grid max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-4xl grid-cols-1 gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-4xl md:grid-cols-[240px_minmax(0,1fr)]">
+      <DialogContent data-tour="maternal-registration" className="maternal-registration-sheet grid max-h-[92dvh] w-[calc(100%-1.5rem)] max-w-4xl grid-cols-1 gap-0 overflow-hidden rounded-xl border-border bg-background p-0 text-foreground sm:max-w-4xl md:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-border bg-muted/30 px-5 py-4 md:border-b-0 md:border-r md:px-6 md:py-6">
           <DialogHeader className="gap-1.5">
-            <DialogTitle className="text-base font-semibold">{mode === "pregnancy" ? "Create Pregnancy" : "Create Maternal Record"}</DialogTitle>
+            <div className="flex items-center gap-2">
+              <DialogTitle className="text-base font-semibold">{mode === "pregnancy" ? "Create Pregnancy" : "Create Maternal Record"}</DialogTitle>
+              {mode === "maternal" && <button type="button" aria-label="Guide to creating a maternal record" title="Guide to creating a maternal record" onClick={() => moveTour(0)} className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"><CircleHelp className="size-4" /></button>}
+            </div>
             <p className="text-xs text-muted-foreground">{mode === "pregnancy" ? "Add a pregnancy to this maternal record." : "Add a profile to the maternal registry."}</p>
           </DialogHeader>
-          <nav aria-label="Registration steps" className="mt-4 flex gap-1 overflow-x-auto md:mt-8 md:flex-col">
+          <nav data-tour="registration-steps" aria-label="Registration steps" className="mt-4 flex gap-1 overflow-x-auto md:mt-8 md:flex-col">
             {visibleSteps.map((title, index) => {
               const sourceIndex = index + stepOffset
               const StepIcon = stepIcons[sourceIndex]
@@ -378,7 +442,7 @@ export function MaternalRegistrationModal({
                   key={title}
                   type="button"
                   aria-current={step === index ? "step" : undefined}
-                  onClick={() => setStep(index)}
+                  onClick={() => { if (tourIndex !== null) closeTour(); else setStep(index) }}
                   className={`flex min-w-max items-center gap-2.5 rounded-md px-3 py-2 text-left text-xs transition-colors md:w-full ${step === index ? "bg-background font-medium text-foreground dark:shadow-sm" : "text-muted-foreground hover:bg-background/70 hover:text-foreground"}`}
                 >
                   <StepIcon className="size-4 shrink-0" />
@@ -624,7 +688,7 @@ export function MaternalRegistrationModal({
                   Back
                 </Button>
               )}
-              <Button type="submit" disabled={isSubmitting} className="h-9 min-w-28 rounded-md px-4 text-xs font-medium">
+              <Button data-tour="registration-finish" type="submit" disabled={isSubmitting} className="h-9 min-w-28 rounded-md px-4 text-xs font-medium">
                 {isSubmitting ? "Saving..." : step === visibleSteps.length - 1 ? "Finish" : "Continue"}
                 {step === visibleSteps.length - 1 && !isSubmitting && <Check className="size-3.5" />}
               </Button>
@@ -632,6 +696,35 @@ export function MaternalRegistrationModal({
           </DialogFooter>
           </form>
         </section>
+        {tourIndex !== null && mode === "maternal" && tourPosition && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[90] rounded-md ring-2 ring-primary/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]"
+            style={tourPosition.spotlight}
+          />
+        )}
+        {tourIndex !== null && mode === "maternal" && tourPosition && (
+          <div
+            role="group"
+            aria-label="Create maternal record guide"
+            className="absolute z-[100] max-w-[calc(100%-32px)] rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-lg"
+            style={{ top: tourPosition.top, left: tourPosition.left, width: 320 }}
+          >
+            <span className={`absolute size-2.5 rotate-45 border-border bg-popover ${tourPosition.above ? "-bottom-1.5 border-b border-r" : "-top-1.5 border-l border-t"}`} style={{ left: tourPosition.arrowLeft - 5 }} aria-hidden="true" />
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs text-muted-foreground">{tourIndex + 1} of {maternalTour.length}</p>
+                <h3 className="mt-1 text-sm font-semibold">{maternalTour[tourIndex].title}</h3>
+              </div>
+              <button type="button" aria-label="Close guide" onClick={closeTour} className="inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"><X className="size-4" /></button>
+            </div>
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{maternalTour[tourIndex].description}</p>
+            <div className="mt-4 flex items-center justify-between gap-3">
+              <Button type="button" variant="ghost" size="sm" disabled={tourIndex === 0} onClick={() => moveTour(Math.max(0, tourIndex - 1))}>Back</Button>
+              <Button type="button" size="sm" onClick={() => { if (tourIndex === maternalTour.length - 1) closeTour(); else moveTour(tourIndex + 1) }}>{tourIndex === maternalTour.length - 1 ? "Done" : "Next"}</Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   )

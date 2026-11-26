@@ -21,12 +21,13 @@ type StatusStyle = {
 function getStatusStyle(status: string): StatusStyle {
   const normalized = status.toLowerCase()
 
-  if (normalized.includes("unavailable")) return { className: "bg-[#be123c] border-[#be123c]/20", icon: XCircle }
+  if (normalized.includes("unavailable") || normalized.includes("closed")) return { className: "bg-[#be123c] border-[#be123c]/20", icon: XCircle }
   if (normalized.includes("archived") || normalized.includes("deactivated") || normalized.includes("inactive")) {
     return { className: "bg-zinc-600 border-zinc-600/20", icon: Archive }
   }
   if (normalized.includes("deceased")) return { className: "bg-zinc-600 border-zinc-600/20", icon: Circle }
   if (normalized.includes("ongoing") || normalized.includes("today")) return { className: "bg-[#b45309] border-[#b45309]/20", icon: Clock }
+  if (normalized.includes("referred") || normalized.includes("sent") || normalized.includes("received")) return { className: "bg-[#b45309] border-[#b45309]/20", icon: Clock }
   if (normalized.includes("in transit")) return { className: "bg-[#b45309] border-[#b45309]/20", icon: Truck }
   if (normalized.includes("high risk") || normalized.includes("danger") || normalized.includes("cancel") || normalized.includes("missed") || normalized.includes("rejected") || normalized.includes("booked")) {
     return { className: "bg-[#be123c] border-[#be123c]/20", icon: TriangleAlert }

@@ -10,6 +10,7 @@ import { useAuthSession } from "@/features/auth/auth-session"
 import { isUserSuperAdmin } from "@/features/auth/components/RequireSuperAdminAuth"
 import { AuthLegalModal, type LegalModalTab } from "@/features/auth/components/AuthLegalModal"
 import { usePwaInstall } from "@/hooks/use-pwa-install"
+import { PageGuide } from "@/components/ui/contextual-tour"
 
 export function SuperAdminLoginPage() {
   const navigate = useNavigate()
@@ -75,6 +76,7 @@ export function SuperAdminLoginPage() {
       className="h-dvh w-full overflow-hidden bg-background p-1 text-xs text-foreground sm:p-2"
       style={{ fontFamily: "'Inter Variable', Inter, sans-serif" }}
     >
+      <div className="fixed right-3 top-3 z-20"><PageGuide /></div>
       <div className="grid h-full min-h-0 w-full grid-cols-1 lg:grid-cols-2">
         <section className="flex h-full min-h-0 flex-col justify-between overflow-hidden px-4 py-3 sm:px-8 sm:py-4 lg:px-10 xl:px-14">
           <div className="mx-auto flex min-h-0 w-full max-w-[330px] flex-1 flex-col justify-center py-2">

@@ -6,6 +6,7 @@ import { Dialog as SheetPrimitive } from "radix-ui"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { XIcon } from "lucide-react"
+import { ContextualTour } from "@/components/ui/contextual-tour"
 
 function subscribeToMobileViewport(callback: () => void) {
   const query = window.matchMedia("(max-width: 767px)")
@@ -61,12 +62,15 @@ function SheetContent({
   side = "right",
   showCloseButton = true,
   overlayClassName,
+  tour = true,
   ...props
 }: React.ComponentProps<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
   showCloseButton?: boolean
   overlayClassName?: string
+  tour?: boolean
 }) {
+  const tourScope = React.useRef<HTMLDivElement>(null)
   const isMobile = React.useSyncExternalStore(subscribeToMobileViewport, isMobileViewport, () => false)
   const mobileSideSheet = isMobile && (side === "left" || side === "right")
   const displayedSide = mobileSideSheet ? "bottom" : side
@@ -74,6 +78,7 @@ function SheetContent({
     <SheetPortal>
       <SheetOverlay className={mobileSideSheet ? "!bg-black/50 !backdrop-blur-none" : overlayClassName} />
       <SheetPrimitive.Content
+        ref={tourScope}
         data-slot="sheet-content"
         data-side={displayedSide}
         data-mobile-sheet={mobileSideSheet ? "true" : undefined}
@@ -84,18 +89,17 @@ function SheetContent({
         {...props}
       >
         {children}
-        {showCloseButton && (
-          <SheetPrimitive.Close data-slot="sheet-close" asChild>
-            <Button
-              variant="ghost"
-              className="absolute top-4 right-4"
-              size="icon-sm"
-            >
-              <XIcon
-              />
-              <span className="sr-only">Close</span>
-            </Button>
-          </SheetPrimitive.Close>
+        {(tour || showCloseButton) && (
+          <div className={cn("absolute top-4 z-20 flex items-center gap-1", showCloseButton ? "right-4" : "right-14")}>
+            {tour && <ContextualTour scope={tourScope} />}
+            {showCloseButton && (
+              <SheetPrimitive.Close data-slot="sheet-close" asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="Close">
+                  <XIcon />
+                </Button>
+              </SheetPrimitive.Close>
+            )}
+          </div>
         )}
       </SheetPrimitive.Content>
     </SheetPortal>
@@ -106,7 +110,7 @@ function SheetHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="sheet-header"
-      className={cn("flex flex-col gap-1.5 p-6", className)}
+      className={cn("flex flex-col gap-1.5 p-6 pr-24", className)}
       {...props}
     />
   )

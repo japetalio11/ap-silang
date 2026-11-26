@@ -4,6 +4,7 @@ import * as React from "react"
 import { Tooltip as TooltipPrimitive } from "radix-ui"
 
 import { cn } from "@/lib/utils"
+import { TooltipTriggerContext } from "@/components/ui/tooltip-context"
 
 function TooltipProvider({
   delayDuration = 0,
@@ -27,7 +28,7 @@ function Tooltip({
 function TooltipTrigger({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  return <TooltipTriggerContext.Provider value={true}><TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} /></TooltipTriggerContext.Provider>
 }
 
 function TooltipContent({

@@ -16,6 +16,7 @@ import {
   MoreVertical,
   Phone,
   PowerOff,
+  PlusCircle,
   RefreshCw,
   RotateCcw,
   Search,
@@ -29,16 +30,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -55,6 +47,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { StatusBadge } from "@/components/ui/status-badge"
@@ -62,6 +56,9 @@ import { CachedDataBanner } from "@/components/ui/cached-data-banner"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { TableEmptyState } from "@/components/ui/table-empty-state"
 import { TablePaginationFooter } from "@/components/ui/table-pagination-footer"
+import { TableSkeletonRows } from "@/components/ui/table-skeleton-rows"
+import { MobileTableCardSkeleton } from "@/components/ui/mobile-table-card-skeleton"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuthSession } from "@/features/auth/auth-session"
 import { db } from "@/lib/db/silangDatabase"
@@ -84,6 +81,9 @@ import {
   type StaffItem,
 } from "../api/superadmin-api"
 import { FacilitySearchSelect } from "./FacilitySearchSelect"
+import { InterClinicReferralDrawer, type ReferralDrawerRecord } from "@/features/referrals/components/InterClinicReferralDrawer"
+import { getReferralGatewayLink, getReferrals } from "@/features/referrals/api"
+import { mapReferral } from "@/features/referrals/components/ReferralsPage"
 
 function normalizeFacilityType(rawType?: string): "RHU" | "BHS" {
   if (!rawType) return "RHU"
@@ -92,6 +92,45 @@ function normalizeFacilityType(rawType?: string): "RHU" | "BHS" {
     return "BHS"
   }
   return "RHU"
+}
+
+function statusLabel(value: string) {
+  return value.replace(/[_-]/g, " ").toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function toReferralDrawerRecord(referral: FacilityHubReferral & { direction: "outgoing" | "incoming" }): ReferralDrawerRecord {
+  const mother = referral.pregnancy?.mother
+  const name = [mother?.user?.first_name, mother?.user?.last_name].filter(Boolean).join(" ") || "Patient record"
+  const rawStatus = referral.status.toLowerCase()
+  const status: ReferralDrawerRecord["status"] = rawStatus.includes("admit") ? "Admitted"
+    : rawStatus.includes("complete") ? "Completed"
+    : rawStatus.includes("accept") ? "Accepted"
+    : rawStatus.includes("transit") ? "In Transit"
+    : rawStatus.includes("cancel") ? "Cancelled"
+    : rawStatus.includes("reject") ? "Rejected"
+    : rawStatus.includes("refer") ? "Referred" : "Pending"
+  const origin = referral.fromFacility?.facility_name || "Not recorded"
+  return {
+    id: referral.referral_id,
+    mother: name,
+    initiatedAt: new Date(referral.date_referred).toLocaleString(),
+    risk: "Not assessed",
+    status,
+    transferLink: getReferralGatewayLink(referral.referral_id),
+    transferCode: "Not available",
+    destination: referral.toFacility?.facility_name || referral.external_facility_name || "Not recorded",
+    clinical: {
+      serial: mother?.family_serial_no || "Not recorded",
+      age: "Not recorded", birthday: "Not recorded", bloodType: "Not recorded", contact: "Not recorded",
+      address: "Not recorded", civilStatus: "Not recorded",
+      pregnancy: `G${referral.pregnancy?.gravida ?? "—"} P${referral.pregnancy?.parity ?? "—"}`,
+      lmp: "Not recorded", edd: "Not recorded", aog: "Not recorded",
+      chiefComplaint: "Not recorded", referralReason: referral.reason || "Not recorded",
+      requestedAction: "Not recorded", additionalNotes: "Not recorded", previousDelivery: "Not recorded",
+      comorbidities: "Not recorded", dangerSigns: "Not recorded", tews: "Not recorded",
+      originFacility: origin, vitals: {},
+    },
+  }
 }
 
 export function SuperAdminFacilityDetailPage() {
@@ -172,6 +211,19 @@ export function SuperAdminFacilityDetailPage() {
 
   const [referralDetailOpen, setReferralDetailOpen] = useState(false)
   const [selectedReferral, setSelectedReferral] = useState<(FacilityHubReferral & { direction: "outgoing" | "incoming" }) | null>(null)
+  const [selectedRichReferral, setSelectedRichReferral] = useState<ReferralDrawerRecord | null>(null)
+
+  useEffect(() => {
+    if (!referralDetailOpen || !selectedReferral || !session?.token) return
+    let active = true
+    getReferrals(session.token).then(({ data: referrals }) => {
+      const fullRecord = referrals?.find((item) => item.referral_id === selectedReferral.referral_id)
+      if (active && fullRecord) setSelectedRichReferral(mapReferral(fullRecord))
+    }).catch(() => {
+      // Facility summary remains available when the clinical referral endpoint is unavailable.
+    })
+    return () => { active = false }
+  }, [referralDetailOpen, selectedReferral, session?.token])
 
   const [schedulePage, setSchedulePage] = useState(1)
   const [schedulePageSize, setSchedulePageSize] = useState(10)
@@ -716,10 +768,24 @@ export function SuperAdminFacilityDetailPage() {
 
   if (loading && !data) {
     return (
-      <div className="flex h-96 w-full items-center justify-center text-xs text-muted-foreground">
-        <RefreshCw className="mr-2 size-4 animate-spin text-primary" />
-        Loading facility hub...
-      </div>
+      <section className="w-full space-y-6 px-4 pb-8 pt-6 md:px-6" aria-label="Loading facility details" aria-busy="true">
+        <Skeleton className="h-8 w-40" />
+        <div className="rounded-md border border-sidebar-border bg-card p-4 shadow-none">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-3">
+              <Skeleton className="h-5 w-48" />
+              <Skeleton className="h-3.5 w-64 max-w-full" />
+            </div>
+            <div className="flex gap-2"><Skeleton className="h-7 w-20" /><Skeleton className="h-7 w-20" /></div>
+          </div>
+        </div>
+        <Skeleton className="h-9 w-72 max-w-full" />
+        <div className="flex flex-wrap gap-2"><Skeleton className="h-8 w-72 max-w-full" /><Skeleton className="h-8 w-20" /></div>
+        <div className="hidden overflow-hidden rounded-md border border-sidebar-border md:block">
+          <Table><TableBody><TableSkeletonRows columns={6} rows={5} /></TableBody></Table>
+        </div>
+        <div className="grid gap-3 md:hidden"><MobileTableCardSkeleton count={3} /></div>
+      </section>
     )
   }
 
@@ -745,7 +811,7 @@ export function SuperAdminFacilityDetailPage() {
   const backLabel = navState?.returnLabel || (isRhu ? "Rural Health Units" : "Barangay Health Stations")
 
   return (
-    <section className="w-full space-y-3 px-4 py-3">
+    <section className="w-full space-y-6 px-4 pb-8 pt-6 text-foreground md:px-6">
       <CachedDataBanner />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
@@ -758,82 +824,28 @@ export function SuperAdminFacilityDetailPage() {
             <ArrowLeft className="size-3.5" />
             Back to {backLabel}
           </Button>
-          <Breadcrumb>
-            <BreadcrumbList className="text-xs">
-              <BreadcrumbItem>
-                <BreadcrumbLink
-                  className="cursor-pointer"
-                  onClick={() => navigate(backTarget)}
-                >
-                  {backLabel}
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{data.facility_name}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5"
-            onClick={() => {
-              loadData()
-              toast.success("Facility hub refreshed")
-            }}
-            disabled={loading}
-          >
-            <RefreshCw className={`size-3.5 ${loading ? "animate-spin" : ""}`} />
-            Refresh
+          <Button variant="outline" size="icon" className="size-8" aria-label="Refresh facility" title="Refresh facility" onClick={() => void loadData()}>
+            <RefreshCw className="size-4" />
           </Button>
-          <Button
-            size="sm"
-            className="h-8 gap-1.5"
-            onClick={() => {
-              setEditForm({
-                facility_name: data.facility_name,
-                type: normalizeFacilityType(data.type),
-                address: data.address,
-                contact_number: data.contact_number,
-                email: data.email,
-              })
-              setEditDialogOpen(true)
-            }}
-          >
+          <Button size="sm" className="h-8 gap-1.5 whitespace-nowrap" onClick={() => {
+            setEditForm({ facility_name: data.facility_name, type: normalizeFacilityType(data.type), address: data.address, contact_number: data.contact_number, email: data.email })
+            setEditDialogOpen(true)
+          }}>
             <Edit2 className="size-3.5" />
-            Edit Facility
+            Update Facility Information
           </Button>
-          {data.is_active === false ? (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400"
-              onClick={() => {
-                setStatusAction("reactivate")
-                setStatusDialogOpen(true)
-              }}
-            >
-              <ShieldCheck className="size-3.5" />
-              Reactivate Facility
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 gap-1.5 border-destructive/30 text-destructive hover:bg-destructive/10"
-              onClick={() => {
-                setStatusAction("deactivate")
-                setStatusDialogOpen(true)
-              }}
-            >
-              <PowerOff className="size-3.5" />
-              Deactivate Facility
-            </Button>
-          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild><Button variant="outline" size="icon" className="size-8" aria-label="Facility actions"><MoreVertical className="size-4" /></Button></DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem variant={data.is_active === false ? "default" : "destructive"} onSelect={() => { setStatusAction(data.is_active === false ? "reactivate" : "deactivate"); setStatusDialogOpen(true) }}>
+                {data.is_active === false ? <ShieldCheck className="size-3.5" /> : <PowerOff className="size-3.5" />}
+                {data.is_active === false ? "Reactivate Facility" : "Deactivate Facility"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
@@ -846,27 +858,15 @@ export function SuperAdminFacilityDetailPage() {
               Staff members of this facility are blocked from logging in, and all enrolled mothers have been unassigned. Clinical records remain safely preserved.
             </p>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 shrink-0 border-emerald-500/30 bg-background text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-700 dark:text-emerald-400"
-            onClick={() => {
-              setStatusAction("reactivate")
-              setStatusDialogOpen(true)
-            }}
-          >
-            <ShieldCheck className="mr-1.5 size-3.5" />
-            Reactivate
-          </Button>
         </div>
       )}
 
-      <div className="rounded-lg border border-sidebar-border bg-card p-3.5 shadow-xs">
+      <div className="rounded-md border border-sidebar-border bg-card p-4 shadow-none">
         <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-1">
+          <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-base font-semibold tracking-tight text-foreground">{data.facility_name}</h1>
-              <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground">
+              <span className="rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-foreground">
                 {data.type}
               </span>
               <StatusBadge
@@ -920,12 +920,24 @@ export function SuperAdminFacilityDetailPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full space-y-3">
-        <TabsList className="h-9 w-full justify-start gap-1 overflow-x-auto sm:w-max">
+        <div className="sticky top-0 z-20 -mx-4 flex flex-col gap-2 bg-background px-4 py-2 dark:bg-black">
+          <Select value={activeTab} onValueChange={setActiveTab}>
+            <SelectTrigger className="h-9 w-full md:hidden" aria-label="Facility section">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="staff">Staff & Personnel ({data.users.length})</SelectItem>
+              <SelectItem value="mothers">Maternal Records ({data.motherEnrollments.length})</SelectItem>
+              <SelectItem value="referrals">Referrals ({totalReferrals})</SelectItem>
+              <SelectItem value="schedules">Schedules & Capacity ({data.schedules.length})</SelectItem>
+            </SelectContent>
+          </Select>
+          <TabsList mobileSelect={false} className="hidden w-max md:flex">
           <TabsTrigger value="staff" className="h-full flex-initial gap-1.5 px-3 text-xs font-medium">
             Staff & Personnel ({data.users.length})
           </TabsTrigger>
           <TabsTrigger value="mothers" className="h-full flex-initial gap-1.5 px-3 text-xs font-medium">
-            Enrolled Mothers ({data.motherEnrollments.length})
+            Maternal Records ({data.motherEnrollments.length})
           </TabsTrigger>
           <TabsTrigger value="referrals" className="h-full flex-initial gap-1.5 px-3 text-xs font-medium">
             Referrals ({totalReferrals})
@@ -933,47 +945,27 @@ export function SuperAdminFacilityDetailPage() {
           <TabsTrigger value="schedules" className="h-full flex-initial gap-1.5 px-3 text-xs font-medium">
             Schedules & Capacity ({data.schedules.length})
           </TabsTrigger>
-          <TabsTrigger value="settings" className="h-full flex-initial gap-1.5 px-3 text-xs font-medium">
-            Facility Settings
-          </TabsTrigger>
-        </TabsList>
+          </TabsList>
+        </div>
 
         <TabsContent value="staff" className="space-y-3 pt-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 bg-background py-2 dark:bg-black">
             <div className="relative w-full sm:w-[260px]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={staffQuery}
                 onChange={(e) => setStaffQuery(e.target.value)}
                 placeholder="Search staff by name, email, phone..."
-                className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
+                className="h-8 w-full pl-8 text-xs"
               />
             </div>
 
-            <Select value={staffRoleFilter} onValueChange={setStaffRoleFilter}>
-              <SelectTrigger className="h-8 w-[140px] text-xs">
-                <SelectValue placeholder="All Roles" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Roles</SelectItem>
-                <SelectItem value="Admin">Admin</SelectItem>
-                <SelectItem value="Doctor">Doctor</SelectItem>
-                <SelectItem value="Midwife">Midwife</SelectItem>
-                <SelectItem value="Nurse">Nurse</SelectItem>
-                <SelectItem value="HealthWorker">HealthWorker</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={staffStatusFilter} onValueChange={setStaffStatusFilter}>
-              <SelectTrigger className="h-8 w-[130px] text-xs">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="true">Active Only</SelectItem>
-                <SelectItem value="false">Inactive Only</SelectItem>
-              </SelectContent>
-            </Select>
+            <Popover><PopoverTrigger asChild><Button variant="filter" size="filter"><PlusCircle className="size-3.5" />Role</Button></PopoverTrigger><PopoverContent align="start" className="w-44 space-y-2 p-3">
+              {[["all", "All roles"], ["Admin", "Admin"], ["Doctor", "Doctor"], ["Midwife", "Midwife"], ["Nurse", "Nurse"], ["HealthWorker", "Health worker"]].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={staffRoleFilter === value} onCheckedChange={() => setStaffRoleFilter(value)} />{label}</label>)}
+            </PopoverContent></Popover>
+            <Popover><PopoverTrigger asChild><Button variant="filter" size="filter"><PlusCircle className="size-3.5" />Status</Button></PopoverTrigger><PopoverContent align="start" className="w-44 space-y-2 p-3">
+              {[["all", "All statuses"], ["true", "Active"], ["false", "Inactive"]].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={staffStatusFilter === value} onCheckedChange={() => setStaffStatusFilter(value)} />{label}</label>)}
+            </PopoverContent></Popover>
 
             {(staffQuery.trim().length > 0 || staffRoleFilter !== "all" || staffStatusFilter !== "all") && (
               <Button
@@ -1002,7 +994,7 @@ export function SuperAdminFacilityDetailPage() {
             </div>
           </div>
 
-          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
+          <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1010,7 +1002,7 @@ export function SuperAdminFacilityDetailPage() {
                   <TableHead>Role</TableHead>
                   <TableHead>Contact Number</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[80px] text-right">Actions</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1053,13 +1045,13 @@ export function SuperAdminFacilityDetailPage() {
                           <div className="flex items-center gap-2.5">
                             <Avatar className="size-8 rounded-full border border-border">
                               {staff.profile_url && <AvatarImage src={staff.profile_url} />}
-                              <AvatarFallback className="text-[11px] font-medium">{initials || "ST"}</AvatarFallback>
+                              <AvatarFallback className="text-xs font-medium">{initials || "ST"}</AvatarFallback>
                             </Avatar>
                             <div className="flex flex-col">
                               <span className="text-xs font-medium hover:underline">
                                 {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
                               </span>
-                              <span className="text-[11px] text-muted-foreground">{staff.email || "No email"}</span>
+                              <span className="text-xs text-muted-foreground">{staff.email || "No email"}</span>
                             </div>
                           </div>
                         </TableCell>
@@ -1076,7 +1068,7 @@ export function SuperAdminFacilityDetailPage() {
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="size-7">
+                              <Button variant="ghost" size="icon" className="size-7" aria-label="More actions">
                                 <MoreVertical className="size-3.5" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -1169,18 +1161,31 @@ export function SuperAdminFacilityDetailPage() {
               </div>
             ) : (
               paginatedStaff.map((staff) => {
-                const initials = `${staff.first_name?.[0] || ""}${staff.last_name?.[0] || ""}`.toUpperCase()
                 return (
                   <article
+                    data-mobile-record
                     key={staff.user_id}
-                    className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Open ${staff.first_name} ${staff.last_name}'s staff profile`}
+                    className="cursor-pointer rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black"
+                    onClick={(event) => {
+                      const target = event.target as HTMLElement
+                      if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                      navigate(`/superadmin/users/${staff.user_id}`, {
+                        state: { returnTo: `/superadmin/facility/${facilityId}`, returnLabel: data.facility_name },
+                      })
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                      event.preventDefault()
+                      navigate(`/superadmin/users/${staff.user_id}`, {
+                        state: { returnTo: `/superadmin/facility/${facilityId}`, returnLabel: data.facility_name },
+                      })
+                    }}
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <Avatar className="size-9 rounded-full border border-border shrink-0">
-                          {staff.profile_url && <AvatarImage src={staff.profile_url} />}
-                          <AvatarFallback className="text-xs font-medium">{initials || "ST"}</AvatarFallback>
-                        </Avatar>
+                      <div className="flex min-w-0 items-center gap-2.5">
                         <div className="min-w-0">
                           <Link
                             to={`/superadmin/users/${staff.user_id}`}
@@ -1192,13 +1197,12 @@ export function SuperAdminFacilityDetailPage() {
                           >
                             {staff.first_name} {staff.middle_name ? `${staff.middle_name} ` : ""}{staff.last_name}
                           </Link>
-                          <p className="truncate text-[11px] text-muted-foreground">{staff.email || "No email"}</p>
                         </div>
                       </div>
 
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                          <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="More actions">
                             <MoreVertical className="size-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -1271,13 +1275,18 @@ export function SuperAdminFacilityDetailPage() {
                       </DropdownMenu>
                     </div>
 
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-[11px]">
-                      <span className="inline-flex items-center gap-1 rounded bg-muted px-2 py-0.5 font-medium">
+                    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="inline-flex items-center gap-1 rounded-sm border border-sidebar-border bg-muted px-2 py-0.5 font-medium text-foreground">
                         <Shield className="size-3 text-muted-foreground" />
                         {staff.role}
                       </span>
-                      <span className="text-muted-foreground">{staff.phone_number || "No contact"}</span>
                       <StatusBadge status={staff.is_active ? "active" : "inactive"} />
+                    </div>
+                    <div className="mt-3 grid min-w-0 grid-cols-3 gap-3 text-xs">
+                      <div className="min-w-0"><p className="text-muted-foreground">Facility</p><p className="mt-1 break-words font-medium text-foreground">{data.facility_name}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Contact</p><p className="mt-1 break-words font-medium text-foreground">{staff.phone_number || "—"}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Role</p><p className="mt-1 break-words font-medium text-foreground">{staff.role}</p></div>
+                      <div className="col-span-3 min-w-0"><p className="text-muted-foreground">Email</p><p className="mt-1 break-all font-medium text-foreground">{staff.email || "—"}</p></div>
                     </div>
                   </article>
                 )
@@ -1295,27 +1304,20 @@ export function SuperAdminFacilityDetailPage() {
         </TabsContent>
 
         <TabsContent value="mothers" className="space-y-3 pt-1">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 bg-background py-2 dark:bg-black">
             <div className="relative w-full sm:w-[280px]">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={motherQuery}
                 onChange={(e) => setMotherQuery(e.target.value)}
                 placeholder="Search by mother name, serial no, blood type..."
-                className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
+                className="h-8 w-full pl-8 text-xs"
               />
             </div>
 
-            <Select value={motherStatusFilter} onValueChange={setMotherStatusFilter}>
-              <SelectTrigger className="h-8 w-[140px] text-xs">
-                <SelectValue placeholder="All Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="transferred">Transferred</SelectItem>
-              </SelectContent>
-            </Select>
+            <Popover><PopoverTrigger asChild><Button variant="filter" size="filter"><PlusCircle className="size-3.5" />Status</Button></PopoverTrigger><PopoverContent align="start" className="w-44 space-y-2 p-3">
+              {[["all", "All statuses"], ["active", "Active"], ["transferred", "Transferred"]].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={motherStatusFilter === value} onCheckedChange={() => setMotherStatusFilter(value)} />{label}</label>)}
+            </PopoverContent></Popover>
 
             {(motherQuery.trim().length > 0 || motherStatusFilter !== "all") && (
               <Button
@@ -1332,7 +1334,7 @@ export function SuperAdminFacilityDetailPage() {
             )}
           </div>
 
-          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
+          <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1343,7 +1345,7 @@ export function SuperAdminFacilityDetailPage() {
                   <TableHead>Contact Number</TableHead>
                   <TableHead>Enrollment Date</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[80px] text-right">Actions</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1366,7 +1368,6 @@ export function SuperAdminFacilityDetailPage() {
                       : "Patient"
                     const birth = new Date(mother.birth_date)
                     const age = Math.max(0, new Date().getFullYear() - birth.getFullYear())
-                    const isTransferred = (status || "").toLowerCase() === "transferred"
 
                     return (
                       <TableRow
@@ -1383,9 +1384,7 @@ export function SuperAdminFacilityDetailPage() {
                           })
                         }}
                       >
-                        <TableCell className="font-mono text-xs font-medium text-foreground">
-                          {mother.family_serial_no || "Unassigned"}
-                        </TableCell>
+                        <TableCell><span className="inline-flex rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 font-mono text-xs dark:bg-[#222]">{mother.family_serial_no || "Unassigned"}</span></TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <span className="text-xs font-medium hover:underline">{motherName}</span>
@@ -1402,20 +1401,12 @@ export function SuperAdminFacilityDetailPage() {
                           {new Date(enrolled_at).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          <span
-                            className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                              isTransferred
-                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                            }`}
-                          >
-                            {status || "Active"}
-                          </span>
+                          <StatusBadge status={status || "Active"} label={statusLabel(status || "Active")} />
                         </TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="size-7">
+                              <Button variant="ghost" size="icon" className="size-7" aria-label="More actions">
                                 <MoreVertical className="size-3.5" />
                               </Button>
                             </DropdownMenuTrigger>
@@ -1472,7 +1463,6 @@ export function SuperAdminFacilityDetailPage() {
                 if (!mother) return null
 
                 const status = enrollment.status
-                const isTransferred = status?.toLowerCase() === "transferred"
                 const birth = mother.birth_date ? new Date(mother.birth_date) : new Date()
                 const age =
                   mother.birth_date && !isNaN(birth.getTime())
@@ -1483,8 +1473,26 @@ export function SuperAdminFacilityDetailPage() {
 
                 return (
                   <article
+                    data-mobile-record
                     key={enrollment.enrollment_id}
-                    className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Open ${name}'s maternal profile`}
+                    className="cursor-pointer rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black"
+                    onClick={(event) => {
+                      const target = event.target as HTMLElement
+                      if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                      navigate(`/superadmin/mother/${mother.mother_id}`, {
+                        state: { returnTo: `/superadmin/facility/${facilityId}`, returnLabel: data.facility_name },
+                      })
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                      event.preventDefault()
+                      navigate(`/superadmin/mother/${mother.mother_id}`, {
+                        state: { returnTo: `/superadmin/facility/${facilityId}`, returnLabel: data.facility_name },
+                      })
+                    }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
@@ -1499,20 +1507,13 @@ export function SuperAdminFacilityDetailPage() {
                           >
                             {name}
                           </Link>
-                          {mother.blood_type && (
-                            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold">
-                              {mother.blood_type}
-                            </span>
-                          )}
                         </div>
-                        <p className="font-mono text-[11px] text-muted-foreground">
-                          {mother.family_serial_no || "—"}
-                        </p>
+                        <span className="mt-1 inline-flex rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 font-mono text-xs dark:bg-[#222]">{mother.family_serial_no || "Unassigned"}</span>
                       </div>
 
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="size-7 shrink-0">
+                          <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="More actions">
                             <MoreVertical className="size-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
@@ -1545,18 +1546,11 @@ export function SuperAdminFacilityDetailPage() {
                       </DropdownMenu>
                     </div>
 
-                    <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-sidebar-border pt-2 text-[11px] text-muted-foreground">
-                      <span>{birth.toLocaleDateString()} {age > 0 ? `(${age} yrs)` : ""}</span>
-                      <span>{mother.user?.phone_number || "No phone"}</span>
-                      <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
-                          isTransferred
-                            ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                            : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                        }`}
-                      >
-                        {status || "Active"}
-                      </span>
+                    <div className="mt-3 flex flex-wrap gap-1.5"><StatusBadge status={status || "Active"} label={statusLabel(status || "Active")} /></div>
+                    <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                      <div className="min-w-0"><p className="text-muted-foreground">Age / DOB</p><p className="mt-1 break-words font-medium text-foreground">{birth.toLocaleDateString()} {age > 0 ? `· ${age} yrs` : ""}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Phone</p><p className="mt-1 break-words font-medium text-foreground">{mother.user?.phone_number || "—"}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Blood type</p><p className="mt-1 font-medium text-foreground">{mother.blood_type || "—"}</p></div>
                     </div>
                   </article>
                 )
@@ -1574,45 +1568,35 @@ export function SuperAdminFacilityDetailPage() {
         </TabsContent>
 
         <TabsContent value="referrals" className="space-y-3 pt-1">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-3">
             <Tabs value={referralDirectionTab} onValueChange={setReferralDirectionTab} className="w-max">
               <TabsList className="h-8">
                 <TabsTrigger value="all" className="h-7 text-xs px-3">
-                  All Referrals ({allReferrals.length})
+                  All ({allReferrals.length})
                 </TabsTrigger>
                 <TabsTrigger value="outgoing" className="h-7 text-xs px-3">
-                  Outgoing / Sent ({data.onlineReferralsFrom.length})
+                  Sent ({data.onlineReferralsFrom.length})
                 </TabsTrigger>
                 <TabsTrigger value="incoming" className="h-7 text-xs px-3">
-                  Incoming / Received ({data.onlineReferralsTo.length})
+                  Received ({data.onlineReferralsTo.length})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative w-full sm:w-[240px]">
+            <div className="sticky top-16 z-10 flex flex-wrap items-center gap-2 bg-background py-2 dark:bg-black">
+              <div className="relative w-full sm:w-[280px]">
                 <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={referralQuery}
                   onChange={(e) => setReferralQuery(e.target.value)}
                   placeholder="Search by facility, reason, patient..."
-                  className="h-8 w-full border-sidebar-border bg-muted/70 px-2 pl-8 text-xs dark:bg-muted/60"
+                  className="h-8 w-full pl-8 text-xs"
                 />
               </div>
 
-              <Select value={referralStatusFilter} onValueChange={setReferralStatusFilter}>
-                <SelectTrigger className="h-8 w-[130px] text-xs">
-                  <SelectValue placeholder="All Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="accepted">Accepted</SelectItem>
-                  <SelectItem value="in transit">In Transit</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="transferred">Transferred</SelectItem>
-                </SelectContent>
-              </Select>
+              <Popover><PopoverTrigger asChild><Button variant="filter" size="filter"><PlusCircle className="size-3.5" />Status</Button></PopoverTrigger><PopoverContent align="start" className="w-44 space-y-2 p-3">
+                {[["all", "All statuses"], ["pending", "Pending"], ["accepted", "Accepted"], ["in transit", "In transit"], ["completed", "Completed"], ["transferred", "Transferred"]].map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-2 text-xs"><Checkbox checked={referralStatusFilter === value} onCheckedChange={() => setReferralStatusFilter(value)} />{label}</label>)}
+              </PopoverContent></Popover>
 
               {(referralQuery.trim().length > 0 || referralStatusFilter !== "all" || referralDirectionTab !== "all") && (
                 <Button
@@ -1625,13 +1609,13 @@ export function SuperAdminFacilityDetailPage() {
                   }}
                 >
                   <RotateCcw className="size-3.5" />
-                  Reset
+                  Reset Filter
                 </Button>
               )}
             </div>
           </div>
 
-          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
+          <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1641,7 +1625,7 @@ export function SuperAdminFacilityDetailPage() {
                   <TableHead>Patient / Serial</TableHead>
                   <TableHead className="max-w-[240px]">Clinical Reason</TableHead>
                   <TableHead className="w-[100px]">Status</TableHead>
-                  <TableHead className="w-[70px] text-right">Details</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -1687,15 +1671,7 @@ export function SuperAdminFacilityDetailPage() {
                           {new Date(ref.date_referred).toLocaleDateString()}
                         </TableCell>
                         <TableCell>
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
-                              isOutgoing
-                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            }`}
-                          >
-                            {isOutgoing ? "Sent" : "Received"}
-                          </span>
+                          <StatusBadge status={isOutgoing ? "Sent" : "Received"} />
                         </TableCell>
                         <TableCell className="text-xs font-medium max-w-[200px] truncate" title={partnerFacility}>
                           {partnerFacility}
@@ -1703,7 +1679,7 @@ export function SuperAdminFacilityDetailPage() {
                         <TableCell className="text-xs">
                           <div className="flex flex-col">
                             <span className="font-medium text-foreground">{patient}</span>
-                            {serial && <span className="font-mono text-[10px] text-muted-foreground">{serial}</span>}
+                            {serial && <span className="mt-1 w-fit rounded-sm border border-sidebar-border bg-muted px-1.5 py-0.5 font-mono text-xs dark:bg-[#222]">{serial}</span>}
                           </div>
                         </TableCell>
                         <TableCell className="max-w-[240px] text-xs text-muted-foreground">
@@ -1712,14 +1688,14 @@ export function SuperAdminFacilityDetailPage() {
                           </span>
                         </TableCell>
                         <TableCell>
-                          <span className="rounded bg-muted px-2 py-0.5 text-[11px] font-medium uppercase">
-                            {ref.status}
-                          </span>
+                          <StatusBadge status={ref.status} label={statusLabel(ref.status)} />
                         </TableCell>
                         <TableCell className="text-right">
                           <Button
                             variant="ghost"
                             size="sm"
+                            tooltip="View referral details"
+                            aria-label="View referral details"
                             className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
                             onClick={(e) => {
                               e.stopPropagation()
@@ -1768,37 +1744,35 @@ export function SuperAdminFacilityDetailPage() {
 
                 return (
                   <article
+                    data-mobile-record
                     key={`${ref.direction}-${ref.referral_id}`}
-                    className="cursor-pointer rounded-lg border border-sidebar-border bg-card p-3 shadow-xs hover:bg-muted/30"
-                    onClick={() => {
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Open ${patient} referral details`}
+                    className="cursor-pointer rounded-md border border-sidebar-border bg-background p-3 transition-colors hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:bg-black"
+                    onClick={(event) => {
+                      const target = event.target as HTMLElement
+                      if (target.closest("button, a, input, [role='checkbox'], [role='menuitem']")) return
+                      setSelectedReferral(ref)
+                      setReferralDetailOpen(true)
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return
+                      event.preventDefault()
                       setSelectedReferral(ref)
                       setReferralDetailOpen(true)
                     }}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5">
-                          <span
-                            className={`rounded px-1.5 py-0.5 text-[10px] font-medium uppercase ${
-                              isOutgoing
-                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                : "bg-blue-500/10 text-blue-600 dark:text-blue-400"
-                            }`}
-                          >
-                            {isOutgoing ? "Sent" : "Received"}
-                          </span>
-                          <span className="truncate text-xs font-semibold text-foreground">
-                            {partnerFacility}
-                          </span>
-                        </div>
-                        <p className="mt-1 text-xs font-medium text-foreground">
-                          {patient} {serial && <span className="font-mono text-[10px] text-muted-foreground">({serial})</span>}
-                        </p>
+                        <p className="truncate text-xs font-semibold text-foreground">{patient}</p>
                       </div>
 
                       <Button
                         variant="ghost"
                         size="sm"
+                        tooltip="View referral details"
+                        aria-label="View referral details"
                         className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground shrink-0"
                         onClick={(e) => {
                           e.stopPropagation()
@@ -1810,15 +1784,12 @@ export function SuperAdminFacilityDetailPage() {
                       </Button>
                     </div>
 
-                    <p className="mt-1.5 line-clamp-2 text-[11px] text-muted-foreground">
-                      {compactReason}
-                    </p>
-
-                    <div className="mt-2.5 flex items-center justify-between border-t border-sidebar-border pt-2 text-[11px] text-muted-foreground">
-                      <span>{new Date(ref.date_referred).toLocaleDateString()}</span>
-                      <span className="rounded bg-muted px-2 py-0.5 text-[10px] font-medium uppercase text-foreground">
-                        {ref.status}
-                      </span>
+                    <div className="mt-3 flex flex-wrap gap-1.5"><StatusBadge status={isOutgoing ? "Sent" : "Received"} /><StatusBadge status={ref.status} label={statusLabel(ref.status)} /></div>
+                    <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                      <div className="min-w-0"><p className="text-muted-foreground">Facility</p><p className="mt-1 break-words font-medium text-foreground">{partnerFacility}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Date</p><p className="mt-1 font-medium text-foreground">{new Date(ref.date_referred).toLocaleDateString()}</p></div>
+                      <div className="min-w-0"><p className="text-muted-foreground">Serial no.</p><p className="mt-1 break-words font-medium text-foreground">{serial || "—"}</p></div>
+                      <div className="col-span-3 min-w-0"><p className="text-muted-foreground">Reason</p><p className="mt-1 break-words font-medium text-foreground">{compactReason}</p></div>
                     </div>
                   </article>
                 )
@@ -1836,7 +1807,7 @@ export function SuperAdminFacilityDetailPage() {
         </TabsContent>
 
         <TabsContent value="schedules" className="space-y-3 pt-1">
-          <div className="hidden w-full overflow-hidden rounded-lg border border-sidebar-border bg-card md:block">
+          <div className="hidden w-full overflow-hidden rounded-md border border-sidebar-border bg-background dark:bg-black md:block">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -1867,15 +1838,7 @@ export function SuperAdminFacilityDetailPage() {
                         {slot.booked_slots} / {slot.max_slots}
                       </TableCell>
                       <TableCell>
-                        <span
-                          className={`rounded px-2 py-0.5 text-[11px] font-medium ${
-                            slot.is_available
-                              ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                              : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                          }`}
-                        >
-                          {slot.is_available ? "Available" : "Full / Closed"}
-                        </span>
+                        <StatusBadge status={slot.is_available ? "Available" : "Closed"} />
                       </TableCell>
                     </TableRow>
                   ))
@@ -1897,29 +1860,13 @@ export function SuperAdminFacilityDetailPage() {
               paginatedSchedules.map((slot) => (
                 <article
                   key={slot.schedule_id}
-                  className="rounded-lg border border-sidebar-border bg-card p-3 shadow-xs"
+                  className="rounded-md border border-sidebar-border bg-background p-3"
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <p className="text-xs font-semibold text-foreground">
-                        {new Date(slot.available_date).toLocaleDateString()}
-                      </p>
-                      <p className="text-[11px] text-muted-foreground">
-                        {slot.available_time_slot || "Regular Clinical Hours (8:00 AM - 5:00 PM)"}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded px-2 py-0.5 text-[10px] font-medium ${
-                        slot.is_available
-                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                          : "bg-rose-500/10 text-rose-600 dark:text-rose-400"
-                      }`}
-                    >
-                      {slot.is_available ? "Available" : "Full / Closed"}
-                    </span>
-                  </div>
-                  <div className="mt-2 border-t border-sidebar-border pt-1.5 text-[11px] text-muted-foreground font-mono">
-                    Booked: {slot.booked_slots} / {slot.max_slots}
+                  <p className="text-xs font-medium text-foreground">{new Date(slot.available_date).toLocaleDateString()}</p>
+                  <div className="mt-3 flex flex-wrap gap-1.5"><StatusBadge status={slot.is_available ? "Available" : "Closed"} /></div>
+                  <div className="mt-3 grid grid-cols-3 gap-3 text-xs">
+                    <div className="col-span-2 min-w-0"><p className="text-muted-foreground">Time</p><p className="mt-1 break-words font-medium text-foreground">{slot.available_time_slot || "Regular clinical hours"}</p></div>
+                    <div className="min-w-0"><p className="text-muted-foreground">Booked</p><p className="mt-1 font-medium text-foreground">{slot.booked_slots} / {slot.max_slots}</p></div>
                   </div>
                 </article>
               ))
@@ -1937,141 +1884,74 @@ export function SuperAdminFacilityDetailPage() {
           )}
         </TabsContent>
 
-        <TabsContent value="settings" className="space-y-4 pt-1">
-          <Card className="border-sidebar-border bg-card">
-            <CardHeader className="pb-3 pt-4">
-              <CardTitle className="text-sm font-semibold">Facility Metadata & Contacts</CardTitle>
-              <CardDescription className="text-xs">
-                Update the official address, contact details, and institutional tier.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Facility Name</Label>
-                  <Input
-                    value={editForm.facility_name}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, facility_name: e.target.value }))}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Facility Classification</Label>
-                  <Select
-                    value={editForm.type}
-                    onValueChange={(val) => setEditForm((prev) => ({ ...prev, type: val }))}
-                  >
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="RHU">Rural Health Unit (RHU)</SelectItem>
-                      <SelectItem value="BHS">Barangay Health Station (BHS)</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs">Municipality / Full Address</Label>
-                <Input
-                  value={editForm.address}
-                  onChange={(e) => setEditForm((prev) => ({ ...prev, address: e.target.value }))}
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="space-y-1">
-                  <Label className="text-xs">Contact Number</Label>
-                  <Input
-                    value={editForm.contact_number}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, contact_number: e.target.value }))}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Institutional Email</Label>
-                  <Input
-                    value={editForm.email}
-                    onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="pt-2">
-                <Button size="sm" onClick={handleSaveFacility} disabled={savingFacility} className="h-8 text-xs">
-                  {savingFacility ? "Saving Changes..." : "Save Facility Changes"}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
       </Tabs>
 
       <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Edit Facility Details</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Update Facility Information</DialogTitle>
             <DialogDescription className="text-xs">
-              Update institutional metadata for {data.facility_name}.
+              Update details for {data.facility_name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Facility Name</Label>
-              <Input
-                value={editForm.facility_name}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, facility_name: e.target.value }))}
-                className="h-8 text-xs"
-              />
+            <div className="grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Facility Name <span className="text-destructive">*</span></Label>
+                <Input
+                  value={editForm.facility_name}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, facility_name: e.target.value }))}
+                  placeholder="Enter facility name"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Facility Type <span className="text-destructive">*</span></Label>
+                <Select
+                  value={editForm.type}
+                  onValueChange={(val) => setEditForm((prev) => ({ ...prev, type: val }))}
+                >
+                  <SelectTrigger className="h-9 w-full text-xs">
+                    <SelectValue placeholder="Select facility type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="RHU">Rural Health Unit (RHU)</SelectItem>
+                    <SelectItem value="BHS">Barangay Health Station (BHS)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-medium">Address <span className="text-destructive">*</span></Label>
+                <Input
+                  value={editForm.address}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, address: e.target.value }))}
+                  placeholder="Enter facility address"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Contact Number</Label>
+                <Input
+                  value={editForm.contact_number}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, contact_number: e.target.value }))}
+                  placeholder="09XX XXX XXXX"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Email</Label>
+                <Input
+                  value={editForm.email}
+                  onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
+                  placeholder="facility@silang.ph"
+                  className="h-9 text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Type</Label>
-              <Select
-                value={editForm.type}
-                onValueChange={(val) => setEditForm((prev) => ({ ...prev, type: val }))}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="RHU">Rural Health Unit (RHU)</SelectItem>
-                  <SelectItem value="BHS">Barangay Health Station (BHS)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Address</Label>
-              <Input
-                value={editForm.address}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, address: e.target.value }))}
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Contact Number</Label>
-              <Input
-                value={editForm.contact_number}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, contact_number: e.target.value }))}
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Email</Label>
-              <Input
-                value={editForm.email}
-                onChange={(e) => setEditForm((prev) => ({ ...prev, email: e.target.value }))}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setEditDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setEditDialogOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleSaveFacility} disabled={savingFacility}>
+            <Button className="h-8 px-3 text-xs" onClick={handleSaveFacility} disabled={savingFacility}>
               {savingFacility ? "Saving..." : "Save"}
             </Button>
           </DialogFooter>
@@ -2079,35 +1959,35 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={roleDialogOpen} onOpenChange={setRoleDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
             <DialogTitle className="text-base font-semibold">Change Staff Role</DialogTitle>
             <DialogDescription className="text-xs">
               Update role for {selectedStaff?.first_name} {selectedStaff?.last_name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">New Role</Label>
-              <Select value={newRole} onValueChange={setNewRole}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select new role" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin (Facility Administrator)</SelectItem>
-                  <SelectItem value="Doctor">Doctor (Physician)</SelectItem>
-                  <SelectItem value="Midwife">Midwife (Clinical Provider)</SelectItem>
-                  <SelectItem value="Nurse">Nurse (Clinical Staff)</SelectItem>
-                  <SelectItem value="HealthWorker">HealthWorker (BHW)</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Role <span className="text-destructive">*</span></Label>
+                <Select value={newRole} onValueChange={setNewRole}>
+                  <SelectTrigger className="h-9 w-full text-xs">
+                    <SelectValue placeholder="Select new role" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Doctor">Doctor</SelectItem>
+                    <SelectItem value="Midwife">Midwife</SelectItem>
+                    <SelectItem value="Nurse">Nurse</SelectItem>
+                    <SelectItem value="HealthWorker">Health Worker</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
-          <DialogFooter className="gap-2 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setRoleDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setRoleDialogOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" onClick={handleRoleChange} disabled={submittingRole}>
+            <Button className="h-8 px-3 text-xs" onClick={handleRoleChange} disabled={submittingRole}>
               {submittingRole ? "Updating..." : "Save Role"}
             </Button>
           </DialogFooter>
@@ -2115,36 +1995,36 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Administrative Password Reset</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Reset Password</DialogTitle>
             <DialogDescription className="text-xs">
-              Set a temporary password for {selectedStaff?.first_name} {selectedStaff?.last_name}.
+              Set a password for {selectedStaff?.first_name} {selectedStaff?.last_name}.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1">
-              <Label className="text-xs">New Password</Label>
-              <Input
-                type="text"
-                placeholder="Enter new password (min. 6 characters)"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="h-8 text-xs font-mono"
-              />
-            </div>
-            {typeof navigator !== "undefined" && !navigator.onLine && (
-              <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-                Password resets require an active server connection to ensure credential security.
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Password <span className="text-destructive">*</span></Label>
+                <Input
+                  type="password"
+                  placeholder="Enter password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="h-9 text-xs"
+                />
               </div>
-            )}
-          </div>
-          <DialogFooter className="gap-3 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setPasswordDialogOpen(false)}>
+              {typeof navigator !== "undefined" && !navigator.onLine && (
+                <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                  Password resets require an active server connection to ensure credential security.
+                </div>
+              )}
+            </div>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setPasswordDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={handleResetPassword}
               disabled={submittingPassword || (typeof navigator !== "undefined" && !navigator.onLine)}
             >
@@ -2155,31 +2035,31 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={transferStaffDialogOpen} onOpenChange={setTransferStaffDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Transfer Staff to Another Facility</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Transfer Staff</DialogTitle>
             <DialogDescription className="text-xs">
               Reassign {selectedStaff?.first_name} {selectedStaff?.last_name} from {data.facility_name} to another clinic.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Destination Facility</Label>
-              <FacilitySearchSelect
-                facilities={allFacilities}
-                value={targetStaffFacilityId}
-                onValueChange={setTargetStaffFacilityId}
-                currentFacilityId={facilityId}
-                placeholder="Search clinic or health station..."
-              />
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Destination Facility <span className="text-destructive">*</span></Label>
+                <FacilitySearchSelect
+                  facilities={allFacilities}
+                  value={targetStaffFacilityId}
+                  onValueChange={setTargetStaffFacilityId}
+                  currentFacilityId={facilityId}
+                  placeholder="Search clinic or health station..."
+                />
+              </div>
             </div>
-          </div>
-          <DialogFooter className="gap-3 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setTransferStaffDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setTransferStaffDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 setTransferStaffDialogOpen(false)
                 setConfirmStaffTransferOpen(true)
@@ -2193,17 +2073,17 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={confirmStaffTransferOpen} onOpenChange={setConfirmStaffTransferOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
                 <AlertTriangle className="size-4" />
               </div>
               <DialogTitle className="text-base font-semibold text-foreground">
-                Confirm Staff Facility Transfer
+                Confirm Staff Transfer
               </DialogTitle>
             </div>
-            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+            <DialogDescription className="text-xs text-muted-foreground">
               Are you sure you want to transfer <span className="font-semibold text-foreground">{selectedStaff?.first_name} {selectedStaff?.last_name}</span> ({selectedStaff?.role}) from <span className="font-semibold text-foreground">{data.facility_name}</span> to{" "}
               <span className="font-semibold text-foreground">
                 {allFacilities.find((f) => f.facility_id === targetStaffFacilityId)?.facility_name || "the selected facility"}
@@ -2211,25 +2091,24 @@ export function SuperAdminFacilityDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
-            <p className="font-medium text-foreground">Effects of reassignment:</p>
-            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
-              <li>
-                <strong className="text-foreground">Active Station Change:</strong> Staff member will be assigned to the new facility and detached from {data.facility_name}.
-              </li>
-              <li>
-                <strong className="text-foreground">Access Scope:</strong> Logins, patient lists, and daily clinical duties will be scoped to the new facility.
-              </li>
-              <li>
-                <strong className="text-foreground">Historical Preservation:</strong> All previous maternal records, checkups, and audit trails logged by this staff member at {data.facility_name} remain intact.
-              </li>
-            </ul>
-          </div>
-
-          <DialogFooter className="gap-3 sm:gap-3">
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Effects of reassignment:</p>
+              <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+                <li>
+                  <strong className="text-foreground">Active Station Change:</strong> Staff member will be assigned to the new facility and detached from {data.facility_name}.
+                </li>
+                <li>
+                  <strong className="text-foreground">Access Scope:</strong> Logins, patient lists, and daily clinical duties will be scoped to the new facility.
+                </li>
+                <li>
+                  <strong className="text-foreground">Historical Preservation:</strong> All previous maternal records, checkups, and audit trails logged by this staff member at {data.facility_name} remain intact.
+                </li>
+              </ul>
+            </div>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
             <Button
               variant="outline"
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 setConfirmStaffTransferOpen(false)
                 setTransferStaffDialogOpen(true)
@@ -2239,7 +2118,7 @@ export function SuperAdminFacilityDetailPage() {
               Back
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={handleTransferStaff}
               disabled={submittingStaffTransfer}
             >
@@ -2250,40 +2129,40 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={transferMotherDialogOpen} onOpenChange={setTransferMotherDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Transfer Mother to Another Facility</DialogTitle>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Transfer Mother</DialogTitle>
             <DialogDescription className="text-xs">
               Reassign {selectedMother?.mother.user ? `${selectedMother.mother.user.first_name} ${selectedMother.mother.user.last_name}` : "Patient"} from {data.facility_name} to another healthcare station in Silang.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Destination Facility</Label>
-              <FacilitySearchSelect
-                facilities={allFacilities}
-                value={targetMotherFacilityId}
-                onValueChange={setTargetMotherFacilityId}
-                currentFacilityId={facilityId}
-                placeholder="Search clinic or health station..."
-              />
+            <div className="space-y-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Destination Facility <span className="text-destructive">*</span></Label>
+                <FacilitySearchSelect
+                  facilities={allFacilities}
+                  value={targetMotherFacilityId}
+                  onValueChange={setTargetMotherFacilityId}
+                  currentFacilityId={facilityId}
+                  placeholder="Search clinic or health station..."
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-medium">Reason (Optional)</Label>
+                <Input
+                  placeholder="e.g. Relocated residence, specialised care referral, etc."
+                  value={motherTransferNotes}
+                  onChange={(e) => setMotherTransferNotes(e.target.value)}
+                  className="h-9 text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Administrative Transfer Reason / Notes (Optional)</Label>
-              <Input
-                placeholder="e.g. Relocated residence, specialised care referral, etc."
-                value={motherTransferNotes}
-                onChange={(e) => setMotherTransferNotes(e.target.value)}
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-          <DialogFooter className="gap-3 sm:gap-3">
-            <Button variant="outline" size="sm" onClick={() => setTransferMotherDialogOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" onClick={() => setTransferMotherDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 setTransferMotherDialogOpen(false)
                 setConfirmMotherTransferOpen(true)
@@ -2297,8 +2176,8 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={confirmMotherTransferOpen} onOpenChange={setConfirmMotherTransferOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
             <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
               <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/60">
                 <AlertTriangle className="size-4" />
@@ -2307,7 +2186,7 @@ export function SuperAdminFacilityDetailPage() {
                 Confirm Patient Transfer
               </DialogTitle>
             </div>
-            <DialogDescription className="pt-2 text-xs text-muted-foreground">
+            <DialogDescription className="text-xs text-muted-foreground">
               Are you sure you want to transfer <span className="font-semibold text-foreground">{selectedMother?.mother.user ? `${selectedMother.mother.user.first_name} ${selectedMother.mother.user.last_name}` : "Patient"}</span> from <span className="font-semibold text-foreground">{data.facility_name}</span> to{" "}
               <span className="font-semibold text-foreground">
                 {allFacilities.find((f) => f.facility_id === targetMotherFacilityId)?.facility_name || "the selected facility"}
@@ -2315,28 +2194,27 @@ export function SuperAdminFacilityDetailPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/40 p-3 text-xs">
-            <p className="font-medium text-foreground">Effects of maternal transfer:</p>
-            <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
-              <li>
-                <strong className="text-foreground">Primary Facility Change:</strong> Patient's primary health monitoring will be relocated to the destination facility.
-              </li>
-              <li>
-                <strong className="text-foreground">Local Registry:</strong> Patient will be removed from this facility's active maternal roster.
-              </li>
-              <li>
-                <strong className="text-foreground">Care Continuity:</strong> Prenatal logs, lab screening files, and clinical history will transfer over safely.
-              </li>
-              <li>
-                <strong className="text-foreground">Audit Tracking:</strong> An administrative transfer record will be logged with your notes for municipal auditing.
-              </li>
-            </ul>
-          </div>
-
-          <DialogFooter className="gap-3 sm:gap-3">
+            <div className="space-y-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Effects of maternal transfer:</p>
+              <ul className="space-y-1.5 text-muted-foreground list-disc pl-4">
+                <li>
+                  <strong className="text-foreground">Primary Facility Change:</strong> Patient's primary health monitoring will be relocated to the destination facility.
+                </li>
+                <li>
+                  <strong className="text-foreground">Local Registry:</strong> Patient will be removed from this facility's active maternal roster.
+                </li>
+                <li>
+                  <strong className="text-foreground">Care Continuity:</strong> Prenatal logs, lab screening files, and clinical history will transfer over safely.
+                </li>
+                <li>
+                  <strong className="text-foreground">Audit Tracking:</strong> An administrative transfer record will be logged with your notes for municipal auditing.
+                </li>
+              </ul>
+            </div>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
             <Button
               variant="outline"
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={() => {
                 setConfirmMotherTransferOpen(false)
                 setTransferMotherDialogOpen(true)
@@ -2346,7 +2224,7 @@ export function SuperAdminFacilityDetailPage() {
               Back
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               onClick={handleTransferMother}
               disabled={submittingMotherTransfer}
             >
@@ -2356,93 +2234,16 @@ export function SuperAdminFacilityDetailPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={referralDetailOpen} onOpenChange={setReferralDetailOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold">Inter-Clinic Referral Handover</DialogTitle>
-            <DialogDescription className="text-xs">
-              Handover summary and clinical reason for referral #{selectedReferral?.referral_id?.slice(0, 8)}.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedReferral && (
-            <div className="space-y-3 py-2 text-xs">
-              <div className="grid grid-cols-2 gap-2 rounded-md border border-sidebar-border bg-muted/40 p-3">
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Flow Direction</span>
-                  <span className="font-medium capitalize">{selectedReferral.direction === "outgoing" ? "Outgoing (Sent)" : "Incoming (Received)"}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Date Referred</span>
-                  <span className="font-medium">{new Date(selectedReferral.date_referred).toLocaleString()}</span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Partner Facility</span>
-                  <span className="font-medium">
-                    {selectedReferral.direction === "outgoing"
-                      ? selectedReferral.toFacility?.facility_name || selectedReferral.external_facility_name || "Apex Hospital"
-                      : selectedReferral.fromFacility?.facility_name || "Originating Station"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-muted-foreground block text-[11px]">Referral Status</span>
-                  <span className="font-medium uppercase">{selectedReferral.status}</span>
-                </div>
-              </div>
-
-              {selectedReferral.pregnancy?.mother?.user && (
-                <div className="flex items-center justify-between rounded-md border border-sidebar-border p-3">
-                  <div>
-                    <span className="text-muted-foreground block text-[11px]">Patient Information</span>
-                    <p className="font-medium text-foreground">
-                      {selectedReferral.pregnancy.mother.user.first_name} {selectedReferral.pregnancy.mother.user.last_name}
-                    </p>
-                    {selectedReferral.pregnancy.mother.family_serial_no && (
-                      <p className="font-mono text-[11px] text-muted-foreground">
-                        Family Serial: {selectedReferral.pregnancy.mother.family_serial_no}
-                      </p>
-                    )}
-                  </div>
-                  {selectedReferral.pregnancy?.mother?.mother_id && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => {
-                        setReferralDetailOpen(false)
-                        navigate(`/superadmin/mother/${selectedReferral.pregnancy!.mother!.mother_id}`, {
-                          state: {
-                            returnTo: `/superadmin/facility/${facilityId}`,
-                            returnLabel: data.facility_name,
-                          },
-                        })
-                      }}
-                    >
-                      <ExternalLink className="mr-1 size-3" />
-                      View Profile
-                    </Button>
-                  )}
-                </div>
-              )}
-
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">Clinical Referral Narrative</Label>
-                <div className="rounded-md border border-sidebar-border bg-card p-3 font-mono text-[11px] whitespace-pre-wrap leading-relaxed max-h-56 overflow-y-auto">
-                  {selectedReferral.reason || "No clinical narrative recorded."}
-                </div>
-              </div>
-            </div>
-          )}
-          <DialogFooter>
-            <Button size="sm" onClick={() => setReferralDetailOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <InterClinicReferralDrawer
+        open={referralDetailOpen}
+        onOpenChange={setReferralDetailOpen}
+        referral={selectedReferral ? selectedRichReferral?.id === selectedReferral.referral_id ? selectedRichReferral : toReferralDrawerRecord(selectedReferral) : null}
+        currentFacilityId={facilityId}
+      />
 
       <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-md gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-md">
+          <DialogHeader className="gap-1 pr-14 text-left">
             <div className="flex items-center gap-2">
               {statusAction === "deactivate" ? (
                 <div className="flex size-9 items-center justify-center rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400">
@@ -2459,48 +2260,47 @@ export function SuperAdminFacilityDetailPage() {
                   : `Reactivate ${data.facility_name}?`}
               </DialogTitle>
             </div>
-            <DialogDescription className="pt-2 text-xs leading-relaxed">
+            <DialogDescription className="text-xs leading-relaxed">
               {statusAction === "deactivate"
                 ? "Deactivating this facility enforces institutional safeguards across the municipal health network:"
                 : "Reactivating this facility will restore institutional access and allow staff members to log in and resume clinical care services."}
             </DialogDescription>
           </DialogHeader>
 
-          {statusAction === "deactivate" && (
-            <div className="space-y-2 rounded-md border border-amber-500/20 bg-amber-500/5 p-3 text-xs text-amber-900 dark:text-amber-300">
-              <div className="flex items-start gap-2">
-                <PowerOff className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>
-                  <strong>Staff Access Locked:</strong> All staff assigned to this facility ({data.users?.length ?? 0} staff) will immediately be prevented from logging in.
-                </span>
+            {statusAction === "deactivate" && (
+              <div className="space-y-2 text-sm text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <PowerOff className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <strong>Staff Access Locked:</strong> All staff assigned to this facility ({data.users?.length ?? 0} staff) will immediately be prevented from logging in.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <strong>Maternal Care Unassigned:</strong> Any mothers currently assigned or enrolled ({data.motherEnrollments?.length ?? 0} active enrollments) will be unassigned so their care can be safely transferred.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                  <span>
+                    <strong>Data Preservation:</strong> All historical clinical checkups, birth records, and audit logs remain securely preserved.
+                  </span>
+                </div>
               </div>
-              <div className="flex items-start gap-2">
-                <ShieldAlert className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>
-                  <strong>Maternal Care Unassigned:</strong> Any mothers currently assigned or enrolled ({data.motherEnrollments?.length ?? 0} active enrollments) will be unassigned so their care can be safely transferred.
-                </span>
-              </div>
-              <div className="flex items-start gap-2">
-                <ShieldCheck className="mt-0.5 size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                <span>
-                  <strong>Data Preservation:</strong> All historical clinical checkups, birth records, and audit logs remain securely preserved.
-                </span>
-              </div>
-            </div>
-          )}
+            )}
 
-          {typeof navigator !== "undefined" && !navigator.onLine && (
-            <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
-              Facility status updates require an active internet connection to ensure clinical safety boundaries.
-            </div>
-          )}
-
-          <DialogFooter className="gap-2 sm:gap-3">
-            <Button variant="outline" size="sm" disabled={submittingStatus} onClick={() => setStatusDialogOpen(false)}>
+            {typeof navigator !== "undefined" && !navigator.onLine && (
+              <div className="rounded-md border border-amber-300/40 bg-amber-500/10 p-2.5 text-xs text-amber-700 dark:text-amber-400">
+                Facility status updates require an active internet connection to ensure clinical safety boundaries.
+              </div>
+            )}
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" disabled={submittingStatus} onClick={() => setStatusDialogOpen(false)}>
               Cancel
             </Button>
             <Button
-              size="sm"
+              className="h-8 px-3 text-xs"
               variant={statusAction === "deactivate" ? "destructive" : "default"}
               disabled={submittingStatus || (typeof navigator !== "undefined" && !navigator.onLine)}
               onClick={handleToggleFacilityStatus}
@@ -2516,123 +2316,113 @@ export function SuperAdminFacilityDetailPage() {
       </Dialog>
 
       <Dialog open={addStaffOpen} onOpenChange={setAddStaffOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-lg">
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <div className="flex size-9 items-center justify-center rounded-full bg-primary/10 text-primary">
-                <UserPlus className="size-5" />
-              </div>
-              <div>
-                <DialogTitle className="text-base font-semibold">Add Healthcare Staff</DialogTitle>
-                <DialogDescription className="text-xs">
-                  Create an institutional user account directly assigned to {data.facility_name}.
-                </DialogDescription>
-              </div>
-            </div>
+        <DialogContent className="max-h-[90dvh] w-[calc(100%-2rem)] max-w-xl gap-4 overflow-y-auto rounded-xl border-sidebar-border bg-background p-5 text-foreground sm:max-w-xl">
+          <DialogHeader className="gap-1 pr-14 text-left">
+            <DialogTitle className="text-base font-semibold">Add Staff Member</DialogTitle>
+            <DialogDescription className="text-xs">Add a staff account to {data.facility_name}.</DialogDescription>
           </DialogHeader>
 
-          <div className="grid grid-cols-1 gap-3 py-2 sm:grid-cols-2">
-            <div className="space-y-1">
-              <Label className="text-xs">
-                First Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={addStaffForm.first_name}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, first_name: e.target.value }))}
-                placeholder="Juan"
-                className="h-8 text-xs"
-              />
+            <div className="grid grid-cols-1 gap-x-3 gap-y-4 sm:grid-cols-2">
+              <div className="order-1 space-y-1.5">
+                <Label className="text-xs font-medium">
+                  First Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={addStaffForm.first_name}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, first_name: e.target.value }))}
+                  placeholder="Juan"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 order-3">
+                <Label className="text-xs font-medium">Middle Name <span className="text-muted-foreground">(Optional)</span></Label>
+                <Input
+                  value={addStaffForm.middle_name}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, middle_name: e.target.value }))}
+                  placeholder="Santos"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 order-2">
+                <Label className="text-xs font-medium">
+                  Last Name <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={addStaffForm.last_name}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, last_name: e.target.value }))}
+                  placeholder="Dela Cruz"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 order-6">
+                <Label className="text-xs font-medium">
+                  Staff Role <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={addStaffForm.role}
+                  onValueChange={(val) => setAddStaffForm((prev) => ({ ...prev, role: val }))}
+                >
+                  <SelectTrigger className="h-9 w-full text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Admin">Admin</SelectItem>
+                    <SelectItem value="Doctor">Doctor</SelectItem>
+                    <SelectItem value="Midwife">Midwife</SelectItem>
+                    <SelectItem value="Nurse">Nurse</SelectItem>
+                    <SelectItem value="HealthWorker">Health Worker (BHW)</SelectItem>
+                    <SelectItem value="Staff">Clinic Staff</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5 order-4">
+                <Label className="text-xs font-medium">
+                  Official Email <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="email"
+                  value={addStaffForm.email}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, email: e.target.value }))}
+                  placeholder="staff@silang.ph"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 order-5">
+                <Label className="text-xs font-medium">Phone Number <span className="text-muted-foreground">(Optional)</span></Label>
+                <Input
+                  value={addStaffForm.phone_number}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, phone_number: e.target.value }))}
+                  placeholder="09XX XXX XXXX"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 order-7 sm:col-span-2">
+                <Label className="text-xs font-medium">
+                  Password <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  type="password"
+                  value={addStaffForm.password}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, password: e.target.value }))}
+                  placeholder="Enter password"
+                  className="h-9 text-xs"
+                />
+              </div>
+              <div className="space-y-1.5 order-8 sm:col-span-2">
+                <Label className="text-xs font-medium">Address <span className="text-muted-foreground">(Optional)</span></Label>
+                <Input
+                  value={addStaffForm.address}
+                  onChange={(e) => setAddStaffForm((prev) => ({ ...prev, address: e.target.value }))}
+                  placeholder="Barangay, Silang, Cavite"
+                  className="h-9 text-xs"
+                />
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Middle Name</Label>
-              <Input
-                value={addStaffForm.middle_name}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, middle_name: e.target.value }))}
-                placeholder="Santos"
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label className="text-xs">
-                Last Name <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                value={addStaffForm.last_name}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, last_name: e.target.value }))}
-                placeholder="Dela Cruz"
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                Staff Role <span className="text-destructive">*</span>
-              </Label>
-              <Select
-                value={addStaffForm.role}
-                onValueChange={(val) => setAddStaffForm((prev) => ({ ...prev, role: val }))}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Admin">Admin (Facility Head)</SelectItem>
-                  <SelectItem value="Doctor">Doctor</SelectItem>
-                  <SelectItem value="Midwife">Midwife</SelectItem>
-                  <SelectItem value="Nurse">Nurse</SelectItem>
-                  <SelectItem value="HealthWorker">Health Worker (BHW)</SelectItem>
-                  <SelectItem value="Staff">Clinic Staff</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                Official Email <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="email"
-                value={addStaffForm.email}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, email: e.target.value }))}
-                placeholder="staff@silang.ph"
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Phone Number</Label>
-              <Input
-                value={addStaffForm.phone_number}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, phone_number: e.target.value }))}
-                placeholder="09XX XXX XXXX"
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">
-                Initial Password <span className="text-destructive">*</span>
-              </Label>
-              <Input
-                type="password"
-                value={addStaffForm.password}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, password: e.target.value }))}
-                placeholder="Min. 6 characters"
-                className="h-8 text-xs"
-              />
-            </div>
-            <div className="space-y-1 sm:col-span-2">
-              <Label className="text-xs">Address / Residence</Label>
-              <Input
-                value={addStaffForm.address}
-                onChange={(e) => setAddStaffForm((prev) => ({ ...prev, address: e.target.value }))}
-                placeholder="Barangay, Silang, Cavite"
-                className="h-8 text-xs"
-              />
-            </div>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-3">
-            <Button variant="outline" size="sm" disabled={addStaffSubmitting} onClick={() => setAddStaffOpen(false)}>
+          <DialogFooter className="flex-row items-center justify-between gap-3 pt-3 sm:justify-between [&_button]:h-8 [&_button]:px-3 [&_button]:text-xs">
+            <Button variant="outline" className="h-8 px-3 text-xs" disabled={addStaffSubmitting} onClick={() => setAddStaffOpen(false)}>
               Cancel
             </Button>
-            <Button size="sm" disabled={addStaffSubmitting} onClick={handleAddStaff}>
+            <Button className="h-8 px-3 text-xs" disabled={addStaffSubmitting} onClick={handleAddStaff}>
               {addStaffSubmitting ? "Creating Staff..." : "Create Staff Member"}
             </Button>
           </DialogFooter>

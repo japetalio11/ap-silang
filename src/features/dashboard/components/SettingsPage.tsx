@@ -35,6 +35,14 @@ function Field({ label, children, required = false }: { label: string; children:
   return <div className="space-y-2"><Label className="text-xs font-medium">{label}{required && <span className="ml-0.5 text-destructive">*</span>}</Label>{children}</div>
 }
 
+function formatClosedDate(dateValue: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateValue)
+  if (!match) return dateValue
+  const [, year, month, day] = match
+  return new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" })
+    .format(new Date(Number(year), Number(month) - 1, Number(day)))
+}
+
 function SettingsSubtabs({ value, onChange, items }: { value: string; onChange: (value: string) => void; items: { value: string; label: string }[] }) {
   return <div className="inline-flex h-8 w-fit max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-[3px] text-muted-foreground">
     {items.map((item) => <button key={item.value} type="button" aria-pressed={value === item.value} onClick={() => onChange(item.value)} className={`inline-flex h-full shrink-0 items-center justify-center rounded-md px-2 text-xs font-medium transition-colors ${value === item.value ? "bg-background text-foreground shadow-sm dark:bg-input/30" : "text-muted-foreground hover:text-foreground"}`}>{item.label}</button>)}
@@ -886,7 +894,7 @@ export function SettingsPage({ onClose }: { onClose?: () => void }) {
                         <CalendarIcon className="size-4" />
                       </div>
                       <div>
-                        <p className="text-xs font-medium text-foreground">{item.date}</p>
+                        <p className="text-xs font-medium text-foreground">{formatClosedDate(item.date)}</p>
                         <p className="text-[11px] text-muted-foreground">{item.reason}</p>
                       </div>
                     </div>

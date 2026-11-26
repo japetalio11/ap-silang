@@ -62,7 +62,7 @@ export type ReferralDrawerRecord = {
   mother: string
   initiatedAt: string
   risk: "Low Risk" | "Moderate Risk" | "High Risk" | "Not assessed"
-  status: "Accepted" | "Pending" | "In Transit" | "Admitted" | "Completed" | "Cancelled" | "Rejected"
+  status: "Accepted" | "Pending" | "In Transit" | "Admitted" | "Completed" | "Cancelled" | "Rejected" | "Referred"
   transferLink: string
   transferCode: string
   destination: string
@@ -143,7 +143,7 @@ function TransferLifecycle({
   lastUpdatedAt: string
 }) {
   const isAdmitted = ["Accepted", "In Transit", "Admitted", "Completed"].includes(status)
-  const isReferred = ["Rejected", "Cancelled"].includes(status)
+  const isReferred = ["Rejected", "Cancelled", "Referred"].includes(status)
   const currentStage = isAdmitted ? "Admitted" : isReferred ? "Referred" : status
 
   return (
